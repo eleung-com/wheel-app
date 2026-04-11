@@ -786,6 +786,8 @@ function savePos() {
 function editPos(id) {
   const pos = S.positions.find(p => p.id === id); if (!pos) return;
   S.editId = id;
+  // Unhide the modal FIRST, before setting any values, to ensure browser doesn't drop date inputs
+  openModal('modal-pos');
   document.getElementById('pos-mtitle').textContent = 'Edit Position';
   document.getElementById('del-btn').style.display = 'block';
   // Set type first so togglePF knows what to show
@@ -814,7 +816,6 @@ function editPos(id) {
     document.getElementById('p-prem').value    = '';
     document.getElementById('p-curprem').value = '';
   }
-  openModal('modal-pos');
 }
 
 function delPos() {
