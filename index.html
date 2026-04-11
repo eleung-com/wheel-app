@@ -805,7 +805,7 @@ function editPos(id) {
   document.getElementById('p-opendate').value = openDate;
   if (isOpt) {
     document.getElementById('p-strike').value  = pos.strike != null ? pos.strike : '';
-    document.getElementById('p-expiry').value  = pos.expiry || '';
+    document.getElementById('p-expiry').value  = pos.expiry ? pos.expiry.split('T')[0] : '';
     document.getElementById('p-prem').value    = pos.prem   != null ? pos.prem   : '';
     document.getElementById('p-curprem').value = pos.curPrem != null ? pos.curPrem : '';
     document.getElementById('p-cost').value    = '';
@@ -827,10 +827,17 @@ function delPos() {
   runScreener();
 }
 
+function dDisp(exp) {
+  if (!exp) return '—';
+  const c = exp.split('T')[0];
+  return c.substring(5,7) + '/' + c.substring(8,10) + '/' + c.substring(2,4);
+}
+
 function dte(expiry) {
   if (!expiry) return null;
+  const c = expiry.split('T')[0];
   const now = new Date(); now.setHours(0,0,0,0);
-  return Math.round((new Date(expiry + 'T12:00:00') - now) / 86400000);
+  return Math.round((new Date(c + 'T12:00:00') - now) / 86400000);
 }
 
 function renderPositions() {
@@ -861,7 +868,7 @@ function renderPositions() {
       // origDte: days between open date and expiry. Guard against NaN from bad timestamps.
       let origDte = null;
       if (pos.expiry && pos.enteredAt && pos.enteredAt > 0) {
-        const calc = Math.round((new Date(pos.expiry + 'T12:00:00') - new Date(pos.enteredAt)) / 86400000);
+        const calc = Math.round((new Date(pos.expiry.split('T')[0] + 'T12:00:00') - new Date(pos.enteredAt)) / 86400000);
         if (!isNaN(calc) && calc > 0) origDte = calc;
       }
       if (!origDte) origDte = pos.origDte || null;
@@ -871,7 +878,7 @@ function renderPositions() {
         <div class="met"><div class="met-l">Strike</div><div class="met-v b" style="font-size:11px">$${pos.strike||'—'}</div></div>
         <div class="met"><div class="met-l">Collected</div><div class="met-v g" style="font-size:11px">$${pos.prem?pos.prem.toFixed(2):'—'}</div></div>
         <div class="met"><div class="met-l">Current</div><div class="met-v" style="font-size:10px">${curLbl}</div></div>
-        <div class="met"><div class="met-l">Expiry</div><div class="met-v" style="font-size:10px">${pos.expiry||'—'}</div></div>
+        <div class="met"><div class="met-l">Expiry</div><div class="met-v" style="font-size:10px">${dDisp(pos.expiry)}</div></div>
       </div>`;
       if (pctCap !== null) body += `<div class="prow" style="margin-top:4px"><div class="plbl" style="font-size:8px;min-width:60px">Captured</div><div class="pbar"><div class="pfill" style="width:${Math.min(pctCap,100)}%;background:var(--g)"></div></div><div class="ppct" style="font-size:9px">${pctCap}%</div></div>`;
       if (pctTime !== null) body += `<div class="prow" style="margin-top:3px"><div class="plbl" style="font-size:8px;min-width:60px">Time</div><div class="pbar"><div class="pfill" style="width:${Math.min(pctTime,100)}%;background:var(--mu)"></div></div><div class="ppct" style="font-size:9px">${pctTime}%</div></div>`;
@@ -887,7 +894,7 @@ function renderPositions() {
 // ─── LIVE MARKET DATA ─────────────────────────────────────────────────────────
 async function fetchQ(ticker) {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`;
+    const url = `https://corsproxy.io/?` + encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`);
     const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
     if (!r.ok) return null;
     const data = await r.json();
@@ -973,12 +980,12 @@ async function fetchOptionPrice(ticker, type, strike, expiry) {
 
   // Strategy 1: fetch with specific expiry date (try the date itself + ±1 day offsets)
   if (expiry) {
-    const baseMs = new Date(expiry + 'T12:00:00').getTime();
+    const baseMs = new Date(expiry.split('T')[0] + 'T12:00:00').getTime();
     const offsets = [0, 86400000, -86400000, 172800000]; // 0, +1d, -1d, +2d
     for (const offset of offsets) {
       try {
         const ts = Math.floor((baseMs + offset) / 1000);
-        const url = `https://query1.finance.yahoo.com/v7/finance/options/${ticker}?date=${ts}`;
+        const url = `https://corsproxy.io/?` + encodeURIComponent(`https://query1.finance.yahoo.com/v7/finance/options/${ticker}?date=${ts}`);
         const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
         if (!r.ok) continue;
         const data = await r.json();
@@ -995,7 +1002,7 @@ async function fetchOptionPrice(ticker, type, strike, expiry) {
   // Strategy 2: fetch without a date — Yahoo returns the nearest expiry chain,
   // scan all available expiry dates and look for our strike across all of them
   try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/options/${ticker}`;
+    const url = `https://corsproxy.io/?` + encodeURIComponent(`https://query1.finance.yahoo.com/v7/finance/options/${ticker}`);
     const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (r.ok) {
       const data = await r.json();
@@ -1012,7 +1019,7 @@ async function fetchOptionPrice(ticker, type, strike, expiry) {
         if (expiry && result.expirationDates) {
           for (const ts of result.expirationDates) {
             try {
-              const url2 = `https://query1.finance.yahoo.com/v7/finance/options/${ticker}?date=${ts}`;
+              const url2 = `https://corsproxy.io/?` + encodeURIComponent(`https://query1.finance.yahoo.com/v7/finance/options/${ticker}?date=${ts}`);
               const r2 = await fetch(url2, { signal: AbortSignal.timeout(8000) });
               if (!r2.ok) continue;
               const d2 = await r2.json();
@@ -1146,7 +1153,7 @@ async function runScreener() {
     const days = dte(pos.expiry); if (days === null) continue;
     let origDte = null;
     if (pos.expiry && pos.enteredAt && pos.enteredAt > 0) {
-      const calc = Math.round((new Date(pos.expiry + 'T12:00:00') - new Date(pos.enteredAt)) / 86400000);
+      const calc = Math.round((new Date(pos.expiry.split('T')[0] + 'T12:00:00') - new Date(pos.enteredAt)) / 86400000);
       if (!isNaN(calc) && calc > 0) origDte = calc;
     }
     if (!origDte) origDte = pos.origDte || null;
@@ -1264,14 +1271,14 @@ function showPosDetail(id) {
   } else {
     let origDte = null;
     if (pos.expiry && pos.enteredAt && pos.enteredAt > 0) {
-      const calc = Math.round((new Date(pos.expiry + 'T12:00:00') - new Date(pos.enteredAt)) / 86400000);
+      const calc = Math.round((new Date(pos.expiry.split('T')[0] + 'T12:00:00') - new Date(pos.enteredAt)) / 86400000);
       if (!isNaN(calc) && calc > 0) origDte = calc;
     }
     const pctCap = effectiveCurPrem != null && pos.prem ? Math.round((1 - effectiveCurPrem / pos.prem) * 100) : null;
     const pctTime = (days !== null && origDte) ? Math.max(0, Math.round((1 - days / origDte) * 100)) : null;
     html += `<div class="dsec"><div class="dlbl">Option Details</div><div class="mgrid c2">
       <div class="met"><div class="met-l">Strike</div><div class="met-v b">$${pos.strike || '—'}</div></div>
-      <div class="met"><div class="met-l">Expiry</div><div class="met-v">${pos.expiry || '—'}</div></div>
+      <div class="met"><div class="met-l">Expiry</div><div class="met-v">${dDisp(pos.expiry)}</div></div>
       <div class="met"><div class="met-l">DTE remaining</div><div class="met-v ${days !== null && days <= 7 ? 'r' : 'a'}">${days !== null ? days + ' days' : '—'}</div></div>
       <div class="met"><div class="met-l">Open date</div><div class="met-v">${pos.enteredAt ? new Date(pos.enteredAt).toLocaleDateString() : '—'}</div></div>
       <div class="met"><div class="met-l">Premium collected</div><div class="met-v g">$${pos.prem ? Number(pos.prem).toFixed(2) : '—'}</div></div>
@@ -1322,7 +1329,7 @@ function showDetail(id) {
     html += `<div class="dsec"><div class="dlbl">Position Details</div><div class="mgrid c2">
       <div class="met"><div class="met-l">Strike</div><div class="met-v b">$${s.strike}</div></div>
       <div class="met"><div class="met-l">DTE left</div><div class="met-v a">${s.days}d</div></div>
-      <div class="met"><div class="met-l">Expiry</div><div class="met-v">${pos?.expiry || '—'}</div></div>
+      <div class="met"><div class="met-l">Expiry</div><div class="met-v">${dDisp(pos?.expiry)}</div></div>
       <div class="met"><div class="met-l">% elapsed</div><div class="met-v">${s.pctT !== null && s.pctT !== '—' ? s.pctT+'%' : '—'}</div></div>
       ${s.pctCap !== null ? `<div class="met"><div class="met-l">Premium captured</div><div class="met-v g">${s.pctCap}%</div></div>` : ''}
       ${pos?.prem ? `<div class="met"><div class="met-l">Collected</div><div class="met-v g">$${Number(pos.prem).toFixed(2)}</div></div>` : ''}
