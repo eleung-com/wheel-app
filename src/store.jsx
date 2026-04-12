@@ -139,6 +139,42 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // Screener Engine
+  const runScreener = async () => {
+    setSyncStatus({ state: 'syncing', msg: 'screening…' });
+    const tickers = [...new Set([...watchlist.map(w => w.ticker), ...positions.map(p => p.ticker)])];
+    
+    if (!tickers.length) {
+      setSyncStatus({ state: 'idle', msg: 'synced ✓' });
+      return;
+    }
+
+    const qmap = {};
+    for (const t of tickers) {
+      qmap[t] = await fetchQ(t, criteria);
+      await new Promise(r => setTimeout(r, 350));
+    }
+
+    const newW = watchlist.map(w => ({ ...w, liveData: qmap[w.ticker] || w.liveData }));
+    setWatchlist(newW);
+
+    // Refresh option prices
+    const optPositions = positions.filter(p => p.type !== 'shares' && p.expiry && p.strike);
+    let newP = [...positions];
+    for (const pos of optPositions) {
+      const livePrice = await fetchOptionPrice(pos.ticker, pos.type, pos.strike, pos.expiry);
+      if (livePrice !== null) {
+        const i = newP.findIndex(p => p.id === pos.id);
+        if (i !== -1) newP[i] = { ...newP[i], curPrem: livePrice };
+      }
+      await new Promise(r => setTimeout(r, 450));
+    }
+    setPositions(newP);
+    
+    setLastRefresh(Date.now());
+    setSyncStatus({ state: 'synced', msg: 'screened ✓' });
+  };
+
   useEffect(() => {
     if (sheetUrl && secret) {
       syncFromSheet();
@@ -155,7 +191,7 @@ export const AppProvider = ({ children }) => {
       criteria, setCriteria,
       syncStatus,
       lastRefresh, setLastRefresh,
-      syncFromSheet, syncToSheet
+      syncFromSheet, syncToSheet, runScreener
     }}>
       {children}
     </AppContext.Provider>

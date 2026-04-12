@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useAppContext } from './store'
 import './index.css'
 import InsightsPage from './components/InsightsPage'
 import PositionsPage from './components/PositionsPage'
@@ -6,6 +7,7 @@ import WatchlistPage from './components/WatchlistPage'
 
 function App() {
   const [activeTab, setActiveTab] = useState('signals')
+  const { syncStatus, lastRefresh, runScreener, syncFromSheet } = useAppContext()
 
   return (
     <>
@@ -14,14 +16,15 @@ function App() {
           <div className="logo">wheel<em>.</em>desk</div>
           <div className="hdr-sub">
             <div className="mkt">
-              <div className="dot" id="mkt-dot"></div><span id="mkt-txt">Checking…</span>
+              <div className="dot" id="mkt-dot" style={{ backgroundColor: syncStatus.state === 'syncing' ? 'var(--a)' : 'var(--g)' }}></div>
+              <span id="mkt-txt">{lastRefresh ? new Date(lastRefresh).toLocaleTimeString() : 'Awaiting sync...'}</span>
             </div>
-            <div className="sync-status idle">⬡ synced</div>
+            <div className={`sync-status ${syncStatus.state}`}>⬡ {syncStatus.msg}</div>
           </div>
         </div>
         <div className="hdr-r">
-          <div className="ibtn b">⇩</div>
-          <div className="ibtn g">↻</div>
+          <div className="ibtn b" onClick={syncFromSheet}>⇩</div>
+          <div className="ibtn g" onClick={runScreener}>↻</div>
         </div>
       </div>
 
