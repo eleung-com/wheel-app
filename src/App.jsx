@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import './index.css'
 import InsightsPage from './components/InsightsPage'
 import PositionsPage from './components/PositionsPage'
+import WatchlistPage from './components/WatchlistPage'
 
 function App() {
   const [activeTab, setActiveTab] = useState('signals')
@@ -35,7 +36,7 @@ function App() {
       <div className="page active">
         {activeTab === 'signals' && <div className="empty"><div className="empty-title">Loading Signals...</div></div>}
         {activeTab === 'positions' && <PositionsPage />}
-        {activeTab === 'watchlist' && <div className="empty"><div className="empty-title">Loading Watchlist...</div></div>}
+        {activeTab === 'watchlist' && <WatchlistPage />}
         {activeTab === 'criteria' && <div className="empty"><div className="empty-title">Loading Criteria...</div></div>}
         {activeTab === 'insights' && <InsightsPage />}
       </div>
