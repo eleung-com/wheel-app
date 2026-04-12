@@ -1248,14 +1248,16 @@
 
 <body>
 
-  <!-- PASSWORD GATE -->
+  <!-- SETUP GATE -->
   <div class="pw-gate" id="pw-gate">
     <div class="pw-logo">wheel<em>.</em>desk</div>
-    <div class="pw-sub">personal trading dashboard</div>
-    <input class="pw-input" id="pw-input" type="password" placeholder="••••••" maxlength="20"
-      autocomplete="current-password" onkeydown="if(event.key==='Enter')checkPw()">
-    <div class="pw-err" id="pw-err"></div>
-    <button class="pw-btn" onclick="checkPw()">Unlock</button>
+    <div class="pw-sub">Setup Google Sheets Connection</div>
+    <input class="pw-input" id="pw-sheet-url" type="text" placeholder="Script Deployment URL"
+      style="font-size:13px;letter-spacing:normal;max-width:320px;margin-bottom:10px" autocomplete="off">
+    <input class="pw-input" id="pw-secret" type="password" placeholder="Secret Key"
+      style="font-size:13px;letter-spacing:normal;max-width:320px" onkeydown="if(event.key==='Enter')saveSetup()">
+    <div class="pw-err" id="pw-err" style="margin-top:10px"></div>
+    <button class="pw-btn" onclick="saveSetup()" style="max-width:320px">Save & Connect</button>
   </div>
 
   <!-- BOOT SCREEN -->
@@ -1467,6 +1469,7 @@
     </div>
     <button class="btn-p" onclick="runScreener()" style="margin-bottom:8px">↻ Run Screener Now</button>
     <button class="btn-s" onclick="syncFromSheet()" style="margin-bottom:8px">⇩ Pull Latest from Google Sheets</button>
+    <button class="btn-s" onclick="clearConfig()" style="color:var(--r);border-color:rgba(255,82,82,.3)">Disconnect / Clear Config</button>
   </div>
 
   <!-- BOTTOM NAV -->
@@ -1616,8 +1619,8 @@
 
   <script>
     // ─── CONFIG ───────────────────────────────────────────────────────────────────
-    const SHEET_URL = 'https://script.google.com/macros/s/AKfycbymodm8UUcTjRLbDpifzHbqIPwXvDvEXomSgP0ORsf6pRqAsa0gfWd14hGqnDvmR-6-aQ/exec';
-    const SECRET = 'misd.600487';
+    let SHEET_URL = localStorage.getItem('wd_sheet_url') || '';
+    let SECRET = localStorage.getItem('wd_secret') || '';
 
     // ─── STATE ────────────────────────────────────────────────────────────────────
     let S = {
@@ -2579,33 +2582,32 @@
       document.getElementById('c-tg-chat').value = c.tgChat || '';
     }
 
-    // ─── PASSWORD GATE ────────────────────────────────────────────────────────────
-    const PW_HASH = '91f246abbb0228a339f1de989b124201d56e1938a72bd3f8ad9a57f79f586b92';
-    const PW_SESSION_KEY = 'wd_auth';
-
-    async function sha256(str) {
-      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    // ─── SETUP GATE ───────────────────────────────────────────────────────────────
+    function saveSetup() {
+      const urlVal = document.getElementById('pw-sheet-url').value.trim();
+      const secVal = document.getElementById('pw-secret').value.trim();
+      const err = document.getElementById('pw-err');
+      
+      if (!urlVal || !secVal) {
+        err.textContent = 'Both fields are required';
+        return;
+      }
+      
+      localStorage.setItem('wd_sheet_url', urlVal);
+      localStorage.setItem('wd_secret', secVal);
+      SHEET_URL = urlVal;
+      SECRET = secVal;
+      
+      document.getElementById('pw-gate').classList.add('hidden');
+      document.getElementById('boot').style.display = 'flex';
+      boot();
     }
 
-    async function checkPw() {
-      const val = document.getElementById('pw-input').value;
-      const err = document.getElementById('pw-err');
-      if (!val) { err.textContent = 'Enter your password'; return; }
-      const hash = await sha256(val);
-      if (hash === PW_HASH) {
-        sessionStorage.setItem(PW_SESSION_KEY, '1');
-        document.getElementById('pw-gate').classList.add('hidden');
-        boot();
-      } else {
-        err.textContent = 'Incorrect password';
-        document.getElementById('pw-input').value = '';
-        document.getElementById('pw-input').focus();
-        // brief shake animation
-        const input = document.getElementById('pw-input');
-        input.style.borderColor = 'var(--r)';
-        setTimeout(() => input.style.borderColor = '', 1200);
-      }
+    function clearConfig() {
+      if(!confirm('Clear Google Sheets connection and log out?')) return;
+      localStorage.removeItem('wd_sheet_url');
+      localStorage.removeItem('wd_secret');
+      location.reload();
     }
 
     // ─── BOOT ─────────────────────────────────────────────────────────────────────
@@ -2663,13 +2665,13 @@
       setInterval(syncFromSheet, 5 * 60 * 1000);
     }
 
-    // Check session — if already authed this session, skip gate and boot directly
-    if (sessionStorage.getItem(PW_SESSION_KEY) === '1') {
+    // Check configuration — if configured, skip gate and boot directly
+    if (SHEET_URL && SECRET) {
       document.getElementById('pw-gate').classList.add('hidden');
       boot();
     } else {
-      document.getElementById('boot').style.display = 'none'; // hide boot spinner until authed
-      document.getElementById('pw-input').focus();
+      document.getElementById('boot').style.display = 'none'; // hide boot spinner until configured
+      document.getElementById('pw-sheet-url').focus();
     }
   </script>
 </body>
