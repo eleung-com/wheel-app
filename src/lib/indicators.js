@@ -1,51 +1,37 @@
 import { getFinnhubKey } from './utils';
 
 export async function fetchQ(ticker, maPeriod = 200) {
-  const key = getFinnhubKey();
-  if (!key) return null;
-
   try {
-    const now   = Math.floor(Date.now() / 1000);
-    const from  = now - 400 * 86400; // ~400 days back for MA200 + buffer
+    // Historical OHLCV via Yahoo Finance proxy
+    const url = `/yf/v8/finance/chart/${ticker}?interval=1d&range=1y`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
+    if (!r.ok) return null;
+    const data = await r.json();
+    const res = data.chart?.result?.[0];
+    if (!res) return null;
 
-    // Candle data for OHLCV history
-    const candleUrl = `/fh/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${now}&token=${key}`;
-    const candleRes = await fetch(candleUrl, { signal: AbortSignal.timeout(8000) });
-    if (!candleRes.ok) return null;
-    const candle = await candleRes.json();
-    if (candle.s !== 'ok' || !candle.c?.length) return null;
+    const meta   = res.meta;
+    let price    = meta.regularMarketPrice;
+    let prev     = meta.chartPreviousClose || meta.previousClose || price;
+    const q0     = res.indicators?.quote?.[0] || {};
+    const closes = (q0.close || []).filter(v => v !== null);
+    const highs  = (q0.high  || []).filter(v => v !== null);
+    const lows   = (q0.low   || []).filter(v => v !== null);
 
-    // Quote for current price + prev close
-    const quoteUrl = `/fh/api/v1/quote?symbol=${ticker}&token=${key}`;
-    const quoteRes = await fetch(quoteUrl, { signal: AbortSignal.timeout(6000) });
-    let price = candle.c[candle.c.length - 1];
-    let prev  = candle.c.length >= 2 ? candle.c[candle.c.length - 2] : price;
-    let chg1d = null;
-    let h52   = null;
-    let l52   = null;
-
-    if (quoteRes.ok) {
-      const q = await quoteRes.json();
-      if (q.c && q.c > 0) price = q.c;
-      if (q.pc && q.pc > 0) {
-        prev  = q.pc;
-        chg1d = ((price - prev) / prev * 100);
-      }
-    }
-
-    const closes = candle.c;
-    const highs  = candle.h || [];
-    const lows   = candle.l || [];
-
-    // 52-week high/low from candle history (up to 252 trading days)
-    const yr = closes.slice(-252);
-    const yh = highs.slice(-252);
-    const yl = lows.slice(-252);
-    h52 = yh.length ? Math.max(...yh) : Math.max(...yr);
-    l52 = yl.length ? Math.min(...yl) : Math.min(...yr);
-
-    if (chg1d === null) {
-      chg1d = prev ? ((price - prev) / prev * 100) : null;
+    // Prefer Finnhub /quote for current price if key is available (more reliable real-time)
+    const key = getFinnhubKey();
+    let chg1d = prev ? ((price - prev) / prev * 100) : null;
+    if (key) {
+      try {
+        const qr = await fetch(`/fh/api/v1/quote?symbol=${ticker}&token=${key}`, { signal: AbortSignal.timeout(5000) });
+        if (qr.ok) {
+          const q = await qr.json();
+          if (q.c && q.c > 0) {
+            price = q.c;
+            if (q.pc && q.pc > 0) chg1d = ((price - q.pc) / q.pc * 100);
+          }
+        }
+      } catch (e) { /* fall back to Yahoo price */ }
     }
 
     // MA check
@@ -88,6 +74,8 @@ export async function fetchQ(ticker, maPeriod = 200) {
       const mn   = rets.reduce((a, b) => a + b, 0) / rets.length;
       const vr   = rets.reduce((a, b) => a + (b - mn) ** 2, 0) / rets.length;
       hv30       = Math.sqrt(vr * 252) * 100;
+      const h52  = meta.fiftyTwoWeekHigh || price;
+      const l52  = meta.fiftyTwoWeekLow  || price;
       const pctFrH = (h52 - price) / ((h52 - l52) || 1) * 100;
       ivrEst     = Math.min(99, Math.round(hv30 * 1.25 + pctFrH * 0.15));
     }

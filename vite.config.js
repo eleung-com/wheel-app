@@ -8,6 +8,11 @@ export default defineConfig({
     https: true,
     port: 5173,
     proxy: {
+      '/yf': {
+        target: 'https://query1.finance.yahoo.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/yf/, ''),
+      },
       '/fh': {
         target: 'https://finnhub.io',
         changeOrigin: true,

@@ -24,7 +24,7 @@ export function useScreener(showToast) {
       await new Promise(r => setTimeout(r, 450));
     }
     if (!silent && updated > 0)  showToast(`Options prices updated (${updated} position${updated > 1 ? 's' : ''})`, 'ok');
-    if (!silent && updated === 0) showToast('No live prices found — check Finnhub key in Settings', 'err');
+    if (!silent && updated === 0) showToast('No live option prices found', 'err');
   }, [dispatch, showToast]);
 
   const runScreener = useCallback(async () => {
@@ -51,10 +51,10 @@ export function useScreener(showToast) {
 
       const gotAny = Object.values(qmap).some(v => v !== null);
       if (!gotAny) {
-        showToast('⚠ Could not reach Finnhub — check your API key in Settings', 'err');
+        showToast('⚠ Could not fetch market data — indicators unavailable', 'err');
       }
 
-      // Update liveData: Finnhub provides indicators; sheet provides price (preferred)
+      // Update liveData for watchlist items
       for (const w of currentState.watchlist) {
         if (qmap[w.ticker]) {
           const sheetPrice = stateRef.current.watchlist.find(x => x.ticker === w.ticker)?.liveData?.price;

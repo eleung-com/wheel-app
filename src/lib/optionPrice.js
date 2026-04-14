@@ -1,5 +1,3 @@
-import { getFinnhubKey } from './utils';
-
 function findContract(contracts, strike) {
   if (!contracts || !contracts.length) return null;
   return contracts.find(c => Math.abs(c.strike - strike) < 0.01)
@@ -19,36 +17,61 @@ function priceFromContract(c) {
 }
 
 export async function fetchOptionPrice(ticker, type, strike, expiry) {
-  const key = getFinnhubKey();
-  if (!key || !ticker || !strike) return null;
+  if (!ticker || !strike) return null;
+  const contractType = type === 'short_put' ? 'puts' : 'calls';
 
-  const contractType = type === 'short_put' ? 'PUT' : 'CALL';
-
-  try {
-    // Finnhub option chain — optionally pass expiry to narrow results
-    let url = `/fh/api/v1/stock/option-chain?symbol=${ticker}&token=${key}`;
-    if (expiry) url += `&expiration=${expiry}`;
-
-    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) return null;
-    const data = await r.json();
-
-    // data.data is array of { expirationDate, options: { PUT: [...], CALL: [...] } }
-    const expiryGroups = data?.data || [];
-    if (!expiryGroups.length) return null;
-
-    // Prefer the exact expiry group; fall back to scanning all
-    let groups = expiryGroups;
-    if (expiry) {
-      const exact = expiryGroups.filter(g => g.expirationDate === expiry);
-      if (exact.length) groups = exact;
+  // Strategy 1: fetch with specific expiry date (try ±1 day offsets)
+  if (expiry) {
+    const baseMs = new Date(expiry + 'T12:00:00').getTime();
+    const offsets = [0, 86400000, -86400000, 172800000];
+    for (const offset of offsets) {
+      try {
+        const ts  = Math.floor((baseMs + offset) / 1000);
+        const url = `/yf/v7/finance/options/${ticker}?date=${ts}`;
+        const r   = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        if (!r.ok) continue;
+        const data = await r.json();
+        const opts = data?.optionChain?.result?.[0]?.options?.[0];
+        if (!opts) continue;
+        const match = findContract(opts[contractType] || [], strike);
+        const price = priceFromContract(match);
+        if (price !== null) return price;
+      } catch (e) { continue; }
+      await new Promise(r => setTimeout(r, 200));
     }
+  }
 
-    for (const group of groups) {
-      const contracts = group.options?.[contractType] || [];
-      const match = findContract(contracts, strike);
-      const price = priceFromContract(match);
-      if (price !== null) return price;
+  // Strategy 2: fetch without date, scan all available expiry dates
+  try {
+    const url = `/yf/v7/finance/options/${ticker}`;
+    const r   = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (r.ok) {
+      const data   = await r.json();
+      const result = data?.optionChain?.result?.[0];
+      if (result) {
+        const opts  = result.options?.[0];
+        if (opts) {
+          const match = findContract(opts[contractType] || [], strike);
+          const price = priceFromContract(match);
+          if (price !== null) return price;
+        }
+        if (expiry && result.expirationDates) {
+          for (const ts of result.expirationDates) {
+            try {
+              const url2 = `/yf/v7/finance/options/${ticker}?date=${ts}`;
+              const r2   = await fetch(url2, { signal: AbortSignal.timeout(8000) });
+              if (!r2.ok) continue;
+              const d2   = await r2.json();
+              const opts2 = d2?.optionChain?.result?.[0]?.options?.[0];
+              if (!opts2) continue;
+              const match2 = findContract(opts2[contractType] || [], strike);
+              const price2 = priceFromContract(match2);
+              if (price2 !== null) return price2;
+            } catch (e) { continue; }
+            await new Promise(r => setTimeout(r, 200));
+          }
+        }
+      }
     }
   } catch (e) {}
 
