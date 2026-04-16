@@ -10,8 +10,9 @@ export function getTradierKey()  { return localStorage.getItem(LS_TRADIER_KEY) |
 export function isConfigured()   { return !!getSheetUrl() && !!getSecret(); }
 
 // Returns { url, headers } for a Tradier API call.
-// On localhost uses the Vite proxy (/tr/...) which injects the Authorization header server-side.
-// In production (GitHub Pages etc.) calls Tradier directly with the key in the Authorization header.
+// On localhost: uses the Vite proxy (/tr/...) which injects Authorization server-side (no CORS).
+// In production: appends access_token as a query param — avoids the CORS preflight that the
+// Authorization header would trigger, since Tradier doesn't respond to OPTIONS pre-flights.
 export function tradierRequest(path) {
   const key = getTradierKey();
   if (!key) return null;
@@ -19,7 +20,8 @@ export function tradierRequest(path) {
   if (isLocal) {
     return { url: `/tr${path}`, headers: { 'x-tradier-token': key, 'Accept': 'application/json' } };
   }
-  return { url: `https://api.tradier.com${path}`, headers: { 'Authorization': `Bearer ${key}`, 'Accept': 'application/json' } };
+  const sep = path.includes('?') ? '&' : '?';
+  return { url: `https://api.tradier.com${path}${sep}access_token=${encodeURIComponent(key)}`, headers: { 'Accept': 'application/json' } };
 }
 
 export function dte(expiry) {
