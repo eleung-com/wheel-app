@@ -1,19 +1,14 @@
-import { getTradierKey } from './utils';
-
-function tradierHeaders() {
-  const key = getTradierKey();
-  return key ? { 'x-tradier-token': key, 'Accept': 'application/json' } : null;
-}
+import { tradierRequest } from './utils';
 
 export async function fetchOptionPrice(ticker, type, strike, expiry) {
-  const headers = tradierHeaders();
-  if (!headers || !ticker || !strike || !expiry) return null;
+  const req = tradierRequest('');
+  if (!req || !ticker || !strike || !expiry) return null;
 
   const optionType = type === 'short_put' ? 'put' : 'call';
 
   try {
     // Fetch the option chain for the specific expiry date
-    const url = `/tr/v1/markets/options/chains?symbol=${ticker}&expiration=${expiry}&greeks=false`;
+    const { url, headers } = tradierRequest(`/v1/markets/options/chains?symbol=${ticker}&expiration=${expiry}&greeks=false`);
     const r   = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
     if (!r.ok) return null;
 

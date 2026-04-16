@@ -1,20 +1,14 @@
-import { getTradierKey } from './utils';
-
-function tradierHeaders() {
-  const key = getTradierKey();
-  // Key is sent in a custom header; the Vite proxy swaps it for Authorization: Bearer
-  return key ? { 'x-tradier-token': key, 'Accept': 'application/json' } : null;
-}
+import { tradierRequest } from './utils';
 
 export async function fetchQ(ticker, maPeriod = 200) {
-  const headers = tradierHeaders();
-  if (!headers) return null;
+  const req = tradierRequest('');
+  if (!req) return null;
 
   try {
     // Daily OHLCV history — request ~400 calendar days to cover MA-200 + buffer
     const end   = new Date().toISOString().slice(0, 10);
     const start = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10);
-    const histUrl = `/tr/v1/markets/history?symbol=${ticker}&interval=daily&start=${start}&end=${end}`;
+    const { url: histUrl, headers } = tradierRequest(`/v1/markets/history?symbol=${ticker}&interval=daily&start=${start}&end=${end}`);
 
     const histRes = await fetch(histUrl, { headers, signal: AbortSignal.timeout(8000) });
     if (!histRes.ok) return null;
@@ -36,8 +30,8 @@ export async function fetchQ(ticker, maPeriod = 200) {
     let chg1d = prev ? ((price - prev) / prev * 100) : null;
 
     try {
-      const quoteUrl = `/tr/v1/markets/quotes?symbols=${ticker}`;
-      const quoteRes = await fetch(quoteUrl, { headers, signal: AbortSignal.timeout(5000) });
+      const { url: quoteUrl, headers: quoteHeaders } = tradierRequest(`/v1/markets/quotes?symbols=${ticker}`);
+      const quoteRes = await fetch(quoteUrl, { headers: quoteHeaders, signal: AbortSignal.timeout(5000) });
       if (quoteRes.ok) {
         const qd = await quoteRes.json();
         // Tradier wraps single result as object, multiple as array
