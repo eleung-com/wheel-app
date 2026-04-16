@@ -1,79 +1,44 @@
-function findContract(contracts, strike) {
-  if (!contracts || !contracts.length) return null;
-  return contracts.find(c => Math.abs(c.strike - strike) < 0.01)
-      || contracts.find(c => Math.abs(c.strike - strike) <= 0.50)
-      || contracts.find(c => Math.abs(c.strike - strike) <= 1.00)
-      || null;
-}
+import { getTradierKey } from './utils';
 
-function priceFromContract(c) {
-  if (!c) return null;
-  const bid = c.bid ?? null, ask = c.ask ?? null;
-  if (bid !== null && ask !== null && bid > 0 && ask > 0) {
-    return parseFloat(((bid + ask) / 2).toFixed(2));
-  }
-  if (c.lastPrice && c.lastPrice > 0) return parseFloat(c.lastPrice.toFixed(2));
-  return null;
+function tradierHeaders() {
+  const key = getTradierKey();
+  return key ? { 'x-tradier-token': key, 'Accept': 'application/json' } : null;
 }
 
 export async function fetchOptionPrice(ticker, type, strike, expiry) {
-  if (!ticker || !strike) return null;
-  const contractType = type === 'short_put' ? 'puts' : 'calls';
+  const headers = tradierHeaders();
+  if (!headers || !ticker || !strike || !expiry) return null;
 
-  // Strategy 1: fetch with specific expiry date (try ±1 day offsets)
-  if (expiry) {
-    const baseMs = new Date(expiry + 'T12:00:00').getTime();
-    const offsets = [0, 86400000, -86400000, 172800000];
-    for (const offset of offsets) {
-      try {
-        const ts  = Math.floor((baseMs + offset) / 1000);
-        const url = `/yf/v7/finance/options/${ticker}?date=${ts}`;
-        const r   = await fetch(url, { signal: AbortSignal.timeout(8000) });
-        if (!r.ok) continue;
-        const data = await r.json();
-        const opts = data?.optionChain?.result?.[0]?.options?.[0];
-        if (!opts) continue;
-        const match = findContract(opts[contractType] || [], strike);
-        const price = priceFromContract(match);
-        if (price !== null) return price;
-      } catch (e) { continue; }
-      await new Promise(r => setTimeout(r, 200));
-    }
-  }
+  const optionType = type === 'short_put' ? 'put' : 'call';
 
-  // Strategy 2: fetch without date, scan all available expiry dates
   try {
-    const url = `/yf/v7/finance/options/${ticker}`;
-    const r   = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (r.ok) {
-      const data   = await r.json();
-      const result = data?.optionChain?.result?.[0];
-      if (result) {
-        const opts  = result.options?.[0];
-        if (opts) {
-          const match = findContract(opts[contractType] || [], strike);
-          const price = priceFromContract(match);
-          if (price !== null) return price;
-        }
-        if (expiry && result.expirationDates) {
-          for (const ts of result.expirationDates) {
-            try {
-              const url2 = `/yf/v7/finance/options/${ticker}?date=${ts}`;
-              const r2   = await fetch(url2, { signal: AbortSignal.timeout(8000) });
-              if (!r2.ok) continue;
-              const d2   = await r2.json();
-              const opts2 = d2?.optionChain?.result?.[0]?.options?.[0];
-              if (!opts2) continue;
-              const match2 = findContract(opts2[contractType] || [], strike);
-              const price2 = priceFromContract(match2);
-              if (price2 !== null) return price2;
-            } catch (e) { continue; }
-            await new Promise(r => setTimeout(r, 200));
-          }
-        }
-      }
-    }
-  } catch (e) {}
+    // Fetch the option chain for the specific expiry date
+    const url = `/tr/v1/markets/options/chains?symbol=${ticker}&expiration=${expiry}&greeks=false`;
+    const r   = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+    if (!r.ok) return null;
 
-  return null;
+    const data = await r.json();
+    const raw  = data?.options?.option;
+    if (!raw) return null;
+
+    // Tradier returns object (not array) when only one contract
+    const contracts = (Array.isArray(raw) ? raw : [raw])
+      .filter(o => o.option_type === optionType);
+
+    // Find closest strike
+    const match = contracts.find(o => Math.abs(o.strike - strike) < 0.01)
+      || contracts.find(o => Math.abs(o.strike - strike) <= 0.50)
+      || contracts.find(o => Math.abs(o.strike - strike) <= 1.00);
+
+    if (!match) return null;
+
+    const bid = match.bid ?? null, ask = match.ask ?? null;
+    if (bid !== null && ask !== null && bid > 0 && ask > 0) {
+      return parseFloat(((bid + ask) / 2).toFixed(2));
+    }
+    if (match.last && match.last > 0) return parseFloat(match.last.toFixed(2));
+    return null;
+  } catch (e) {
+    return null;
+  }
 }

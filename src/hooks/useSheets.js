@@ -30,50 +30,62 @@ export function useSheets(showToast) {
     }
   }, [showToast]);
 
-  // Primary write path — GET with URL-encoded payload to avoid CORS
+  // Write via POST with Content-Type: text/plain — avoids CORS preflight and GET URL length limits
   const sheetWriteViaGet = useCallback(async (overrideState) => {
     const s = overrideState || stateRef.current;
     setSync('syncing', 'saving…');
     try {
-      const payload = JSON.stringify({
+      const data = {
         watchlist: s.watchlist.map(w => ({ ticker: w.ticker, addedAt: w.addedAt })),
         positions: s.positions.map(p => ({
-          id: p.id, ticker: p.ticker, type: p.type, qty: p.qty, cost: p.cost,
+          id:          p.id,
+          ticker:      p.ticker,
+          type:        p.type,
+          qty:         p.qty,
+          cost:        p.cost,
           marketPrice: p.type === 'shares' ? (p._livePrice || p.marketPrice || '') : '',
-          strike:      p.strike   !== undefined ? p.strike   : '',
-          expiry:      p.expiry   || '',
-          prem:        p.prem     !== undefined ? p.prem     : '',
-          curPrem:     p.curPrem  !== undefined ? p.curPrem  : '',
-          notes:       p.notes    || '',
-          enteredAt:   p.enteredAt || '',
+          strike:      p.strike      !== undefined ? p.strike      : '',
+          expiry:      p.expiry      || '',
+          prem:        p.prem        !== undefined ? p.prem        : '',
+          curPrem:     p.curPrem     !== undefined ? p.curPrem     : '',
+          notes:       p.notes       || '',
+          enteredAt:   p.enteredAt   || '',
+          posType:     p.posType     || '',
+          closePrice:  p.closePrice  !== undefined ? p.closePrice  : '',
+          pnl:         p.pnl         !== undefined ? p.pnl         : '',
+          linkedId:    p.linkedId    !== undefined ? p.linkedId    : '',
+          rolledToId:  p.rolledToId  !== undefined ? p.rolledToId  : '',
+          sharesAcquired: p.sharesAcquired !== undefined ? p.sharesAcquired : '',
+          costBasis:   p.costBasis   !== undefined ? p.costBasis   : '',
         })),
         closedTrades: (s.closedTrades || []).map(t => ({
           id: t.id, ticker: t.ticker, posType: t.posType, closeType: t.closeType,
           qty: t.qty,
-          strike:       t.strike        !== undefined ? t.strike        : '',
-          expiry:       t.expiry        || '',
-          openDate:     t.openDate      || '',
-          closeDate:    t.closeDate     || '',
-          premCollected:t.premCollected !== undefined ? t.premCollected : '',
-          closePrice:   t.closePrice    !== undefined ? t.closePrice    : '',
-          pnl:          t.pnl           !== undefined ? t.pnl           : '',
-          notes:        t.notes         || '',
+          strike:        t.strike        !== undefined ? t.strike        : '',
+          expiry:        t.expiry        || '',
+          openDate:      t.openDate      || '',
+          closeDate:     t.closeDate     || '',
+          premCollected: t.premCollected !== undefined ? t.premCollected : '',
+          closePrice:    t.closePrice    !== undefined ? t.closePrice    : '',
+          pnl:           t.pnl           !== undefined ? t.pnl           : '',
+          notes:         t.notes         || '',
           sharesAcquired: t.sharesAcquired !== undefined ? t.sharesAcquired : '',
-          costBasis:    t.costBasis     !== undefined ? t.costBasis     : '',
-          rolledToId:   t.rolledToId    !== undefined ? t.rolledToId    : '',
+          costBasis:     t.costBasis     !== undefined ? t.costBasis     : '',
+          rolledToId:    t.rolledToId    !== undefined ? t.rolledToId    : '',
         })),
         criteria: s.criteria,
-        signals:  s.signals.map(sig => ({
-          id: sig.id, type: sig.type, ticker: sig.ticker,
-          suggestion: sig.suggestion, ts: sig.ts,
-        })),
+      };
+      const body = JSON.stringify({ secret: getSecret(), action: 'write', data });
+      const r = await fetch(getSheetUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body,
+        signal: AbortSignal.timeout(30000),
       });
-      const url = `${getSheetUrl()}?secret=${encodeURIComponent(getSecret())}&action=write&data=${encodeURIComponent(payload)}`;
-      const r   = await fetch(url, { signal: AbortSignal.timeout(15000) });
       const text = await r.text();
-      let data;
-      try { data = JSON.parse(text); } catch (e) { data = { ok: true }; }
-      if (data && data.error) throw new Error(data.error);
+      let resp;
+      try { resp = JSON.parse(text); } catch (_) { resp = { ok: true }; }
+      if (resp && resp.error) throw new Error(resp.error);
       setSync('synced', 'saved ✓');
       showToast('Saved to Google Sheets', 'ok');
     } catch (e) {
@@ -88,21 +100,19 @@ export function useSheets(showToast) {
     if (!data) return;
 
     if (Array.isArray(data.watchlist)) {
+      const seen = new Set();
       dispatch({
         type: 'SET_WATCHLIST',
-        payload: data.watchlist.map(w => {
-          const existing = stateRef.current.watchlist.find(x => x.ticker === w.ticker);
-          // Merge sheet price into liveData, preserving any existing screener metrics
-          const sheetPrice = w.price ? { price: Number(w.price) } : null;
-          const liveData = existing?.liveData
-            ? { ...existing.liveData, ...(sheetPrice || {}) }
-            : sheetPrice;
-          return {
-            ticker:   String(w.ticker),
-            addedAt:  w.addedAt || Date.now(),
-            liveData,
-          };
-        }),
+        payload: data.watchlist
+          .map(w => {
+            const existing = stateRef.current.watchlist.find(x => x.ticker === w.ticker);
+            const sheetPrice = w.price ? { price: Number(w.price) } : null;
+            const liveData = existing?.liveData
+              ? { ...existing.liveData, ...(sheetPrice || {}) }
+              : sheetPrice;
+            return { ticker: String(w.ticker), addedAt: w.addedAt || Date.now(), liveData };
+          })
+          .filter(w => w.ticker && !seen.has(w.ticker) && seen.add(w.ticker)),
       });
     }
 

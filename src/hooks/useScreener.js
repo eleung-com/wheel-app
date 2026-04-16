@@ -51,7 +51,7 @@ export function useScreener(showToast) {
 
       const gotAny = Object.values(qmap).some(v => v !== null);
       if (!gotAny) {
-        showToast('⚠ Could not fetch market data — indicators unavailable', 'err');
+        showToast('⚠ No market data — add your Tradier API key in Settings', 'err');
       }
 
       // Update liveData for watchlist items

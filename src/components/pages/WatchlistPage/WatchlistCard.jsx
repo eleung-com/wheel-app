@@ -11,9 +11,9 @@ export default function WatchlistCard({ watch: w, criteria: cr, onRemove }) {
     st    = 'waiting';
   } else {
     const chks = [
-      { l: `IVR ${d.ivrEst   !== null ? d.ivrEst + '%'         : '?'}`, ok: d.ivrEst   !== null && d.ivrEst   >= cr.ivr   },
-      { l: `RSI ${d.rsiEst   !== null ? d.rsiEst.toFixed(0)    : '?'}`, ok: d.rsiEst   !== null && d.rsiEst   <= cr.rsi   },
-      { l: `Stoch ${d.stochEst !== null ? d.stochEst.toFixed(0) : '?'}`, ok: d.stochEst !== null && d.stochEst <= cr.stoch },
+      { l: `IVR ${d.ivrEst   != null ? d.ivrEst + '%'         : '?'}`, ok: d.ivrEst   != null && d.ivrEst   >= cr.ivr   },
+      { l: `RSI ${d.rsiEst   != null ? d.rsiEst.toFixed(0)    : '?'}`, ok: d.rsiEst   != null && d.rsiEst   <= cr.rsi   },
+      { l: `Stoch ${d.stochEst != null ? d.stochEst.toFixed(0) : '?'}`, ok: d.stochEst != null && d.stochEst <= cr.stoch },
       { l: `${cr.ma}MA`, ok: d.aboveMa !== false },
     ];
     pills = chks.map((ch, i) => (
@@ -28,7 +28,7 @@ export default function WatchlistCard({ watch: w, criteria: cr, onRemove }) {
   }
 
   const price = d?.price ? `$${d.price.toFixed(2)}` : '—';
-  const chgEl = d?.chg1d !== null && d?.chg1d !== undefined
+  const chgEl = d?.chg1d != null
     ? <span style={{ color: `var(--${d.chg1d >= 0 ? 'g' : 'r'})` }}>{d.chg1d >= 0 ? '+' : ''}{d.chg1d.toFixed(1)}%</span>
     : null;
 

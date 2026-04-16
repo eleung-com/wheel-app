@@ -27,8 +27,8 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
           <div className="dlbl">Technical Snapshot</div>
           <div className="mgrid c3">
             <div className="met"><div className="met-l">IVR (est.)</div><div className="met-v b">{s.ivr !== null ? `${s.ivr}%` : '—'}</div></div>
-            <div className="met"><div className="met-l">RSI-14</div><div className="met-v">{s.rsi !== null ? s.rsi.toFixed(0) : '—'}</div></div>
-            <div className="met"><div className="met-l">Stoch %K</div><div className="met-v">{s.stoch !== null ? s.stoch.toFixed(0) : '—'}</div></div>
+            <div className="met"><div className="met-l">RSI-14</div><div className="met-v">{s.rsi != null ? s.rsi.toFixed(0) : '—'}</div></div>
+            <div className="met"><div className="met-l">Stoch %K</div><div className="met-v">{s.stoch != null ? s.stoch.toFixed(0) : '—'}</div></div>
           </div>
         </div>
       )}

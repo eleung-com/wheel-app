@@ -1,38 +1,56 @@
-import { getFinnhubKey } from './utils';
+import { getTradierKey } from './utils';
+
+function tradierHeaders() {
+  const key = getTradierKey();
+  // Key is sent in a custom header; the Vite proxy swaps it for Authorization: Bearer
+  return key ? { 'x-tradier-token': key, 'Accept': 'application/json' } : null;
+}
 
 export async function fetchQ(ticker, maPeriod = 200) {
+  const headers = tradierHeaders();
+  if (!headers) return null;
+
   try {
-    // Historical OHLCV via Yahoo Finance proxy
-    const url = `/yf/v8/finance/chart/${ticker}?interval=1d&range=1y`;
-    const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
-    if (!r.ok) return null;
-    const data = await r.json();
-    const res = data.chart?.result?.[0];
-    if (!res) return null;
+    // Daily OHLCV history — request ~400 calendar days to cover MA-200 + buffer
+    const end   = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10);
+    const histUrl = `/tr/v1/markets/history?symbol=${ticker}&interval=daily&start=${start}&end=${end}`;
 
-    const meta   = res.meta;
-    let price    = meta.regularMarketPrice;
-    let prev     = meta.chartPreviousClose || meta.previousClose || price;
-    const q0     = res.indicators?.quote?.[0] || {};
-    const closes = (q0.close || []).filter(v => v !== null);
-    const highs  = (q0.high  || []).filter(v => v !== null);
-    const lows   = (q0.low   || []).filter(v => v !== null);
+    const histRes = await fetch(histUrl, { headers, signal: AbortSignal.timeout(8000) });
+    if (!histRes.ok) return null;
+    const histData = await histRes.json();
 
-    // Prefer Finnhub /quote for current price if key is available (more reliable real-time)
-    const key = getFinnhubKey();
+    const days = histData?.history?.day;
+    if (!days?.length) return null;
+
+    // Tradier returns a single object (not array) when only one day — normalise
+    const dayArr = Array.isArray(days) ? days : [days];
+
+    const closes = dayArr.map(d => d.close);
+    const highs  = dayArr.map(d => d.high);
+    const lows   = dayArr.map(d => d.low);
+
+    // Current quote for live price + prev close
+    let price = closes[closes.length - 1];
+    let prev  = closes.length >= 2 ? closes[closes.length - 2] : price;
     let chg1d = prev ? ((price - prev) / prev * 100) : null;
-    if (key) {
-      try {
-        const qr = await fetch(`/fh/api/v1/quote?symbol=${ticker}&token=${key}`, { signal: AbortSignal.timeout(5000) });
-        if (qr.ok) {
-          const q = await qr.json();
-          if (q.c && q.c > 0) {
-            price = q.c;
-            if (q.pc && q.pc > 0) chg1d = ((price - q.pc) / q.pc * 100);
+
+    try {
+      const quoteUrl = `/tr/v1/markets/quotes?symbols=${ticker}`;
+      const quoteRes = await fetch(quoteUrl, { headers, signal: AbortSignal.timeout(5000) });
+      if (quoteRes.ok) {
+        const qd = await quoteRes.json();
+        // Tradier wraps single result as object, multiple as array
+        const q = qd?.quotes?.quote;
+        const quote = Array.isArray(q) ? q.find(x => x.symbol === ticker) : q;
+        if (quote?.last && quote.last > 0) {
+          price = quote.last;
+          if (quote.prevclose && quote.prevclose > 0) {
+            chg1d = ((price - quote.prevclose) / quote.prevclose * 100);
           }
         }
-      } catch (e) { /* fall back to Yahoo price */ }
-    }
+      }
+    } catch (e) { /* fall back to last close from history */ }
 
     // MA check
     let aboveMa = null;
@@ -66,7 +84,7 @@ export async function fetchQ(ticker, maPeriod = 200) {
       stochEst = hh === ll ? 50 : parseFloat(((price - ll) / (hh - ll) * 100).toFixed(1));
     }
 
-    // HV30 → IVR estimate
+    // HV30 → IVR estimate (annualised from 21-day log returns)
     let ivrEst = null, hv30 = null;
     if (closes.length >= 22) {
       const rc   = closes.slice(-22);
@@ -74,10 +92,15 @@ export async function fetchQ(ticker, maPeriod = 200) {
       const mn   = rets.reduce((a, b) => a + b, 0) / rets.length;
       const vr   = rets.reduce((a, b) => a + (b - mn) ** 2, 0) / rets.length;
       hv30       = Math.sqrt(vr * 252) * 100;
-      const h52  = meta.fiftyTwoWeekHigh || price;
-      const l52  = meta.fiftyTwoWeekLow  || price;
+
+      // 52-week range from history
+      const yr  = closes.slice(-252);
+      const yh  = highs.slice(-252);
+      const yl  = lows.slice(-252);
+      const h52 = yh.length ? Math.max(...yh) : Math.max(...yr);
+      const l52 = yl.length ? Math.min(...yl) : Math.min(...yr);
       const pctFrH = (h52 - price) / ((h52 - l52) || 1) * 100;
-      ivrEst     = Math.min(99, Math.round(hv30 * 1.25 + pctFrH * 0.15));
+      ivrEst = Math.min(99, Math.round(hv30 * 1.25 + pctFrH * 0.15));
     }
 
     return { price, chg1d, aboveMa, rsiEst, stochEst, ivrEst, hv30 };

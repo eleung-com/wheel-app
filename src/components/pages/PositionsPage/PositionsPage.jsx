@@ -17,7 +17,7 @@ export default function PositionsPage({ positions, watchlist, onSelectOptPos, on
 
   // Group shares by ticker
   const shareGroups = {};
-  for (const pos of positions.filter(p => p.type === 'shares')) {
+  for (const pos of positions.filter(p => p.type === 'shares' && !p.linkedId)) {
     if (!shareGroups[pos.ticker]) {
       shareGroups[pos.ticker] = { ticker: pos.ticker, lots: [], totalQty: 0, totalCost: 0 };
     }
@@ -26,7 +26,9 @@ export default function PositionsPage({ positions, watchlist, onSelectOptPos, on
     shareGroups[pos.ticker].totalCost += (pos.cost || 0) * pos.qty;
   }
 
-  const optPositions = positions.filter(p => p.type !== 'shares');
+  // Only active option rows — exclude close entries and any opening row that has been linked (closed)
+  const ACTIVE_OPTION_TYPES = new Set(['short_put', 'short_call']);
+  const optPositions = positions.filter(p => ACTIVE_OPTION_TYPES.has(p.type) && !p.linkedId);
 
   return (
     <div>

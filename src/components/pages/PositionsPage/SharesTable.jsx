@@ -10,6 +10,7 @@ export default function SharesTable({ shareGroups, watchlist, onShowGroup }) {
         <span style={{ background: 'var(--bl)' }}></span>Shares
       </div>
       <div style={{ background: 'var(--s1)', border: '1px solid var(--b1)', borderRadius: 'var(--rr)', overflow: 'hidden', marginBottom: 12 }}>
+        <div className="pos-table-wrap">
         <table className="pos-table">
           <thead>
             <tr>
@@ -47,6 +48,7 @@ export default function SharesTable({ shareGroups, watchlist, onShowGroup }) {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   );

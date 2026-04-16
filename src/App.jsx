@@ -11,13 +11,13 @@ import AuthGate    from './components/AuthGate/AuthGate';
 import BootScreen  from './components/BootScreen/BootScreen';
 import Header      from './components/Header/Header';
 import TabNav      from './components/TabNav/TabNav';
-import BottomNav   from './components/BottomNav/BottomNav';
 import FAB         from './components/FAB/FAB';
 import Toast       from './components/Toast/Toast';
 
 import SignalsPage   from './components/pages/SignalsPage/SignalsPage';
 import PositionsPage from './components/pages/PositionsPage/PositionsPage';
 import WatchlistPage from './components/pages/WatchlistPage/WatchlistPage';
+import HistoryPage   from './components/pages/HistoryPage/HistoryPage';
 import CriteriaPage  from './components/pages/CriteriaPage/CriteriaPage';
 
 import ModalOverlay           from './components/modals/ModalOverlay';
@@ -63,13 +63,16 @@ export default function App() {
     const data = await sheetRead();
     if (data) {
       if (Array.isArray(data.watchlist)) {
+        const seen = new Set();
         dispatch({
           type: 'SET_WATCHLIST',
-          payload: data.watchlist.map(w => ({
-            ticker:   String(w.ticker || ''),
-            addedAt:  w.addedAt || Date.now(),
-            liveData: w.price ? { price: Number(w.price) } : null,
-          })),
+          payload: data.watchlist
+            .map(w => ({
+              ticker:   String(w.ticker || ''),
+              addedAt:  w.addedAt || Date.now(),
+              liveData: w.price ? { price: Number(w.price) } : null,
+            }))
+            .filter(w => w.ticker && !seen.has(w.ticker) && seen.add(w.ticker)),
         });
       }
       if (Array.isArray(data.positions)) {
@@ -212,28 +215,47 @@ export default function App() {
     const pos = state.positions.find(p => p.id === posId);
     if (!pos) return;
 
-    const logEntry = {
+    // New row appended to positions for the close action — original row is kept intact
+    const closeEntry = {
       id:           Date.now(),
       ticker:       pos.ticker,
-      posType:      pos.type,
-      closeType:    details.closeType,
+      type:         details.closeType,   // 'btc' | 'expired' | 'assigned' | 'rolled'
+      posType:      pos.type,            // original strategy type (short_put / short_call)
       qty:          pos.qty,
       strike:       pos.strike,
       expiry:       pos.expiry,
-      openDate:     pos.enteredAt,
-      closeDate:    details.closeDate,
-      premCollected:pos.prem,
+      prem:         pos.prem,            // original premium collected
+      cost:         0,
+      notes:        pos.notes,
+      enteredAt:    details.closeDate,   // row timestamp = close date
       closePrice:   details.closePrice,
       pnl:          details.pnl,
-      notes:        pos.notes,
+      linkedId:     posId,               // links back to the opening row
       ...(details.sharesAcquired !== undefined ? { sharesAcquired: details.sharesAcquired, costBasis: details.costBasis } : {}),
-      ...(details.newPosition    !== undefined ? { rolledToId: details.newPosition.id } : {}),
+      ...(details.newPosition    !== undefined ? { rolledToId: details.newPosition.id }                                    : {}),
     };
 
-    dispatch({ type: 'ADD_CLOSED_TRADE', payload: logEntry });
-    dispatch({ type: 'DELETE_POSITION',  payload: posId });
+    // Also keep closedTrades in sync for future Insights tab
+    const logEntry = {
+      id: closeEntry.id, ticker: pos.ticker, posType: pos.type,
+      closeType: details.closeType, qty: pos.qty, strike: pos.strike,
+      expiry: pos.expiry, openDate: pos.enteredAt, closeDate: details.closeDate,
+      premCollected: pos.prem, closePrice: details.closePrice, pnl: details.pnl,
+      notes: pos.notes,
+      ...(details.sharesAcquired !== undefined ? { sharesAcquired: details.sharesAcquired, costBasis: details.costBasis } : {}),
+      ...(details.newPosition    !== undefined ? { rolledToId: details.newPosition.id }                                    : {}),
+    };
 
-    let nextPositions    = state.positions.filter(p => p.id !== posId);
+    // Stamp the original opening row with the close entry's id — two-way link
+    const closedOriginal = { ...pos, linkedId: closeEntry.id };
+
+    dispatch({ type: 'UPDATE_POSITION',  payload: closedOriginal });
+    dispatch({ type: 'ADD_POSITION',     payload: closeEntry });
+    dispatch({ type: 'ADD_CLOSED_TRADE', payload: logEntry });
+
+    // nextPositions: replace original with stamped version, append close entry
+    let nextPositions = state.positions.map(p => p.id === posId ? closedOriginal : p);
+    nextPositions = [...nextPositions, closeEntry];
     const nextClosedTrades = [...state.closedTrades, logEntry];
 
     if (details.closeType === 'rolled' && details.newPosition) {
@@ -326,6 +348,10 @@ export default function App() {
         />
       </div>
 
+      <div className={`page${activePage === 'pg-history' ? ' active' : ''}`} id="pg-history">
+        <HistoryPage positions={state.positions} />
+      </div>
+
       <div className={`page${activePage === 'pg-criteria' ? ' active' : ''}`} id="pg-criteria">
         <CriteriaPage
           criteria={state.criteria}
@@ -335,7 +361,6 @@ export default function App() {
         />
       </div>
 
-      <BottomNav activePage={activePage} onSwitch={setActivePage} />
       <FAB activePage={activePage} onClick={handleFabClick} />
       <Toast message={toast.message} type={toast.type} visible={toast.visible} />
 

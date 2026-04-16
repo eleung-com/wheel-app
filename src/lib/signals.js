@@ -16,9 +16,9 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
     const hasOpt  = positions.find(p => p.ticker === w.ticker && p.type !== 'shares');
 
     const chks = [
-      { l: `IVR ${q.ivrEst   !== null ? q.ivrEst + '%'         : '?'}`, ok: ivrOk,   tgt: `≥${cr.ivr}%`  },
-      { l: `RSI ${q.rsiEst   !== null ? q.rsiEst.toFixed(0)    : '?'}`, ok: rsiOk,   tgt: `<${cr.rsi}`   },
-      { l: `Stoch ${q.stochEst !== null ? q.stochEst.toFixed(0) : '?'}`, ok: stochOk, tgt: `<${cr.stoch}` },
+      { l: `IVR ${q.ivrEst   != null ? q.ivrEst + '%'         : '?'}`, ok: ivrOk,   tgt: `≥${cr.ivr}%`  },
+      { l: `RSI ${q.rsiEst   != null ? q.rsiEst.toFixed(0)    : '?'}`, ok: rsiOk,   tgt: `<${cr.rsi}`   },
+      { l: `Stoch ${q.stochEst != null ? q.stochEst.toFixed(0) : '?'}`, ok: stochOk, tgt: `<${cr.stoch}` },
       { l: `${cr.ma}MA`, ok: maOk, tgt: 'Above' },
     ];
     const allOk = ivrOk && rsiOk && stochOk && maOk;
@@ -26,16 +26,17 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
 
     if (!hasOpt) {
       if (allOk) {
-        const strike  = suggestStrike(q.price, cr.delta, 'put');
-        const dteT    = Math.round((cr.dteMin + cr.dteMax) / 2);
-        const premEst = q.hv30
+        const deltaMid = Math.round((cr.deltaMin + cr.deltaMax) / 2);
+        const strike   = suggestStrike(q.price, deltaMid, 'put');
+        const dteT     = Math.round((cr.dteMin + cr.dteMax) / 2);
+        const premEst  = q.hv30
           ? (q.price * (q.hv30 / 100) * Math.sqrt(dteT / 365) * 0.4).toFixed(2)
           : null;
         sigs.push({
           id: `csp-${w.ticker}`, type: 'csp', ticker: w.ticker,
           price: q.price, chg: q.chg1d, strike, dteTarget: dteT, premEst,
           ivr: q.ivrEst, rsi: q.rsiEst, stoch: q.stochEst, chks,
-          suggestion: `Sell ${dteT}d $${strike} put${premEst ? ` · est. ~$${premEst}/contract` : ''}`,
+          suggestion: `Sell ${dteT}d $${strike} put · ${cr.deltaMin}–${cr.deltaMax}Δ range${premEst ? ` · est. ~$${premEst}/contract` : ''}`,
           ts: Date.now(),
         });
       } else if (passN >= 2) {
@@ -58,9 +59,10 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
     const hasCall = positions.find(p => p.ticker === pos.ticker && p.type === 'short_call');
     const contracts = Math.floor(pos.qty / 100);
     if (ivrOk && !hasCall && contracts >= 1) {
-      const strike  = suggestStrike(q.price, cr.ccDelta, 'call');
-      const dteT    = Math.round((cr.ccDteMin + cr.ccDteMax) / 2);
-      const premEst = q.hv30
+      const ccDeltaMid = Math.round((cr.ccDeltaMin + cr.ccDeltaMax) / 2);
+      const strike     = suggestStrike(q.price, ccDeltaMid, 'call');
+      const dteT       = Math.round((cr.ccDteMin + cr.ccDteMax) / 2);
+      const premEst    = q.hv30
         ? (q.price * (q.hv30 / 100) * Math.sqrt(dteT / 365) * 0.35).toFixed(2)
         : null;
       sigs.push({
@@ -71,7 +73,7 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
           { l: `${pos.qty} shares (${contracts} contract${contracts > 1 ? 's' : ''})`, ok: true },
           { l: `IVR ${q.ivrEst !== null ? q.ivrEst + '%' : '?'}`, ok: ivrOk },
         ],
-        suggestion: `Sell ${contracts} x ${dteT}d $${strike} call${premEst ? ` · est. ~$${premEst}/contract · ~$${(parseFloat(premEst) * contracts * 100).toFixed(0)} total` : ''}`,
+        suggestion: `Sell ${contracts} x ${dteT}d $${strike} call · ${cr.ccDeltaMin}–${cr.ccDeltaMax}Δ range${premEst ? ` · est. ~$${premEst}/contract · ~$${(parseFloat(premEst) * contracts * 100).toFixed(0)} total` : ''}`,
         ts: Date.now(),
       });
     }
