@@ -19,6 +19,7 @@ import PositionsPage from './components/pages/PositionsPage/PositionsPage';
 import WatchlistPage from './components/pages/WatchlistPage/WatchlistPage';
 import HistoryPage   from './components/pages/HistoryPage/HistoryPage';
 import CriteriaPage  from './components/pages/CriteriaPage/CriteriaPage';
+import PnLPage       from './components/pages/PnLPage/PnLPage';
 
 import ModalOverlay           from './components/modals/ModalOverlay';
 import AddWatchModal          from './components/modals/AddWatchModal';
@@ -27,6 +28,7 @@ import ClosePositionModal     from './components/modals/ClosePositionModal';
 import SignalDetailModal      from './components/modals/SignalDetailModal';
 import ShareGroupDetailModal  from './components/modals/ShareGroupDetailModal';
 import HelpModal              from './components/modals/HelpModal';
+import WatchNotesModal        from './components/modals/WatchNotesModal';
 
 function getInitialAuthState() {
   if (!isConfigured()) return 'setup';
@@ -52,6 +54,8 @@ export default function App() {
   const [detailShareTicker, setDetailShareTicker] = useState(null);
   // Pre-fill ticker when adding lot from share group modal
   const [addLotTicker,      setAddLotTicker]      = useState(null);
+  // Watchlist notes edit
+  const [editNotesTicker,   setEditNotesTicker]   = useState(null);
 
   const { toast, showToast }          = useToast();
   const { isOpen: marketOpen, marketText } = useMarketStatus();
@@ -70,6 +74,7 @@ export default function App() {
             .map(w => ({
               ticker:   String(w.ticker || ''),
               addedAt:  w.addedAt || Date.now(),
+              notes:    w.notes || '',
               liveData: w.price ? { price: Number(w.price) } : null,
             }))
             .filter(w => w.ticker && !seen.has(w.ticker) && seen.add(w.ticker)),
@@ -141,8 +146,8 @@ export default function App() {
   }
 
   // ── Watchlist handlers ───────────────────────────────────────────────────
-  async function handleAddWatch(ticker) {
-    const entry = { ticker, addedAt: Date.now(), liveData: null };
+  async function handleAddWatch(ticker, notes = '') {
+    const entry = { ticker, addedAt: Date.now(), notes, liveData: null };
     dispatch({ type: 'ADD_WATCH', payload: entry });
     setOpenModal(null);
     const nextState = { ...state, watchlist: [...state.watchlist, entry] };
@@ -161,6 +166,15 @@ export default function App() {
       }
     }, 2000);
     runScreener();
+  }
+
+  function handleUpdateWatchNotes(ticker, notes) {
+    dispatch({ type: 'UPDATE_WATCH_NOTES', payload: { ticker, notes } });
+    const nextState = {
+      ...state,
+      watchlist: state.watchlist.map(w => w.ticker === ticker ? { ...w, notes } : w),
+    };
+    sheetWriteViaGet(nextState);
   }
 
   function handleRemoveWatch(ticker) {
@@ -227,6 +241,7 @@ export default function App() {
       prem:         pos.prem,            // original premium collected
       cost:         0,
       notes:        pos.notes,
+      account:      pos.account || 'Esther',
       enteredAt:    details.closeDate,   // row timestamp = close date
       closePrice:   details.closePrice,
       pnl:          details.pnl,
@@ -241,7 +256,7 @@ export default function App() {
       closeType: details.closeType, qty: pos.qty, strike: pos.strike,
       expiry: pos.expiry, openDate: pos.enteredAt, closeDate: details.closeDate,
       premCollected: pos.prem, closePrice: details.closePrice, pnl: details.pnl,
-      notes: pos.notes,
+      notes: pos.notes, account: pos.account || 'Esther',
       ...(details.sharesAcquired !== undefined ? { sharesAcquired: details.sharesAcquired, costBasis: details.costBasis } : {}),
       ...(details.newPosition    !== undefined ? { rolledToId: details.newPosition.id }                                    : {}),
     };
@@ -334,6 +349,7 @@ export default function App() {
         <PositionsPage
           positions={state.positions}
           watchlist={state.watchlist}
+          criteria={state.criteria}
           onSelectOptPos={handleSelectOptPos}
           onEditPos={handleEditPos}
           onShowShareGroup={handleShowShareGroup}
@@ -345,11 +361,16 @@ export default function App() {
           watchlist={state.watchlist}
           criteria={state.criteria}
           onRemove={handleRemoveWatch}
+          onEditNotes={(ticker) => { setEditNotesTicker(ticker); setOpenModal('watchNotes'); }}
         />
       </div>
 
       <div className={`page${activePage === 'pg-history' ? ' active' : ''}`} id="pg-history">
         <HistoryPage positions={state.positions} />
+      </div>
+
+      <div className={`page${activePage === 'pg-pnl' ? ' active' : ''}`} id="pg-pnl">
+        <PnLPage />
       </div>
 
       <div className={`page${activePage === 'pg-criteria' ? ' active' : ''}`} id="pg-criteria">
@@ -417,6 +438,15 @@ export default function App() {
 
       <ModalOverlay open={openModal === 'help'} onClose={() => setOpenModal(null)}>
         <HelpModal onClose={() => setOpenModal(null)} />
+      </ModalOverlay>
+
+      <ModalOverlay open={openModal === 'watchNotes'} onClose={() => setOpenModal(null)}>
+        <WatchNotesModal
+          ticker={editNotesTicker}
+          watchlist={state.watchlist}
+          onSave={(ticker, notes) => { handleUpdateWatchNotes(ticker, notes); setOpenModal(null); }}
+          onClose={() => setOpenModal(null)}
+        />
       </ModalOverlay>
     </>
   );

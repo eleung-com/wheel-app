@@ -493,6 +493,7 @@ function StatRow({ label, value, color }) {
 export default function HistoryPage({ positions }) {
   const [yearFilter,    setYearFilter]    = useState('all');
   const [stratFilter,   setStratFilter]   = useState('all');
+  const [accountFilter, setAccountFilter] = useState('all');
   const [selectedTrade, setSelectedTrade] = useState(null);
 
   const posMap = {};
@@ -517,9 +518,19 @@ export default function HistoryPage({ positions }) {
     return ts ? new Date(ts).getFullYear() : null;
   }).filter(Boolean))].sort((a, b) => b - a);
 
-  const yearFiltered = yearFilter === 'all'
+  // Derive account from the opening row (what user explicitly set) — close entries
+  // inherit account from their opening row; fall back to the close entry's own account.
+  function entryAccount(e) {
+    return posMap[e.linkedId]?.account || e.account || 'Esther';
+  }
+
+  const accountFiltered = accountFilter === 'all'
     ? allEntries
-    : allEntries.filter(e => {
+    : allEntries.filter(e => entryAccount(e) === accountFilter);
+
+  const yearFiltered = yearFilter === 'all'
+    ? accountFiltered
+    : accountFiltered.filter(e => {
         const ts = posMap[e.linkedId]?.enteredAt || e.enteredAt;
         return ts && new Date(ts).getFullYear() === Number(yearFilter);
       });
@@ -534,6 +545,22 @@ export default function HistoryPage({ positions }) {
 
   return (
     <div>
+      {/* ── Account filter ────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+        <span style={{ fontSize: 10, color: 'var(--mu)', fontFamily: 'var(--mono)' }}>Account</span>
+        {['all', 'Esther', 'Fam'].map(a => (
+          <button key={a} onClick={() => setAccountFilter(a)} style={{
+            padding: '4px 10px', borderRadius: 20, fontSize: 10, cursor: 'pointer',
+            border: `1px solid ${accountFilter === a ? 'var(--pu)' : 'var(--b1)'}`,
+            background: accountFilter === a ? 'rgba(168,85,247,0.12)' : 'var(--s2)',
+            color: accountFilter === a ? 'var(--pu)' : 'var(--mu2)',
+            fontFamily: 'var(--sans)',
+          }}>
+            {a === 'all' ? 'All' : a}
+          </button>
+        ))}
+      </div>
+
       {/* ── Year filter ───────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
         <span style={{ fontSize: 10, color: 'var(--mu)', fontFamily: 'var(--mono)' }}>Year</span>
@@ -620,6 +647,7 @@ export default function HistoryPage({ positions }) {
             <thead>
               <tr>
                 <th>Ticker</th>
+                <th>Acct</th>
                 <th>Strat</th>
                 <th>Close</th>
                 <th>Strike</th>
@@ -631,7 +659,7 @@ export default function HistoryPage({ positions }) {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', color: 'var(--mu)', padding: 20, fontSize: 12 }}>
+                  <td colSpan={8} style={{ textAlign: 'center', color: 'var(--mu)', padding: 20, fontSize: 12 }}>
                     No trades
                   </td>
                 </tr>
@@ -645,6 +673,11 @@ export default function HistoryPage({ positions }) {
                         ? formatDateDisplay(new Date(e.enteredAt).toISOString().slice(0, 10))
                         : '—'}
                     </div>
+                  </td>
+                  <td>
+                    <span style={{ fontSize: 9, color: 'var(--pu)', fontFamily: 'var(--mono)' }}>
+                      {entryAccount(e)}
+                    </span>
                   </td>
                   <td>
                     {e.posType ? (

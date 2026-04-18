@@ -16,6 +16,7 @@ export default function TabNav({ activePage, onSwitch, signals, positions, watch
     { id: 'pg-signals',   label: 'Signals',   badge: sigTotal || null,        badgeClass: 'g' },
     { id: 'pg-positions', label: 'Positions', badge: activeCount || null,     badgeClass: 'b' },
     { id: 'pg-watchlist', label: 'Watchlist', badge: watchlist.length || null, badgeClass: 'p' },
+    { id: 'pg-pnl',       label: 'P&L',       badge: null,                    badgeClass: ''  },
     { id: 'pg-criteria',  label: 'Settings',  badge: null,                    badgeClass: ''  },
   ];
 

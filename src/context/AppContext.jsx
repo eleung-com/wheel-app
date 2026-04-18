@@ -83,6 +83,15 @@ function reducer(state, action) {
     case 'REMOVE_WATCH':
       return { ...state, watchlist: state.watchlist.filter(w => w.ticker !== action.payload) };
 
+    case 'UPDATE_WATCH_NOTES':
+      // payload: { ticker, notes }
+      return {
+        ...state,
+        watchlist: state.watchlist.map(w =>
+          w.ticker === action.payload.ticker ? { ...w, notes: action.payload.notes } : w
+        ),
+      };
+
     default:
       return state;
   }

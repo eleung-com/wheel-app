@@ -3,6 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { fetchQ } from '../lib/indicators';
 import { fetchOptionPrice } from '../lib/optionPrice';
 import { buildSignals } from '../lib/signals';
+import { getTradierKey } from '../lib/utils';
 
 export function useScreener(showToast) {
   const { state, dispatch } = useAppContext();
@@ -51,7 +52,13 @@ export function useScreener(showToast) {
 
       const gotAny = Object.values(qmap).some(v => v !== null);
       if (!gotAny) {
-        showToast('⚠ No market data — add your Tradier API key in Settings', 'err');
+        const hasKey = !!getTradierKey();
+        showToast(
+          hasKey
+            ? '⚠ No market data — Tradier API call failed (check console for details)'
+            : '⚠ No market data — add your Tradier API key in Settings',
+          'err'
+        );
       }
 
       // Update liveData for watchlist items

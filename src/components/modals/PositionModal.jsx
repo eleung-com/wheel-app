@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { normalizeDate } from '../../lib/utils';
+import { normalizeDate, ACCOUNTS } from '../../lib/utils';
 
 function initState(pos) {
   if (!pos) return {
     ticker: '', type: 'shares', qty: '', cost: '',
-    openDate: '', strike: '', expiry: '', prem: '', curPrem: '', notes: '',
+    openDate: '', strike: '', expiry: '', prem: '', curPrem: '', notes: '', account: 'Esther',
   };
   return {
     ticker:   pos.ticker,
@@ -17,6 +17,7 @@ function initState(pos) {
     prem:     pos.prem    != null ? String(pos.prem)    : '',
     curPrem:  pos.curPrem != null ? String(pos.curPrem) : '',
     notes:    pos.notes   || '',
+    account:  pos.account || 'Esther',
   };
 }
 
@@ -44,7 +45,7 @@ export default function PositionModal({ editId, positions, onSave, onDelete, onC
 
     const newPos = {
       id: editId || Date.now(),
-      ticker, type: f.type, qty, notes: f.notes.trim(), enteredAt,
+      ticker, type: f.type, qty, notes: f.notes.trim(), account: f.account, enteredAt,
     };
 
     if (f.type === 'shares') {
@@ -111,10 +112,18 @@ export default function PositionModal({ editId, positions, onSave, onDelete, onC
         )}
       </div>
 
-      {/* Open date */}
-      <div style={{ marginTop: 9 }}>
-        <div className="mlbl">Open date <span style={{ color: 'var(--mu)', fontSize: 9 }}>— leave blank to use today</span></div>
-        <input className="minput norm" type="date" style={{ margin: 0, color: 'var(--tx)' }} value={f.openDate} onChange={e => set('openDate', e.target.value)} />
+      {/* Open date + Account */}
+      <div className="mg2" style={{ marginTop: 9 }}>
+        <div>
+          <div className="mlbl">Open date <span style={{ color: 'var(--mu)', fontSize: 9 }}>— blank = today</span></div>
+          <input className="minput norm" type="date" style={{ margin: 0, color: 'var(--tx)' }} value={f.openDate} onChange={e => set('openDate', e.target.value)} />
+        </div>
+        <div>
+          <div className="mlbl">Account</div>
+          <select className="msel" value={f.account} onChange={e => set('account', e.target.value)} style={{ margin: 0 }}>
+            {ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
       </div>
 
       {/* Options-only fields */}

@@ -119,6 +119,13 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
         <CriteriaRow label="Early close — max % DTE elapsed"  sub="Only suggest close if less than this % of time gone" inputId="c-close-dte" value={local.closeDtePct} onChange={v => update('closeDtePct', v)} />
       </div>
 
+      <div className="slabel">Account Capital</div>
+      <div className="ssec">
+        <div className="shdr">Set total capital per account to track allocation</div>
+        <CriteriaRow label="Esther — total capital ($)" sub="Used to calculate available buying power" inputId="c-cap-esther" value={local.capitalEsther} min={0} onChange={v => update('capitalEsther', v)} />
+        <CriteriaRow label="Fam — total capital ($)"   sub="Used to calculate available buying power" inputId="c-cap-fam"    value={local.capitalFam}    min={0} onChange={v => update('capitalFam', v)} />
+      </div>
+
       <button className="btn-p" onClick={onRefresh} style={{ marginBottom: 8 }}>↻ Run Screener Now</button>
       <button className="btn-s" onClick={onPull}    style={{ marginBottom: 8 }}>⇩ Pull Latest from Google Sheets</button>
 

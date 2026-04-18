@@ -36,7 +36,7 @@ export function useSheets(showToast) {
     setSync('syncing', 'saving…');
     try {
       const data = {
-        watchlist: s.watchlist.map(w => ({ ticker: w.ticker, addedAt: w.addedAt })),
+        watchlist: s.watchlist.map(w => ({ ticker: w.ticker, addedAt: w.addedAt, notes: w.notes || '' })),
         positions: s.positions.map(p => ({
           id:          p.id,
           ticker:      p.ticker,
@@ -49,6 +49,7 @@ export function useSheets(showToast) {
           prem:        p.prem        !== undefined ? p.prem        : '',
           curPrem:     p.curPrem     !== undefined ? p.curPrem     : '',
           notes:       p.notes       || '',
+          acct:        p.account     || 'Esther',
           enteredAt:   p.enteredAt   || '',
           posType:     p.posType     || '',
           closePrice:  p.closePrice  !== undefined ? p.closePrice  : '',
@@ -61,6 +62,7 @@ export function useSheets(showToast) {
         closedTrades: (s.closedTrades || []).map(t => ({
           id: t.id, ticker: t.ticker, posType: t.posType, closeType: t.closeType,
           qty: t.qty,
+          acct:          t.account       || 'Esther',
           strike:        t.strike        !== undefined ? t.strike        : '',
           expiry:        t.expiry        || '',
           openDate:      t.openDate      || '',
@@ -110,7 +112,7 @@ export function useSheets(showToast) {
             const liveData = existing?.liveData
               ? { ...existing.liveData, ...(sheetPrice || {}) }
               : sheetPrice;
-            return { ticker: String(w.ticker), addedAt: w.addedAt || Date.now(), liveData };
+            return { ticker: String(w.ticker), addedAt: w.addedAt || Date.now(), notes: w.notes || '', liveData };
           })
           .filter(w => w.ticker && !seen.has(w.ticker) && seen.add(w.ticker)),
       });

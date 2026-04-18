@@ -13,7 +13,7 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
     const rsiOk   = q.rsiEst   !== null && q.rsiEst   <= cr.rsi;
     const stochOk = q.stochEst !== null && q.stochEst <= cr.stoch;
     const maOk    = q.aboveMa  !== false;
-    const hasOpt  = positions.find(p => p.ticker === w.ticker && p.type !== 'shares');
+    const hasOpt  = positions.find(p => p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
 
     const chks = [
       { l: `IVR ${q.ivrEst   != null ? q.ivrEst + '%'         : '?'}`, ok: ivrOk,   tgt: `≥${cr.ivr}%`  },
@@ -52,11 +52,11 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
 
   // ── Covered Call signals ──────────────────────────────────────────────────
   const CC_MIN_SHARES = 100;
-  for (const pos of positions.filter(p => p.type === 'shares' && p.qty >= CC_MIN_SHARES)) {
+  for (const pos of positions.filter(p => p.type === 'shares' && !p.linkedId && p.qty >= CC_MIN_SHARES)) {
     const q = qmap[pos.ticker];
     if (!q) continue;
     const ivrOk   = q.ivrEst !== null && q.ivrEst >= cr.ccIvr;
-    const hasCall = positions.find(p => p.ticker === pos.ticker && p.type === 'short_call');
+    const hasCall = positions.find(p => p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
     const contracts = Math.floor(pos.qty / 100);
     if (ivrOk && !hasCall && contracts >= 1) {
       const ccDeltaMid = Math.round((cr.ccDeltaMin + cr.ccDeltaMax) / 2);
@@ -80,7 +80,7 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
   }
 
   // ── Roll / Close signals ──────────────────────────────────────────────────
-  for (const pos of positions.filter(p => p.type !== 'shares')) {
+  for (const pos of positions.filter(p => (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId)) {
     const q    = qmap[pos.ticker];
     const days = dte(pos.expiry);
     if (days === null) continue;

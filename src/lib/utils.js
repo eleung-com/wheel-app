@@ -20,8 +20,7 @@ export function tradierRequest(path) {
   if (isLocal) {
     return { url: `/tr${path}`, headers: { 'x-tradier-token': key, 'Accept': 'application/json' } };
   }
-  const sep = path.includes('?') ? '&' : '?';
-  return { url: `https://api.tradier.com${path}${sep}access_token=${encodeURIComponent(key)}`, headers: { 'Accept': 'application/json' } };
+  return { url: `https://wheel-tradier-proxy.esthercandy.workers.dev${path}`, headers: { 'x-tradier-token': key, 'Accept': 'application/json' } };
 }
 
 export function dte(expiry) {
@@ -42,6 +41,7 @@ export const DEFAULT_CRITERIA = {
   deltaMin: 20, deltaMax: 35, dteMin: 21, dteMax: 45,
   shares: 100, ccIvr: 30, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
   closePct: 50, closeDtePct: 50,
+  capitalEsther: 0, capitalFam: 0,
 };
 
 export function parseCriteria(c) {
@@ -61,8 +61,10 @@ export function parseCriteria(c) {
     ccDeltaMax: Number(c.ccDeltaMax) || (Number(c.ccDelta) || 25),
     ccDteMin:   Number(c.ccDteMin)   || 21,
     ccDteMax:   Number(c.ccDteMax)   || 35,
-    closePct:   Number(c.closePct)   || 50,
-    closeDtePct:Number(c.closeDtePct)|| 50,
+    closePct:      Number(c.closePct)      || 50,
+    closeDtePct:   Number(c.closeDtePct)   || 50,
+    capitalEsther: Number(c.capitalEsther) || 0,
+    capitalFam:    Number(c.capitalFam)    || 0,
   };
 }
 
@@ -141,6 +143,7 @@ export function parseClosedTrades(raw) {
     closePrice:   t.closePrice  != null && t.closePrice  !== '' ? Number(t.closePrice)  : undefined,
     pnl:          t.pnl        != null && t.pnl        !== '' ? Number(t.pnl)        : undefined,
     notes:        t.notes || '',
+    account:      ACCOUNTS.includes(t.acct) ? t.acct : (ACCOUNTS.includes(t.account) ? t.account : 'Esther'),
     sharesAcquired: t.sharesAcquired != null && t.sharesAcquired !== '' ? Number(t.sharesAcquired) : undefined,
     costBasis:    t.costBasis  != null && t.costBasis  !== '' ? Number(t.costBasis)  : undefined,
     rolledToId:   t.rolledToId != null && t.rolledToId !== '' ? Number(t.rolledToId) : undefined,
@@ -149,6 +152,8 @@ export function parseClosedTrades(raw) {
 }
 
 const CLOSE_TYPES = new Set(['btc', 'expired', 'assigned', 'rolled']);
+
+export const ACCOUNTS = ['Esther', 'Fam'];
 
 export function parsePositions(raw) {
   const mapped = raw.filter(p => p.ticker).map(p => {
@@ -164,6 +169,7 @@ export function parsePositions(raw) {
       prem:        (p.prem   !== '' && p.prem   !== null)  ? Number(p.prem)   : undefined,
       curPrem:     (p.curPrem !== '' && p.curPrem !== null && p.curPrem !== undefined) ? Number(p.curPrem) : undefined,
       notes:       p.notes   || '',
+      account:     ACCOUNTS.includes(p.acct) ? p.acct : (ACCOUNTS.includes(p.account) ? p.account : 'Esther'),
       enteredAt:   Number(p.enteredAt) || Date.now(),
     };
     // linkedId is preserved for ALL types:

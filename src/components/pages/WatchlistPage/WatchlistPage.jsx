@@ -1,7 +1,7 @@
 import React from 'react';
 import WatchlistCard from './WatchlistCard';
 
-export default function WatchlistPage({ watchlist, criteria, onRemove }) {
+export default function WatchlistPage({ watchlist, criteria, onRemove, onEditNotes }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -18,7 +18,7 @@ export default function WatchlistPage({ watchlist, criteria, onRemove }) {
           </div>
         ) : (
           watchlist.map(w => (
-            <WatchlistCard key={w.ticker} watch={w} criteria={criteria} onRemove={onRemove} />
+            <WatchlistCard key={w.ticker} watch={w} criteria={criteria} onRemove={onRemove} onEditNotes={onEditNotes} />
           ))
         )}
       </div>

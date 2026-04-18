@@ -1,5 +1,50 @@
 import { tradierRequest } from './utils';
 
+// ── Wilder's RSI over the full closes array ───────────────────────────────────
+function fullRSI(closes, period = 14) {
+  if (closes.length < period + 1) return closes.map(() => null);
+  const out = new Array(period).fill(null);
+  let ag = 0, al = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) ag += d; else al -= d;
+  }
+  ag /= period; al /= period;
+  out.push(al === 0 ? 100 : 100 - 100 / (1 + ag / al));
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    ag = (ag * (period - 1) + (d > 0 ? d : 0)) / period;
+    al = (al * (period - 1) + (d < 0 ? -d : 0)) / period;
+    out.push(al === 0 ? 100 : 100 - 100 / (1 + ag / al));
+  }
+  return out;
+}
+
+// ── Simple moving average over a nullable array ───────────────────────────────
+function sma(arr, n) {
+  return arr.map((v, i) => {
+    if (v === null) return null;
+    const win = arr.slice(Math.max(0, i - n + 1), i + 1).filter(x => x !== null);
+    return win.length < n ? null : win.reduce((a, b) => a + b, 0) / n;
+  });
+}
+
+// ── Stochastic RSI — K and D lines ────────────────────────────────────────────
+// Uses Wilder RSI(rsiP), then stochastic(stochP) on RSI, smoothed K(kSmooth), D(dSmooth)
+function calcStochRSI(closes, rsiP = 14, stochP = 14, kSmooth = 3, dSmooth = 3) {
+  const rsis = fullRSI(closes, rsiP);
+  const rawSR = rsis.map((r, i) => {
+    if (r === null) return null;
+    const win = rsis.slice(Math.max(0, i - stochP + 1), i + 1).filter(x => x !== null);
+    if (win.length < stochP) return null;
+    const lo = Math.min(...win), hi = Math.max(...win);
+    return hi === lo ? 0 : (r - lo) / (hi - lo) * 100;
+  });
+  const K = sma(rawSR, kSmooth);
+  const D = sma(K, dSmooth);
+  return { K, D };
+}
+
 export async function fetchQ(ticker, maPeriod = 200) {
   const req = tradierRequest('');
   if (!req) return null;
@@ -34,7 +79,6 @@ export async function fetchQ(ticker, maPeriod = 200) {
       const quoteRes = await fetch(quoteUrl, { headers: quoteHeaders, signal: AbortSignal.timeout(5000) });
       if (quoteRes.ok) {
         const qd = await quoteRes.json();
-        // Tradier wraps single result as object, multiple as array
         const q = qd?.quotes?.quote;
         const quote = Array.isArray(q) ? q.find(x => x.symbol === ticker) : q;
         if (quote?.last && quote.last > 0) {
@@ -57,7 +101,7 @@ export async function fetchQ(ticker, maPeriod = 200) {
       aboveMa = price > ma;
     }
 
-    // RSI-14
+    // RSI-14 (quick estimate for screener signal)
     let rsiEst = null;
     if (closes.length >= 16) {
       const ch = closes.slice(-16).map((c, i, a) => i === 0 ? 0 : c - a[i - 1]).slice(1);
@@ -78,7 +122,7 @@ export async function fetchQ(ticker, maPeriod = 200) {
       stochEst = hh === ll ? 50 : parseFloat(((price - ll) / (hh - ll) * 100).toFixed(1));
     }
 
-    // HV30 → IVR estimate (annualised from 21-day log returns)
+    // HV30 → IVR estimate
     let ivrEst = null, hv30 = null;
     if (closes.length >= 22) {
       const rc   = closes.slice(-22);
@@ -87,7 +131,6 @@ export async function fetchQ(ticker, maPeriod = 200) {
       const vr   = rets.reduce((a, b) => a + (b - mn) ** 2, 0) / rets.length;
       hv30       = Math.sqrt(vr * 252) * 100;
 
-      // 52-week range from history
       const yr  = closes.slice(-252);
       const yh  = highs.slice(-252);
       const yl  = lows.slice(-252);
@@ -97,8 +140,17 @@ export async function fetchQ(ticker, maPeriod = 200) {
       ivrEst = Math.min(99, Math.round(hv30 * 1.25 + pctFrH * 0.15));
     }
 
-    return { price, chg1d, aboveMa, rsiEst, stochEst, ivrEst, hv30 };
+    // Stoch RSI computed on full dataset for proper warm-up, last 45 returned
+    const { K: srK, D: srD } = calcStochRSI(closes);
+
+    return {
+      price, chg1d, aboveMa, rsiEst, stochEst, ivrEst, hv30,
+      closes2m:   closes.slice(-45),
+      dates2m:    dayArr.slice(-45).map(d => d.date),
+      stochRsi2m: { k: srK.slice(-45), d: srD.slice(-45) },
+    };
   } catch (e) {
+    console.error(`[fetchQ] ${ticker}:`, e?.message || e);
     return null;
   }
 }
