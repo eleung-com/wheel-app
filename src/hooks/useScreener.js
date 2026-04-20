@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { fetchQ } from '../lib/indicators';
-import { fetchOptionPrice } from '../lib/optionPrice';
+import { fetchOptionPrice, fetchBestStrike } from '../lib/optionPrice';
 import { buildSignals } from '../lib/signals';
 import { getTradierKey } from '../lib/utils';
 
@@ -98,7 +98,40 @@ export function useScreener(showToast) {
         livePremMap[p.id] !== undefined ? { ...p, _liveCurPrem: livePremMap[p.id] } : p
       );
 
-      const sigs = buildSignals(currentState.watchlist, mergedPositions, currentState.criteria, qmap);
+      // Pre-fetch live strikes from Tradier for tickers that will generate a full signal.
+      // CSP: all 4 criteria pass + no existing open option.
+      // CC:  IVR passes + has enough shares + no existing open call.
+      const cr = currentState.criteria;
+      const strikeMap = {};
+
+      for (const w of currentState.watchlist) {
+        const q = qmap[w.ticker];
+        if (!q) continue;
+        const hasOpt = mergedPositions.find(
+          p => p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId
+        );
+        if (hasOpt) continue;
+        const allOk = q.ivrEst >= cr.ivr && q.rsiEst <= cr.rsi && q.stochEst <= cr.stoch && q.aboveMa !== false;
+        if (allOk) {
+          const result = await fetchBestStrike(w.ticker, 'put', cr.deltaMin, cr.deltaMax, cr.dteMin, cr.dteMax);
+          if (result) strikeMap[`${w.ticker}:put`] = result;
+          await new Promise(r => setTimeout(r, 350));
+        }
+      }
+
+      for (const pos of mergedPositions.filter(p => p.type === 'shares' && !p.linkedId && p.qty >= 100)) {
+        const q = qmap[pos.ticker];
+        if (!q) continue;
+        const hasCall = mergedPositions.find(p => p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
+        if (hasCall) continue;
+        if (q.ivrEst !== null && q.ivrEst >= cr.ccIvr) {
+          const result = await fetchBestStrike(pos.ticker, 'call', cr.ccDeltaMin, cr.ccDeltaMax, cr.ccDteMin, cr.ccDteMax);
+          if (result) strikeMap[`${pos.ticker}:call`] = result;
+          await new Promise(r => setTimeout(r, 350));
+        }
+      }
+
+      const sigs = buildSignals(currentState.watchlist, mergedPositions, currentState.criteria, qmap, strikeMap);
       dispatch({ type: 'SET_SIGNALS', payload: sigs });
       // NOTE: screener never writes to the sheet — only explicit user actions (save/delete) do
     } catch (e) {

@@ -49,77 +49,13 @@ function PriceChart({ closes, dates, ticker, hoverIdx }) {
   );
 }
 
-// ── Stochastic RSI panel ──────────────────────────────────────────────────────
-function StochRSIPanel({ stochRsi, hoverIdx }) {
-  if (!stochRsi?.k || !stochRsi?.d) return null;
-
-  const { k, d } = stochRsi;
-  const n = k.length;
-  if (n < 2) return null;
-
-  const W = 300, H = 44;
-
-  const toX = i => (i / (n - 1)) * W;
-  const toY = v => v === null ? null : H - (v / 100) * H;
-
-  function buildPath(arr) {
-    let path = '', pen = false;
-    arr.forEach((v, i) => {
-      if (v === null) { pen = false; return; }
-      const x = toX(i).toFixed(1), y = toY(v).toFixed(1);
-      path += pen ? `L ${x},${y} ` : `M ${x},${y} `;
-      pen = true;
-    });
-    return path.trim();
-  }
-
-  const activeI = hoverIdx ?? n - 1;
-  const ax = toX(activeI);
-  const kv = k[activeI], dv = d[activeI];
-  const kyPos = kv !== null ? toY(kv) : null;
-  const dyPos = dv !== null ? toY(dv) : null;
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-      {/* Overbought / oversold / midline */}
-      <line x1={0} y1={toY(80)} x2={W} y2={toY(80)}
-        stroke="rgba(255,82,82,0.25)" strokeWidth="0.7" strokeDasharray="3,2" />
-      <line x1={0} y1={toY(20)} x2={W} y2={toY(20)}
-        stroke="rgba(31,216,160,0.25)" strokeWidth="0.7" strokeDasharray="3,2" />
-      <line x1={0} y1={toY(50)} x2={W} y2={toY(50)}
-        stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" />
-
-      {/* OB/OS labels */}
-      <text x={W - 2} y={toY(80) - 2} textAnchor="end"
-        fontSize="6.5" fill="rgba(255,82,82,0.45)" fontFamily="monospace">80</text>
-      <text x={W - 2} y={toY(20) + 8} textAnchor="end"
-        fontSize="6.5" fill="rgba(31,216,160,0.45)" fontFamily="monospace">20</text>
-
-      {/* K and D lines */}
-      <path d={buildPath(k)} fill="none" stroke="#f59e0b" strokeWidth="1.3" strokeLinejoin="round" />
-      <path d={buildPath(d)} fill="none" stroke="rgba(245,158,11,0.42)" strokeWidth="1"
-        strokeLinejoin="round" strokeDasharray="4,2" />
-
-      {/* Crosshair */}
-      <line x1={ax} y1={0} x2={ax} y2={H}
-        stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="3,2" />
-
-      {/* Active dots */}
-      {kyPos !== null && <circle cx={ax} cy={kyPos} r="2.2" fill="#f59e0b" />}
-      {dyPos !== null && <circle cx={ax} cy={dyPos} r="2.2" fill="rgba(245,158,11,0.6)" />}
-    </svg>
-  );
-}
-
 // ── Chart key + hover readout ─────────────────────────────────────────────────
-function ChartKey({ closes, dates, stochRsi, hoverIdx }) {
+function ChartKey({ closes, dates, hoverIdx }) {
   const n       = closes?.length ?? 0;
   const activeI = hoverIdx ?? (n > 0 ? n - 1 : 0);
 
   const priceVal = closes?.[activeI];
   const dateVal  = dates?.[activeI];
-  const kVal     = stochRsi?.k?.[activeI];
-  const dVal     = stochRsi?.d?.[activeI];
 
   const up    = closes && closes[n - 1] >= closes[0];
   const color = up ? '#1fd8a0' : '#ff5252';
@@ -129,49 +65,15 @@ function ChartKey({ closes, dates, stochRsi, hoverIdx }) {
     : '';
 
   return (
-    <div style={{ borderTop: '1px solid var(--b1)', paddingTop: 5, display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
-      {/* Price + date readout */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 9, color: 'var(--mu)', fontFamily: 'var(--mono)' }}>
-          {dateLabel || '2 months'}
+    <div style={{ borderTop: '1px solid var(--b1)', paddingTop: 5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+      <span style={{ fontSize: 9, color: 'var(--mu)', fontFamily: 'var(--mono)' }}>
+        {dateLabel || '2 months'}
+      </span>
+      {priceVal != null && (
+        <span style={{ fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 700, color }}>
+          ${priceVal.toFixed(2)}
         </span>
-        {priceVal != null && (
-          <span style={{ fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 700, color }}>
-            ${priceVal.toFixed(2)}
-          </span>
-        )}
-      </div>
-
-      {/* Stoch RSI readout + key */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {/* K legend */}
-          <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <svg width="12" height="6" style={{ display: 'block' }}>
-              <line x1="0" y1="3" x2="12" y2="3" stroke="#f59e0b" strokeWidth="1.5" />
-            </svg>
-            <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontFamily: 'var(--mono)' }}>K</span>
-          </span>
-          {/* D legend */}
-          <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <svg width="12" height="6" style={{ display: 'block' }}>
-              <line x1="0" y1="3" x2="12" y2="3" stroke="rgba(245,158,11,0.5)"
-                strokeWidth="1.2" strokeDasharray="3,2" />
-            </svg>
-            <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontFamily: 'var(--mono)' }}>D</span>
-          </span>
-          {/* OB/OS legend */}
-          <span style={{ fontSize: 8, color: 'rgba(255,82,82,0.5)', fontFamily: 'var(--mono)' }}>OB 80</span>
-          <span style={{ fontSize: 8, color: 'rgba(31,216,160,0.5)', fontFamily: 'var(--mono)' }}>OS 20</span>
-        </div>
-
-        {/* K / D values at active index */}
-        <span style={{ fontSize: 8, fontFamily: 'var(--mono)', color: 'var(--mu2)' }}>
-          <span style={{ color: '#f59e0b' }}>K {kVal != null ? kVal.toFixed(0) : '—'}</span>
-          {' · '}
-          <span style={{ color: 'rgba(245,158,11,0.6)' }}>D {dVal != null ? dVal.toFixed(0) : '—'}</span>
-        </span>
-      </div>
+      )}
     </div>
   );
 }
@@ -253,11 +155,9 @@ export default function WatchlistCard({ watch: w, criteria: cr, onRemove, onEdit
             ticker={w.ticker}
             hoverIdx={hoverIdx}
           />
-          <StochRSIPanel stochRsi={d.stochRsi2m} hoverIdx={hoverIdx} />
           <ChartKey
             closes={d.closes2m}
             dates={d.dates2m}
-            stochRsi={d.stochRsi2m}
             hoverIdx={hoverIdx}
           />
         </div>

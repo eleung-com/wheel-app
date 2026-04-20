@@ -31,7 +31,26 @@ export function dte(expiry) {
 }
 
 export function suggestStrike(price, delta, type) {
-  const pct = delta === 30 ? 0.07 : delta === 20 ? 0.10 : delta === 15 ? 0.13 : (delta / 100) * 0.25;
+  // delta is a whole number (e.g. 15 = 0.15 delta in platform terms).
+  // Empirical OTM% lookup for ~30-45 DTE options. Linear interpolation between points.
+  const TBL = [
+    [5, 0.22], [10, 0.16], [15, 0.13], [20, 0.10],
+    [25, 0.08], [30, 0.07], [35, 0.05], [40, 0.03], [45, 0.01], [50, 0.00],
+  ];
+  let pct;
+  if (delta <= TBL[0][0]) {
+    pct = TBL[0][1];
+  } else if (delta >= TBL[TBL.length - 1][0]) {
+    pct = 0;
+  } else {
+    for (let i = 0; i < TBL.length - 1; i++) {
+      if (delta >= TBL[i][0] && delta <= TBL[i + 1][0]) {
+        const t = (delta - TBL[i][0]) / (TBL[i + 1][0] - TBL[i][0]);
+        pct = TBL[i][1] + t * (TBL[i + 1][1] - TBL[i][1]);
+        break;
+      }
+    }
+  }
   if (type === 'put')  return Math.floor((price * (1 - pct)) / 0.5) * 0.5;
   return Math.ceil((price * (1 + pct)) / 0.5) * 0.5;
 }

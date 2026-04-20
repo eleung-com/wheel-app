@@ -1,6 +1,6 @@
-import { dte, suggestStrike } from './utils';
+import { dte } from './utils';
 
-export function buildSignals(watchlist, positions, criteria, qmap) {
+export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {}) {
   const cr   = criteria;
   const sigs = [];
 
@@ -26,17 +26,23 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
 
     if (!hasOpt) {
       if (allOk) {
-        const deltaMid = Math.round((cr.deltaMin + cr.deltaMax) / 2);
-        const strike   = suggestStrike(q.price, deltaMid, 'put');
-        const dteT     = Math.round((cr.dteMin + cr.dteMax) / 2);
-        const premEst  = q.hv30
-          ? (q.price * (q.hv30 / 100) * Math.sqrt(dteT / 365) * 0.4).toFixed(2)
-          : null;
+        const live    = strikeMap[`${w.ticker}:put`];
+        const strike  = live?.strike ?? null;
+        const dteT    = live?.dte    ?? null;
+        const premEst = live?.premium != null ? live.premium.toFixed(2) : null;
+        const deltaStr = live?.delta != null
+          ? `Δ${Math.abs(live.delta).toFixed(2)}`
+          : `${cr.deltaMin}–${cr.deltaMax}Δ range`;
+        const suggParts = [];
+        if (dteT != null && strike != null) suggParts.push(`Sell ${dteT}d $${strike} put`);
+        else suggParts.push(`Sell put · ${cr.deltaMin}–${cr.deltaMax}Δ · ${cr.dteMin}–${cr.dteMax}d`);
+        if (live) suggParts.push(deltaStr);
+        if (premEst) suggParts.push(`~$${premEst}/contract`);
         sigs.push({
           id: `csp-${w.ticker}`, type: 'csp', ticker: w.ticker,
           price: q.price, chg: q.chg1d, strike, dteTarget: dteT, premEst,
           ivr: q.ivrEst, rsi: q.rsiEst, stoch: q.stochEst, chks,
-          suggestion: `Sell ${dteT}d $${strike} put · ${cr.deltaMin}–${cr.deltaMax}Δ range${premEst ? ` · est. ~$${premEst}/contract` : ''}`,
+          suggestion: suggParts.join(' · '),
           ts: Date.now(),
         });
       } else if (passN >= 2) {
@@ -59,12 +65,19 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
     const hasCall = positions.find(p => p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
     const contracts = Math.floor(pos.qty / 100);
     if (ivrOk && !hasCall && contracts >= 1) {
-      const ccDeltaMid = Math.round((cr.ccDeltaMin + cr.ccDeltaMax) / 2);
-      const strike     = suggestStrike(q.price, ccDeltaMid, 'call');
-      const dteT       = Math.round((cr.ccDteMin + cr.ccDteMax) / 2);
-      const premEst    = q.hv30
-        ? (q.price * (q.hv30 / 100) * Math.sqrt(dteT / 365) * 0.35).toFixed(2)
-        : null;
+      const live     = strikeMap[`${pos.ticker}:call`];
+      const strike   = live?.strike ?? null;
+      const dteT     = live?.dte    ?? null;
+      const premEst  = live?.premium != null ? live.premium.toFixed(2) : null;
+      const deltaStr = live?.delta != null
+        ? `Δ${Math.abs(live.delta).toFixed(2)}`
+        : `${cr.ccDeltaMin}–${cr.ccDeltaMax}Δ range`;
+      const suggParts = [];
+      if (dteT != null && strike != null) suggParts.push(`Sell ${contracts} x ${dteT}d $${strike} call`);
+      else suggParts.push(`Sell ${contracts} call · ${cr.ccDeltaMin}–${cr.ccDeltaMax}Δ · ${cr.ccDteMin}–${cr.ccDteMax}d`);
+      if (live) suggParts.push(deltaStr);
+      if (premEst) suggParts.push(`~$${premEst}/contract`);
+      if (premEst && contracts > 1) suggParts.push(`~$${(parseFloat(premEst) * contracts * 100).toFixed(0)} total`);
       sigs.push({
         id: `cc-${pos.id}`, type: 'cc', ticker: pos.ticker,
         price: q.price, chg: q.chg1d, strike, dteTarget: dteT, premEst,
@@ -73,7 +86,7 @@ export function buildSignals(watchlist, positions, criteria, qmap) {
           { l: `${pos.qty} shares (${contracts} contract${contracts > 1 ? 's' : ''})`, ok: true },
           { l: `IVR ${q.ivrEst !== null ? q.ivrEst + '%' : '?'}`, ok: ivrOk },
         ],
-        suggestion: `Sell ${contracts} x ${dteT}d $${strike} call · ${cr.ccDeltaMin}–${cr.ccDeltaMax}Δ range${premEst ? ` · est. ~$${premEst}/contract · ~$${(parseFloat(premEst) * contracts * 100).toFixed(0)} total` : ''}`,
+        suggestion: suggParts.join(' · '),
         ts: Date.now(),
       });
     }
