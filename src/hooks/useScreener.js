@@ -124,7 +124,7 @@ export function useScreener(showToast) {
         if (!q) continue;
         const hasCall = mergedPositions.find(p => p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
         if (hasCall) continue;
-        if (q.ivrEst !== null && q.ivrEst >= cr.ccIvr) {
+        if (q.ivrEst !== null && q.ivrEst >= cr.ccIvr && q.stochEst !== null && q.stochEst >= cr.ccStoch) {
           const result = await fetchBestStrike(pos.ticker, 'call', cr.ccDeltaMin, cr.ccDeltaMax, cr.ccDteMin, cr.ccDteMax);
           if (result) strikeMap[`${pos.ticker}:call`] = result;
           await new Promise(r => setTimeout(r, 350));

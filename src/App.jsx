@@ -91,7 +91,8 @@ export default function App() {
       }
     }
     setIsBooting(false);
-  }, [sheetRead, dispatch]);
+    runScreener();
+  }, [sheetRead, dispatch, runScreener]);
 
   useEffect(() => {
     if (authState === 'booting') {

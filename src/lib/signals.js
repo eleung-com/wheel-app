@@ -61,10 +61,11 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
   for (const pos of positions.filter(p => p.type === 'shares' && !p.linkedId && p.qty >= CC_MIN_SHARES)) {
     const q = qmap[pos.ticker];
     if (!q) continue;
-    const ivrOk   = q.ivrEst !== null && q.ivrEst >= cr.ccIvr;
+    const ivrOk   = q.ivrEst   !== null && q.ivrEst   >= cr.ccIvr;
+    const stochOk = q.stochEst !== null && q.stochEst >= cr.ccStoch;
     const hasCall = positions.find(p => p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
     const contracts = Math.floor(pos.qty / 100);
-    if (ivrOk && !hasCall && contracts >= 1) {
+    if (ivrOk && stochOk && !hasCall && contracts >= 1) {
       const live     = strikeMap[`${pos.ticker}:call`];
       const strike   = live?.strike ?? null;
       const dteT     = live?.dte    ?? null;
@@ -85,6 +86,7 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
         chks: [
           { l: `${pos.qty} shares (${contracts} contract${contracts > 1 ? 's' : ''})`, ok: true },
           { l: `IVR ${q.ivrEst !== null ? q.ivrEst + '%' : '?'}`, ok: ivrOk },
+          { l: `Stoch ${q.stochEst !== null ? q.stochEst.toFixed(0) : '?'}`, ok: stochOk },
         ],
         suggestion: suggParts.join(' · '),
         ts: Date.now(),

@@ -58,7 +58,7 @@ export function suggestStrike(price, delta, type) {
 export const DEFAULT_CRITERIA = {
   ivr: 50, stoch: 20, rsi: 35, ma: 200, earn: 30,
   deltaMin: 20, deltaMax: 35, dteMin: 21, dteMax: 45,
-  shares: 100, ccIvr: 30, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
+  shares: 100, ccIvr: 30, ccStoch: 75, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
   closePct: 50, closeDtePct: 50,
   capitalEsther: 0, capitalFam: 0,
 };
@@ -76,6 +76,7 @@ export function parseCriteria(c) {
     dteMax:     Number(c.dteMax)     || 45,
     shares:     Number(c.shares)     || 100,
     ccIvr:      Number(c.ccIvr)      || 30,
+    ccStoch:    Number(c.ccStoch)    || 75,
     ccDeltaMin: Number(c.ccDeltaMin) || (Number(c.ccDelta) || 15),
     ccDeltaMax: Number(c.ccDeltaMax) || (Number(c.ccDelta) || 25),
     ccDteMin:   Number(c.ccDteMin)   || 21,

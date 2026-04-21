@@ -100,7 +100,8 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
       <div className="slabel">Covered Call — Entry</div>
       <div className="ssec">
         <CriteriaRow label="Min shares owned"  sub="Must have at least this many"          inputId="c-shares"   value={local.shares}  onChange={v => update('shares', v)} />
-        <CriteriaRow label="Min IVR for CC"    sub="Lower bar OK for covered calls"        inputId="c-cc-ivr"   value={local.ccIvr}   onChange={v => update('ccIvr', v)} />
+        <CriteriaRow label="Min IVR for CC"    sub="Lower bar OK for covered calls"        inputId="c-cc-ivr"    value={local.ccIvr}   onChange={v => update('ccIvr', v)} />
+        <CriteriaRow label="Min Stoch %K for CC" sub="High stoch signals overbought — good for calls" inputId="c-cc-stoch" value={local.ccStoch} onChange={v => update('ccStoch', v)} />
         <CriteriaRow
           label="CC target delta range" sub="Strike is chosen at the midpoint delta"
           pair={{ min: local.ccDeltaMin, max: local.ccDeltaMax }}
