@@ -170,8 +170,8 @@ function CategorySelect({ value, categories, onChange, onAddCategory, style = {}
         />
         <button onClick={commitNew} style={{
           padding: '4px 10px', borderRadius: 6, border: 'none',
-          background: 'var(--g)', color: '#000', fontSize: 11,
-          fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--sans)',
+          background: 'var(--ac)', color: 'var(--ac-tx)', fontSize: 11,
+          fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--sans)',
         }}>Add</button>
         <button onClick={() => { setAdding(false); setNewCat(''); }} style={{
           padding: '4px 10px', borderRadius: 6,
@@ -276,8 +276,8 @@ function DetailModal({ entry, categories, onClose, onSaveNotes, onSaveCategory, 
         <div style={{ padding: '10px 16px', borderTop: '1px solid var(--b1)', display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={handleClose} style={{
             padding: '9px 20px', borderRadius: 6, border: 'none',
-            background: 'var(--g)', color: '#000', fontSize: 12,
-            fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--sans)',
+            background: 'var(--ac)', color: 'var(--ac-tx)', fontSize: 12,
+            fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--sans)',
           }}>Save & Close</button>
         </div>
       </div>

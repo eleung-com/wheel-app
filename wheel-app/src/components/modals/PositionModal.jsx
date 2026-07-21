@@ -87,6 +87,7 @@ export default function PositionModal({ editId, initialType, positions, onSave, 
             placeholder="TSLA"
             maxLength={10}
             autoComplete="off"
+            autoFocus
             style={{ margin: 0, fontSize: 18, letterSpacing: 2 }}
             value={f.ticker}
             onChange={e => set('ticker', e.target.value.toUpperCase())}

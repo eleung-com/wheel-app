@@ -283,7 +283,7 @@ function StrategyCard({
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
                 >
-                  {checked && <span style={{ color: '#000', fontSize: 10, fontWeight: 700 }}>✓</span>}
+                  {checked && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>✓</span>}
                 </div>
                 {editMode ? (
                   <>
@@ -536,8 +536,8 @@ export default function StrategiesTab({ onAddPosition }) {
           style={{
             padding: '5px 14px', borderRadius: 6,
             border: '1px solid var(--b2)',
-            background: editMode ? 'var(--g)' : 'transparent',
-            color: editMode ? '#000' : 'var(--mu)',
+            background: editMode ? 'var(--ac)' : 'transparent',
+            color: editMode ? 'var(--ac-tx)' : 'var(--mu)',
             fontSize: 11, fontWeight: 600,
             cursor: 'pointer', fontFamily: 'var(--sans)',
             transition: 'all .15s',
@@ -590,9 +590,9 @@ export default function StrategiesTab({ onAddPosition }) {
       {showSaved && (
         <div style={{
           position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
-          background: 'var(--g)', color: '#000',
+          background: 'var(--g)', color: '#fff',
           padding: '8px 20px', borderRadius: 20,
-          fontSize: 12, fontWeight: 600, zIndex: 9999,
+          fontSize: 12, fontWeight: 700, zIndex: 9999,
           pointerEvents: 'none',
         }}>Saved</div>
       )}

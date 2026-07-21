@@ -14,6 +14,7 @@ import TabNav      from './components/TabNav/TabNav';
 import FAB         from './components/FAB/FAB';
 import Toast       from './components/Toast/Toast';
 
+import SignalsPage   from './components/pages/SignalsPage/SignalsPage';
 import PositionsPage from './components/pages/PositionsPage/PositionsPage';
 import WatchlistPage from './components/pages/WatchlistPage/WatchlistPage';
 import HistoryPage   from './components/pages/HistoryPage/HistoryPage';
@@ -25,6 +26,7 @@ import AddWatchModal          from './components/modals/AddWatchModal';
 import PositionModal          from './components/modals/PositionModal';
 import ClosePositionModal     from './components/modals/ClosePositionModal';
 import ShareGroupDetailModal  from './components/modals/ShareGroupDetailModal';
+import SignalDetailModal      from './components/modals/SignalDetailModal';
 import HelpModal              from './components/modals/HelpModal';
 import WatchNotesModal        from './components/modals/WatchNotesModal';
 
@@ -54,6 +56,8 @@ export default function App() {
   const [addPosType,        setAddPosType]        = useState(null);
   // Watchlist notes edit
   const [editNotesTicker,   setEditNotesTicker]   = useState(null);
+  // Signal detail
+  const [detailSignalId,    setDetailSignalId]    = useState(null);
 
   const { toast, showToast }          = useToast();
   const { isOpen: marketOpen, marketText } = useMarketStatus();
@@ -376,7 +380,16 @@ export default function App() {
         onSwitch={setActivePage}
         positions={state.positions}
         watchlist={state.watchlist}
+        signals={state.signals}
       />
+
+      <div className={`page${activePage === 'pg-signals' ? ' active' : ''}`} id="pg-signals">
+        <SignalsPage
+          signals={state.signals}
+          lastRefresh={state.lastRefresh}
+          onShowDetail={id => { setDetailSignalId(id); setOpenModal('signal-detail'); }}
+        />
+      </div>
 
       <div className={`page${activePage === 'pg-positions' ? ' active' : ''}`} id="pg-positions">
         <PositionsPage
@@ -466,6 +479,15 @@ export default function App() {
           onEditPos={id => { setOpenModal(null); setTimeout(() => handleEditPos(id), 50); }}
           onAddLot={handleAddLot}
           onClose={() => setOpenModal(null)}
+        />
+      </ModalOverlay>
+
+      <ModalOverlay open={openModal === 'signal-detail'} onClose={() => { setOpenModal(null); setDetailSignalId(null); }}>
+        <SignalDetailModal
+          signalId={detailSignalId}
+          signals={state.signals}
+          positions={state.positions}
+          onClose={() => { setOpenModal(null); setDetailSignalId(null); }}
         />
       </ModalOverlay>
 
