@@ -78,11 +78,8 @@ function reducer(state, action) {
     case 'ADD_CLOSED_TRADE':
       return { ...state, closedTrades: [...state.closedTrades, action.payload] };
 
-    case 'ADD_WATCH':
-      return { ...state, watchlist: [...state.watchlist, action.payload] };
-
-    case 'REMOVE_WATCH':
-      return { ...state, watchlist: state.watchlist.filter(w => w.ticker !== action.payload) };
+    // No ADD_WATCH/REMOVE_WATCH — watchlist membership is curated in Notion and
+    // only ever arrives via SET_WATCHLIST.
 
     case 'BATCH_UPDATE_WATCHLIST_LIVE_DATA':
       // payload: { [ticker]: liveData } — update all at once, single re-render

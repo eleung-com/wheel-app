@@ -4,6 +4,7 @@ import { useAppContext } from './context/AppContext';
 import { useToast }       from './hooks/useToast';
 import { useMarketStatus } from './hooks/useMarketStatus';
 import { useSheets }      from './hooks/useSheets';
+import { useNotion }      from './hooks/useNotion';
 import { useScreener }    from './hooks/useScreener';
 import { isConfigured, LS_SESSION_KEY, parseCriteria, parsePositions, parseClosedTrades } from './lib/utils';
 
@@ -22,7 +23,6 @@ import CriteriaPage  from './components/pages/CriteriaPage/CriteriaPage';
 import ToolsPage     from './components/pages/ToolsPage/ToolsPage';
 
 import ModalOverlay           from './components/modals/ModalOverlay';
-import AddWatchModal          from './components/modals/AddWatchModal';
 import PositionModal          from './components/modals/PositionModal';
 import ClosePositionModal     from './components/modals/ClosePositionModal';
 import ShareGroupDetailModal  from './components/modals/ShareGroupDetailModal';
@@ -62,29 +62,20 @@ export default function App() {
   const { toast, showToast }          = useToast();
   const { isOpen: marketOpen, marketText } = useMarketStatus();
   const { syncStatus, sheetRead, sheetWriteViaGet, syncFromSheet } = useSheets(showToast);
+  const { notionSyncWatchlist, notionUpdateWatch }                 = useNotion(showToast);
   const { isScreening, runScreener, refreshOptionPrices }          = useScreener(showToast);
   const runScreenerRef = useRef(runScreener);
   useEffect(() => { runScreenerRef.current = runScreener; });
 
   // ── Boot sequence ────────────────────────────────────────────────────────
   const boot = useCallback(async () => {
-    const data = await sheetRead();
+    // Watchlist lives in Notion; positions, trades and criteria stay in Sheets.
+    // Run both together so a slow Notion call doesn't delay the rest of boot.
+    const [data] = await Promise.all([
+      sheetRead(),
+      notionSyncWatchlist({ quiet: true }),
+    ]);
     if (data) {
-      if (Array.isArray(data.watchlist)) {
-        const seen = new Set();
-        dispatch({
-          type: 'SET_WATCHLIST',
-          payload: data.watchlist
-            .map(w => ({
-              ticker:   String(w.ticker || ''),
-              addedAt:  w.addedAt || Date.now(),
-              notes:    w.notes || '',
-              category: w.category || '',
-              liveData: w.price ? { price: Number(w.price) } : null,
-            }))
-            .filter(w => w.ticker && !seen.has(w.ticker) && seen.add(w.ticker)),
-        });
-      }
       if (Array.isArray(data.positions)) {
         dispatch({ type: 'SET_POSITIONS', payload: parsePositions(data.positions) });
       }
@@ -97,7 +88,7 @@ export default function App() {
     }
     setIsBooting(false);
     runScreenerRef.current();
-  }, [sheetRead, dispatch]); // runScreener accessed via ref — not a dep
+  }, [sheetRead, notionSyncWatchlist, dispatch]); // runScreener accessed via ref — not a dep
 
   // hasBooted ref prevents re-running if boot/authState reference changes during screener lifecycle
   const hasBooted = useRef(false);
@@ -144,9 +135,7 @@ export default function App() {
 
   // ── FAB ──────────────────────────────────────────────────────────────────
   function handleFabClick() {
-    if (activePage === 'pg-watchlist') {
-      setOpenModal('watch');
-    } else if (activePage === 'pg-positions') {
+    if (activePage === 'pg-positions') {
       setEditPositionId(null);
       setAddLotTicker(null);
       setOpenModal('pos');
@@ -154,59 +143,23 @@ export default function App() {
   }
 
   // ── Watchlist handlers ───────────────────────────────────────────────────
-  async function handleAddWatch(ticker, notes = '') {
-    const entry = { ticker, addedAt: Date.now(), notes, liveData: null };
-    dispatch({ type: 'ADD_WATCH', payload: entry });
-    setOpenModal(null);
-    const nextState = { ...state, watchlist: [...state.watchlist, entry] };
-    await sheetWriteViaGet(nextState);
-    // After 2 s, fetch only the new ticker's GOOGLEFINANCE price from the sheet
-    // — does NOT call syncFromSheet() which would wipe all other tickers' indicator data
-    setTimeout(async () => {
-      const data = await sheetRead();
-      if (!data?.watchlist) return;
-      const row = data.watchlist.find(w => String(w.ticker).toUpperCase() === ticker);
-      if (row?.price) {
-        dispatch({
-          type: 'UPDATE_WATCHLIST_LIVE_DATA',
-          payload: { ticker, liveData: { price: Number(row.price) } },
-        });
-      }
-    }, 2000);
-    runScreener();
-  }
+  // Membership is curated in Notion (anything tagged in TV Lists), so there is
+  // no add/remove here. The app owns Notes and App Category and writes those back.
 
   function handleUpdateWatchNotes(ticker, notes) {
     dispatch({ type: 'UPDATE_WATCH_NOTES', payload: { ticker, notes } });
-    const nextState = {
-      ...state,
-      watchlist: state.watchlist.map(w => w.ticker === ticker ? { ...w, notes } : w),
-    };
-    sheetWriteViaGet(nextState);
+    notionUpdateWatch(ticker, { notes });
   }
 
   function handleUpdateWatchCategory(ticker, category) {
     dispatch({ type: 'UPDATE_WATCH_CATEGORY', payload: { ticker, category } });
-    const nextState = {
-      ...state,
-      watchlist: state.watchlist.map(w => w.ticker === ticker ? { ...w, category } : w),
-    };
-    sheetWriteViaGet(nextState);
+    notionUpdateWatch(ticker, { category });
   }
 
   function handleUpdateWatchlistCategories(categories) {
     const nextCriteria = { ...state.criteria, watchlistCategories: categories.join(',') };
     dispatch({ type: 'SET_CRITERIA', payload: nextCriteria });
     sheetWriteViaGet({ ...state, criteria: nextCriteria });
-  }
-
-  function handleRemoveWatch(ticker) {
-    dispatch({ type: 'REMOVE_WATCH', payload: ticker });
-    const nextState = {
-      ...state,
-      watchlist: state.watchlist.filter(w => w.ticker !== ticker),
-    };
-    sheetWriteViaGet(nextState);
   }
 
   // ── Market indicator handlers ────────────────────────────────────────────
@@ -440,13 +393,6 @@ export default function App() {
       <Toast message={toast.message} type={toast.type} visible={toast.visible} />
 
       {/* ── Modals ─────────────────────────────────────────────────────── */}
-      <ModalOverlay open={openModal === 'watch'} onClose={() => setOpenModal(null)}>
-        <AddWatchModal
-          watchlist={state.watchlist}
-          onAdd={handleAddWatch}
-          onClose={() => setOpenModal(null)}
-        />
-      </ModalOverlay>
 
       <ModalOverlay open={openModal === 'pos'} onClose={() => setOpenModal(null)}>
         <PositionModal

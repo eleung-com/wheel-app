@@ -145,12 +145,11 @@ export function useScreener(showToast) {
       }
 
       // Batch-update all watchlist liveData in one dispatch → single re-render, no progressive popping
+      // The quote is the only price source now — the sheet's GOOGLEFINANCE column
+      // used to win here, but Notion doesn't carry a price.
       const watchBatch = {};
       for (const w of currentState.watchlist) {
-        if (qmap[w.ticker]) {
-          const sheetPrice = stateRef.current.watchlist.find(x => x.ticker === w.ticker)?.liveData?.price;
-          watchBatch[w.ticker] = { ...qmap[w.ticker], ...(sheetPrice ? { price: sheetPrice } : {}) };
-        }
+        if (qmap[w.ticker]) watchBatch[w.ticker] = qmap[w.ticker];
       }
       if (Object.keys(watchBatch).length) {
         dispatch({ type: 'BATCH_UPDATE_WATCHLIST_LIVE_DATA', payload: watchBatch });

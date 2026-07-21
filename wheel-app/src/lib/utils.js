@@ -4,10 +4,26 @@ export const LS_AUTH_KEY     = 'wd_authed';
 export const LS_SESSION_KEY  = 'wd_session';
 export const LS_TRADIER_KEY  = 'wd_tradier_key';
 
+export const WORKER_ORIGIN = 'https://wheel-tradier-proxy.esthercandy.workers.dev';
+
 export function getSheetUrl()    { return localStorage.getItem(LS_URL_KEY)    || ''; }
 export function getSecret()      { return localStorage.getItem(LS_SECRET_KEY) || ''; }
 export function getTradierKey()  { return localStorage.getItem(LS_TRADIER_KEY) || ''; }
 export function isConfigured()   { return !!getSheetUrl() && !!getSecret(); }
+
+// Returns { url, headers } for a Notion call, always via the worker — the Notion
+// token lives there as a secret and must never reach this (public) bundle. The
+// worker gates the route on the same shared secret the sheet already uses.
+export function notionRequest(path) {
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  // On localhost the Vite proxy forwards /notion — same shape as the Tradier
+  // route above, and it lets dev point at a stub worker via NOTION_PROXY_TARGET.
+  const base = isLocal ? '' : WORKER_ORIGIN;
+  return {
+    url: `${base}/notion${path}`,
+    headers: { 'x-app-secret': getSecret(), 'Accept': 'application/json' },
+  };
+}
 
 // Returns { url, headers } for a Tradier API call.
 // On localhost: uses the Vite proxy (/tr/...) which injects Authorization server-side (no CORS).
@@ -20,7 +36,7 @@ export function tradierRequest(path) {
   if (isLocal) {
     return { url: `/tr${path}`, headers: { 'x-tradier-token': key, 'Accept': 'application/json' } };
   }
-  return { url: `https://wheel-tradier-proxy.esthercandy.workers.dev${path}`, headers: { 'x-tradier-token': key, 'Accept': 'application/json' } };
+  return { url: `${WORKER_ORIGIN}${path}`, headers: { 'x-tradier-token': key, 'Accept': 'application/json' } };
 }
 
 export function dte(expiry) {
