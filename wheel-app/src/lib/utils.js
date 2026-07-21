@@ -15,8 +15,12 @@ export function isConfigured()   { return !!getSheetUrl() && !!getSecret(); }
 // token lives there as a secret and must never reach this (public) bundle. The
 // worker gates the route on the same shared secret the sheet already uses.
 export function notionRequest(path) {
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  // On localhost the Vite proxy forwards /notion — same shape as the Tradier
+  // route above, and it lets dev point at a stub worker via NOTION_PROXY_TARGET.
+  const base = isLocal ? '' : WORKER_ORIGIN;
   return {
-    url: `${WORKER_ORIGIN}/notion${path}`,
+    url: `${base}/notion${path}`,
     headers: { 'x-app-secret': getSecret(), 'Accept': 'application/json' },
   };
 }

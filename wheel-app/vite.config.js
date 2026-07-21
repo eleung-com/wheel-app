@@ -7,6 +7,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Notion — always via the worker, which holds the token. Override the
+      // target with NOTION_PROXY_TARGET to develop against a stub worker.
+      '/notion': {
+        target: process.env.NOTION_PROXY_TARGET || 'https://wheel-tradier-proxy.esthercandy.workers.dev',
+        changeOrigin: true,
+      },
       // Yahoo Finance — proxy avoids CORS on localhost; sets browser UA so Yahoo doesn't reject
       '/yf': {
         target: 'https://query1.finance.yahoo.com',
