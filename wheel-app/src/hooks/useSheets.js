@@ -38,8 +38,9 @@ export function useSheets(showToast) {
     const s = overrideState || stateRef.current;
     setSync('syncing', 'saving…');
     try {
+      // No watchlist key — the watchlist lives in Notion now. The Apps Script
+      // write action must leave the Watchlist tab untouched when it is absent.
       const data = {
-        watchlist: s.watchlist.map(w => ({ ticker: w.ticker, addedAt: w.addedAt, notes: w.notes || '', category: w.category || '' })),
         positions: s.positions.map(p => ({
           id:          p.id,
           ticker:      p.ticker,
@@ -104,22 +105,7 @@ export function useSheets(showToast) {
     const data = await sheetRead();
     if (!data) return;
 
-    if (Array.isArray(data.watchlist)) {
-      const seen = new Set();
-      dispatch({
-        type: 'SET_WATCHLIST',
-        payload: data.watchlist
-          .map(w => {
-            const existing = stateRef.current.watchlist.find(x => x.ticker === w.ticker);
-            const sheetPrice = w.price ? { price: Number(w.price) } : null;
-            const liveData = existing?.liveData
-              ? { ...existing.liveData, ...(sheetPrice || {}) }
-              : sheetPrice;
-            return { ticker: String(w.ticker), addedAt: w.addedAt || Date.now(), notes: w.notes || '', category: w.category || '', liveData };
-          })
-          .filter(w => w.ticker && !seen.has(w.ticker) && seen.add(w.ticker)),
-      });
-    }
+    // data.watchlist is deliberately ignored — Notion owns the watchlist.
 
     if (Array.isArray(data.positions)) {
       dispatch({ type: 'SET_POSITIONS', payload: parsePositions(data.positions) });

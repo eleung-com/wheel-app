@@ -1,8 +1,9 @@
 import React from 'react';
 
 export default function FAB({ activePage, onClick }) {
-  // Only render where the + has an action: add position / add watchlist ticker
-  if (activePage !== 'pg-positions' && activePage !== 'pg-watchlist') return null;
+  // Only render where the + has an action. Watchlist membership is curated in
+  // Notion, so there is nothing to add there.
+  if (activePage !== 'pg-positions') return null;
   return (
     <button className="fab" onClick={onClick}>+</button>
   );
