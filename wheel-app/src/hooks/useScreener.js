@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { fetchQ } from '../lib/indicators';
-import { fetchOptionPrice } from '../lib/optionPrice';
+import { fetchOptionPrice, fetchBestStrike } from '../lib/optionPrice';
+import { buildSignals } from '../lib/signals';
 import { getTradierKey } from '../lib/utils';
 
 // ── Market-close cache ────────────────────────────────────────────────────────
@@ -132,6 +133,12 @@ export function useScreener(showToast) {
         );
       }
 
+      // Surface per-ticker failures instead of silently showing stale data
+      const failedTickers = tickers.filter(t => !qmap[t]);
+      if (!silent && gotAny && failedTickers.length) {
+        showToast(`⚠ No data for ${failedTickers.join(', ')}`, 'err');
+      }
+
       // Dispatch indicator live data (already fetched into qmap above in cache-aware paths)
       for (const t of indicatorTickers) {
         if (qmap[t]) dispatch({ type: 'UPDATE_INDICATOR_LIVE_DATA', payload: { ticker: t, liveData: qmap[t] } });
@@ -173,6 +180,44 @@ export function useScreener(showToast) {
       const mergedPositions = currentState.positions.map(p =>
         livePremMap[p.id] !== undefined ? { ...p, _liveCurPrem: livePremMap[p.id] } : p
       );
+
+      // ── Live strike lookup for tickers that will produce full signals ────────
+      // Mirror buildSignals' pass conditions so we only hit Tradier for tickers
+      // that actually generate a card. Failures degrade to generic suggestions.
+      const cr = currentState.criteria;
+      const strikeMap = {};
+
+      for (const w of currentState.watchlist) {
+        const q = qmap[w.ticker];
+        if (!q) continue;
+        const rsiOk   = q.rsiEst   !== null && q.rsiEst   <= cr.rsi;
+        const stochOk = q.stochEst !== null && q.stochEst <= cr.stoch;
+        const maOk    = q.aboveMa  !== false;
+        const hasOpt  = mergedPositions.some(p =>
+          p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
+        if (rsiOk && stochOk && maOk && !hasOpt) {
+          const best = await fetchBestStrike(w.ticker, 'put', cr.deltaMin, cr.deltaMax, cr.dteMin, cr.dteMax);
+          if (best) strikeMap[`${w.ticker}:put`] = best;
+          await new Promise(r => setTimeout(r, 450));
+        }
+      }
+
+      for (const pos of mergedPositions.filter(p => p.type === 'shares' && !p.linkedId && p.qty >= 100)) {
+        const q = qmap[pos.ticker];
+        if (!q || strikeMap[`${pos.ticker}:call`]) continue;
+        const stochOk = q.stochEst !== null && q.stochEst >= cr.ccStoch;
+        const hasCall = mergedPositions.some(p =>
+          p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
+        if (stochOk && !hasCall) {
+          const best = await fetchBestStrike(pos.ticker, 'call', cr.ccDeltaMin, cr.ccDeltaMax, cr.ccDteMin, cr.ccDteMax);
+          if (best) strikeMap[`${pos.ticker}:call`] = best;
+          await new Promise(r => setTimeout(r, 450));
+        }
+      }
+
+      // Build signals and publish — the missing link that left the Signals tab empty
+      const sigs = buildSignals(currentState.watchlist, mergedPositions, cr, qmap, strikeMap);
+      dispatch({ type: 'SET_SIGNALS', payload: sigs });
 
       // NOTE: screener never writes to the sheet — only explicit user actions (save/delete) do
     } catch (e) {

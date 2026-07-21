@@ -65,7 +65,6 @@ function PremiumChart({ entries, posMap, yearFilter }) {
   const totalPrem  = bars.reduce((s, b) => s + b.total, 0);
   const activeMos  = bars.filter(b => b.total > 0);
   const monthlyAvg = activeMos.length ? totalPrem / activeMos.length : 0;
-  const activePct  = bars.length ? Math.round((activeMos.length / bars.length) * 100) : 0;
 
   const VW = 600, VH = 150;
   const PL = 44, PR = 8, PT = 12, PB = 24;
@@ -86,7 +85,6 @@ function PremiumChart({ entries, posMap, yearFilter }) {
   const metrics = [
     { label: 'Total Premium',  value: fmtDollar(totalPrem),        color: 'var(--tx)', small: true },
     { label: 'Monthly Avg',    value: fmtDollar(monthlyAvg),       color: 'var(--g)',  small: true },
-    { label: 'Active Months',  value: `${activePct}%`,             color: 'var(--g)',  small: false },
     { label: 'Trades Closed',  value: String(entries.length),      color: 'var(--bl)', small: false },
   ];
 
@@ -99,16 +97,16 @@ function PremiumChart({ entries, posMap, yearFilter }) {
       <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
         <defs>
           <linearGradient id="pmbar" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#1fd8a0" />
-            <stop offset="100%" stopColor="#1fd8a0" stopOpacity="0.3" />
+            <stop offset="0%"   stopColor="#2F6B6B" />
+            <stop offset="100%" stopColor="#6F7F35" />
           </linearGradient>
         </defs>
 
         {yTicks.map(({ val, y }, i) => (
           <g key={i}>
-            <line x1={PL} y1={y} x2={PL + CW} y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth="0.7" />
+            <line x1={PL} y1={y} x2={PL + CW} y2={y} stroke="var(--b1)" strokeWidth="0.7" />
             <text x={PL - 5} y={y + 3} textAnchor="end"
-              fontSize="8" fill="rgba(255,255,255,0.28)" fontFamily="monospace">
+              fontSize="8" fill="var(--mu)" fontFamily="var(--mono)">
               {fmtK(val)}
             </text>
           </g>
@@ -126,18 +124,18 @@ function PremiumChart({ entries, posMap, yearFilter }) {
                   fill="url(#pmbar)" rx="2" ry="2" />
               )}
               <text x={cx} y={VH - PB + 14} textAnchor="middle"
-                fontSize="8.5" fill="rgba(255,255,255,0.32)" fontFamily="monospace">
+                fontSize="8.5" fill="var(--mu2)" fontFamily="var(--mono)">
                 {b.label}
               </text>
             </g>
           );
         })}
 
-        <line x1={PL} y1={PT}      x2={PL}      y2={PT + CH} stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
-        <line x1={PL} y1={PT + CH} x2={PL + CW} y2={PT + CH} stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
+        <line x1={PL} y1={PT}      x2={PL}      y2={PT + CH} stroke="var(--b2)" strokeWidth="0.8" />
+        <line x1={PL} y1={PT + CH} x2={PL + CW} y2={PT + CH} stroke="var(--b2)" strokeWidth="0.8" />
       </svg>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', borderTop: '1px solid var(--b1)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderTop: '1px solid var(--b1)' }}>
         {metrics.map(({ label, value, color, small }, i) => (
           <div key={label} style={{
             padding: '11px 10px',
@@ -148,79 +146,6 @@ function PremiumChart({ entries, posMap, yearFilter }) {
             <div style={{ fontSize: 10, color: 'var(--mu)', marginTop: 4 }}>{label}</div>
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Win-rate donut ────────────────────────────────────────────────────────────
-function WinRateDonut({ stats }) {
-  const { winRate, wins, losses, scoreable } = stats;
-
-  const VW = 160, VH = 120;
-  const cx = VW / 2, cy = 56;
-  const r  = 46, strokeW = 15;
-  const circumference = 2 * Math.PI * r;
-  const winArc  = circumference * ((winRate ?? 0) / 100);
-  const lossArc = circumference - winArc;
-
-  return (
-    <div style={{ background: 'var(--s1)', border: '1px solid var(--b1)', borderRadius: 'var(--rr)', padding: '13px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 10, color: 'var(--mu)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, fontFamily: 'var(--mono)' }}>
-        Win rate
-      </div>
-
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-        <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: '100%', maxWidth: 140, height: 'auto', display: 'block' }}>
-          {/* Track */}
-          <circle cx={cx} cy={cy} r={r}
-            fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={strokeW} />
-
-          {/* Loss arc */}
-          {winRate !== null && lossArc > 0 && (
-            <g transform={`rotate(-90, ${cx}, ${cy})`}>
-              <circle cx={cx} cy={cy} r={r}
-                fill="none" stroke="var(--r)" strokeWidth={strokeW - 2}
-                strokeDasharray={`${lossArc} ${circumference - lossArc}`}
-                strokeDashoffset={-winArc}
-                strokeLinecap="round"
-              />
-            </g>
-          )}
-
-          {/* Win arc */}
-          {winRate !== null && winArc > 0 && (
-            <g transform={`rotate(-90, ${cx}, ${cy})`}>
-              <circle cx={cx} cy={cy} r={r}
-                fill="none" stroke="var(--g)" strokeWidth={strokeW}
-                strokeDasharray={`${winArc} ${circumference - winArc}`}
-                strokeLinecap="round"
-              />
-            </g>
-          )}
-
-          {/* Center */}
-          <text x={cx} y={cy - 5} textAnchor="middle"
-            fontSize="20" fontWeight="700" fill="var(--tx)" fontFamily="monospace">
-            {winRate !== null ? `${winRate}%` : '—'}
-          </text>
-          <text x={cx} y={cy + 12} textAnchor="middle"
-            fontSize="9" fill="var(--mu)" fontFamily="monospace">
-            {scoreable} trades
-          </text>
-        </svg>
-
-        {/* W / L legend */}
-        <div style={{ display: 'flex', gap: 16 }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 15, color: 'var(--g)' }}>{wins}</div>
-            <div style={{ fontSize: 9, color: 'var(--mu)' }}>Wins</div>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 15, color: 'var(--r)' }}>{losses}</div>
-            <div style={{ fontSize: 9, color: 'var(--mu)' }}>Losses</div>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -467,7 +392,7 @@ function TradeDetailModal({ entry, posMap, onClose }) {
           </div>
 
           <div style={{ height: 8, background: 'var(--b1)', borderRadius: 5, overflow: 'hidden', marginBottom: 5 }}>
-            <div style={{ height: '100%', width: `${premFill}%`, background: pnl >= 0 ? 'linear-gradient(90deg, #1fd8a0, rgba(31,216,160,0.55))' : 'var(--r)', borderRadius: 5, transition: 'width 0.5s cubic-bezier(0.4,0,0.2,1)' }} />
+            <div style={{ height: '100%', width: `${premFill}%`, background: pnl >= 0 ? 'linear-gradient(90deg, var(--g), rgba(111,127,53,0.55))' : 'var(--r)', borderRadius: 5, transition: 'width 0.5s cubic-bezier(0.4,0,0.2,1)' }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 8, color: 'var(--mu)', fontFamily: 'var(--mono)' }}>$0</span>
@@ -539,7 +464,6 @@ export default function HistoryPage({ positions }) {
     ? yearFiltered
     : yearFiltered.filter(e => e.posType === stratFilter);
 
-  const all = calcStats(yearFiltered);
   const csp = calcStats(yearFiltered.filter(e => e.posType === 'short_put'));
   const cc  = calcStats(yearFiltered.filter(e => e.posType === 'short_call'));
 
@@ -580,14 +504,9 @@ export default function HistoryPage({ positions }) {
       {/* ── Full-width premium chart ──────────────────────────── */}
       <PremiumChart entries={yearFiltered} posMap={posMap} yearFilter={yearFilter} />
 
-      {/* ── Win rate + Capture efficiency ─────────────────────── */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'stretch' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <WinRateDonut stats={all} />
-        </div>
-        <div style={{ flex: 2, minWidth: 0 }}>
-          <CaptureEfficiencyChart entries={yearFiltered} posMap={posMap} />
-        </div>
+      {/* ── Capture efficiency ────────────────────────────────── */}
+      <div style={{ marginBottom: 16 }}>
+        <CaptureEfficiencyChart entries={yearFiltered} posMap={posMap} />
       </div>
 
       {/* ── Strategy breakdown ────────────────────────────────── */}
