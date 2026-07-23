@@ -337,6 +337,19 @@ input[type="date"]{color-scheme:light}
 .news-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:18px 0 8px}
 .news-head .slabel{margin:0}
 .news-time{font-size:10px;color:var(--mu)}
+/* ── Earnings calendar (top of News) ─────────────────────────── */
+.ecal{margin-bottom:6px}
+.ecal .news-head{margin-top:2px}
+.ecal-empty{font-size:11px;color:var(--mu);font-family:var(--mono);padding:2px 2px 4px}
+.ecal-row{display:flex;align-items:center;gap:11px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:8px 10px;margin-bottom:6px}
+.ecal-row.past{opacity:.5}
+.ecal-date{text-align:center;min-width:34px;flex:none}
+.ecal-dow{font-size:9px;color:var(--mu);font-family:var(--mono);letter-spacing:.5px}
+.ecal-dnum{font-size:16px;font-weight:600;line-height:1;color:var(--tx)}
+.ecal-pills{display:flex;flex-wrap:wrap;gap:5px;flex:1}
+.ecal-pill{font-size:11px;font-weight:600;background:var(--s3);color:var(--mu2);padding:2px 8px;border-radius:20px}
+.ecal-pill.hold{background:var(--r);color:#fff}
+.ecal-hold-l{font-weight:400;opacity:.75}
 .nrefresh{font-family:var(--mono);font-size:10px;color:var(--mu2);background:var(--s2);border:1px solid var(--b1);border-radius:14px;padding:5px 11px;min-height:30px;cursor:pointer}
 .nrefresh:disabled{opacity:.6;cursor:default}
 .news-empty{background:var(--s1);border:1px solid var(--b1);border-radius:var(--rr);padding:20px;text-align:center;font-size:12.5px;color:var(--mu);display:flex;flex-direction:column;align-items:center;gap:10px}

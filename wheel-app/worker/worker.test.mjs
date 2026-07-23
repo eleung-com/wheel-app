@@ -31,6 +31,7 @@ function page(id, ticker, extra = {}) {
       'Wheel (CSP)': { select: extra.wheel ? { name: extra.wheel } : null },
       Fundamentals: { select: extra.fundamentals ? { name: extra.fundamentals } : null },
       'Last Eval Date': { date: extra.lastEval ? { start: extra.lastEval } : null },
+      'Earnings Date': { date: extra.earnings ? { start: extra.earnings } : null },
     },
   };
 }
@@ -98,7 +99,7 @@ console.log('\nGET /notion/watchlist');
     return n === 1
       ? jsonRes({
           results: [
-            page('p1', 'dell', { notes: 'cheap', category: 'Strong Candidate', verdict: 'Interested', sector: 'Technology', diveIn: '🔥 Priority', wheel: '✅', fundamentals: '⚠️', lastEval: '2026-07-21' }),
+            page('p1', 'dell', { notes: 'cheap', category: 'Strong Candidate', verdict: 'Interested', sector: 'Technology', diveIn: '🔥 Priority', wheel: '✅', fundamentals: '⚠️', lastEval: '2026-07-21', earnings: '2026-09-03' }),
             page('p2', 'AAPL'),
           ],
           has_more: true, next_cursor: 'cur2',
@@ -132,6 +133,7 @@ console.log('\nGET /notion/watchlist');
   check('flattens Wheel (CSP)', dell.wheel === '✅');
   check('flattens Fundamentals', dell.fundamentals === '⚠️');
   check('flattens Last Eval Date', dell.lastEval === '2026-07-21');
+  check('flattens Earnings Date', dell.earnings === '2026-09-03');
   check('parses created_time → addedAt', typeof dell.addedAt === 'number' && dell.addedAt > 0);
   const aapl = body.watchlist.find(w => w.ticker === 'AAPL');
   check('empty notes → empty string', aapl.notes === '');
@@ -139,6 +141,7 @@ console.log('\nGET /notion/watchlist');
   check('null Dive-In → empty string', aapl.diveIn === '');
   check('null Wheel → empty string', aapl.wheel === '');
   check('null Last Eval Date → empty string', aapl.lastEval === '');
+  check('null Earnings Date → empty string', aapl.earnings === '');
 }
 
 // ── Latest evaluation ────────────────────────────────────────────────────────

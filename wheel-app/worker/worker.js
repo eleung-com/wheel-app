@@ -81,6 +81,14 @@ function plain(rich) {
   return (rich || []).map((t) => t.plain_text).join('');
 }
 
+/** First present Notion date property from `names`, as its ISO start, else ''. */
+function dateProp(props, names) {
+  for (const n of names) {
+    if (props[n] && props[n].date && props[n].date.start) return props[n].date.start;
+  }
+  return '';
+}
+
 /** Every page where TV Lists is non-empty, flattened for the app. */
 async function readWatchlist(env) {
   const rows = [];
@@ -127,6 +135,10 @@ async function readWatchlist(env) {
           ? p.Fundamentals.select.name : '',
         lastEval: p['Last Eval Date'] && p['Last Eval Date'].date
           ? p['Last Eval Date'].date.start : '',
+        // Drives the Home news-tab earnings calendar. Read by whichever of these
+        // names the database uses, so renaming the Notion property to any of them
+        // keeps working; '' when none is set or the date is empty.
+        earnings: dateProp(p, ['Earnings Date', 'Earnings', 'Next Earnings']),
         sector:   p.sector && p.sector.select ? p.sector.select.name : '',
         addedAt:  Date.parse(page.created_time) || null,
       });

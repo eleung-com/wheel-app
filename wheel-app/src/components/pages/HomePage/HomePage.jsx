@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import StatsPane from './StatsPane';
-import NewsPane  from './NewsPane';
+import StatsPane        from './StatsPane';
+import NewsPane         from './NewsPane';
+import EarningsCalendar from './EarningsCalendar';
 import { useNews } from '../../../hooks/useNews';
 
 const PRIORITY = '🔥 Priority';
@@ -19,6 +20,13 @@ export default function HomePage({
   );
 
   const { news, loading, refreshNews } = useNews(priorityTickers, showToast);
+
+  // Any ticker with a still-open row (opening rows get a linkedId once closed).
+  const heldTickers = useMemo(() => {
+    const s = new Set();
+    for (const p of positions) if (!p.linkedId) s.add(p.ticker);
+    return s;
+  }, [positions]);
 
   return (
     <>
@@ -51,12 +59,15 @@ export default function HomePage({
             onShowSignal={onShowSignal}
           />
         ) : (
-          <NewsPane
-            news={news}
-            loading={loading}
-            onRefresh={refreshNews}
-            priorityTickers={priorityTickers}
-          />
+          <>
+            <EarningsCalendar watchlist={watchlist} heldTickers={heldTickers} />
+            <NewsPane
+              news={news}
+              loading={loading}
+              onRefresh={refreshNews}
+              priorityTickers={priorityTickers}
+            />
+          </>
         )}
       </div>
     </>

@@ -47,6 +47,8 @@ export function useNotion(showToast) {
             wheel:        w.wheel        || '',
             fundamentals: w.fundamentals || '',
             lastEval:     w.lastEval     || '',
+            // Feeds the Home news-tab earnings calendar. ISO date string or ''.
+            earnings:     w.earnings     || '',
             addedAt:  w.addedAt || Date.now(),
             liveData: existing?.liveData || null,
           };
