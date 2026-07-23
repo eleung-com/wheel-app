@@ -19,8 +19,31 @@ for Apps Script.
 
 | Method | Path | Does |
 |---|---|---|
-| `GET` | `/notion/watchlist` | Returns every Stock Scan Results page where `TV Lists` is non-empty, as `{pageId, ticker, notes, category, verdict, sector, addedAt}`. |
+| `GET` | `/notion/watchlist` | Returns every Stock Scan Results page where `TV Lists` is non-empty, as `{pageId, ticker, notes, category, verdict, sector, diveIn, wheel, fundamentals, lastEval, addedAt}`. `diveIn` is the Dive-In select — rows reading `🔥 Priority` are the ones the Home news feed and the CSP signals use. `wheel` / `fundamentals` are the `Wheel (CSP)` and `Fundamentals` selects, shown as pills on signal cards. |
+| `GET` | `/notion/eval?pageId=…` | The **latest evaluation** for one ticker: everything nested under the *first* toggle header on its page. Returns `{eval: {title, blocks} \| null}`, or `null` when the page has no toggle header. |
 | `PATCH` | `/notion/page` | Body `{pageId, notes?, category?}`. Writes **only** the `Notes` and `App Category` properties — never touches `scanner verdict`, `TV Lists`, or page content. |
+
+### How `/notion/eval` reads a page
+
+Each ticker page stacks its evaluations newest-first under toggle headers titled
+by date (`# 07-21-2026`). The route reads the children of the **first** toggle
+header only, so older evaluations further down the page are never returned —
+there is a test asserting the second toggle is never even fetched.
+
+`blocks` is a flattened list the app renders directly. Each entry is one of:
+
+| `type` | Shape | From |
+|---|---|---|
+| `heading` | `{text}` | `heading_1/2/3` |
+| `text` | `{text}` | `paragraph`, `quote` (blank ones dropped) |
+| `bullet` | `{text}` | `bulleted_list_item`, `numbered_list_item` |
+| `table` | `{hasHeader, rows: string[][]}` | `table` + its `table_row` children |
+
+Dividers, images and embeds are skipped. Each table costs an extra Notion round
+trip, so a page is capped at `EVAL_MAX_TABLES` tables and `EVAL_MAX_BLOCKS`
+blocks. Rows where every cell is blank are dropped — Notion tables often carry
+an empty styled header row. The app caches each result for 24h, keyed by page id
+and stamped with `lastEval`, so rewriting an eval invalidates it early.
 
 Unlike the finance routes, these restrict `Access-Control-Allow-Origin` to the
 Pages origin and localhost. That stops other sites' JavaScript from using the
@@ -70,6 +93,10 @@ curl -H 'x-tradier-token: YOUR_KEY' \
 # Notion route (needs your app secret) — should list ~29 tickers
 curl -H 'x-app-secret: YOUR_SECRET' \
   'https://wheel-tradier-proxy.esthercandy.workers.dev/notion/watchlist'
+
+# Latest evaluation for one ticker — pageId comes from the watchlist response
+curl -H 'x-app-secret: YOUR_SECRET' \
+  'https://wheel-tradier-proxy.esthercandy.workers.dev/notion/eval?pageId=PAGE_UUID'
 ```
 
 The deployed app at `eleung-com.github.io/wheel-app` depends on the `/yf` route —

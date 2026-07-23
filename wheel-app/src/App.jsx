@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 import { useAppContext } from './context/AppContext';
 import { useToast }       from './hooks/useToast';
@@ -6,21 +6,22 @@ import { useMarketStatus } from './hooks/useMarketStatus';
 import { useSheets }      from './hooks/useSheets';
 import { useNotion }      from './hooks/useNotion';
 import { useScreener }    from './hooks/useScreener';
+import useEvals           from './hooks/useEvals';
 import { isConfigured, LS_SESSION_KEY, parseCriteria, parsePositions, parseClosedTrades } from './lib/utils';
 
 import AuthGate    from './components/AuthGate/AuthGate';
 import BootScreen  from './components/BootScreen/BootScreen';
 import Header      from './components/Header/Header';
 import TabNav      from './components/TabNav/TabNav';
+import BottomNav   from './components/BottomNav/BottomNav';
 import FAB         from './components/FAB/FAB';
 import Toast       from './components/Toast/Toast';
 
+import HomePage      from './components/pages/HomePage/HomePage';
 import SignalsPage   from './components/pages/SignalsPage/SignalsPage';
 import PositionsPage from './components/pages/PositionsPage/PositionsPage';
 import WatchlistPage from './components/pages/WatchlistPage/WatchlistPage';
-import HistoryPage   from './components/pages/HistoryPage/HistoryPage';
-import CriteriaPage  from './components/pages/CriteriaPage/CriteriaPage';
-import ToolsPage     from './components/pages/ToolsPage/ToolsPage';
+import SettingsPage  from './components/pages/SettingsPage/SettingsPage';
 
 import ModalOverlay           from './components/modals/ModalOverlay';
 import PositionModal          from './components/modals/PositionModal';
@@ -44,7 +45,7 @@ export default function App() {
   const [isBooting, setIsBooting] = useState(() => getInitialAuthState() === 'booting');
 
   // Navigation
-  const [activePage, setActivePage] = useState('pg-history');
+  const [activePage, setActivePage] = useState('pg-home');
 
   // Modal state
   const [openModal,         setOpenModal]         = useState(null);
@@ -66,6 +67,17 @@ export default function App() {
   const { isScreening, runScreener, refreshOptionPrices }          = useScreener(showToast);
   const runScreenerRef = useRef(runScreener);
   useEffect(() => { runScreenerRef.current = runScreener; });
+
+  // Latest Notion evaluation for every ticker currently offering an entry.
+  // Roll and close signals are excluded — those are about an open position, so
+  // the written thesis isn't what you're deciding on.
+  const evalTargets = useMemo(
+    () => state.signals
+      .filter(s => (s.type === 'csp' || s.type === 'cc') && s.pageId)
+      .map(s => ({ ticker: s.ticker, pageId: s.pageId, lastEval: s.lastEval })),
+    [state.signals],
+  );
+  const { evals, loading: evalsLoading } = useEvals(evalTargets);
 
   // ── Boot sequence ────────────────────────────────────────────────────────
   const boot = useCallback(async () => {
@@ -336,10 +348,24 @@ export default function App() {
         signals={state.signals}
       />
 
+      <div className={`page${activePage === 'pg-home' ? ' active' : ''}`} id="pg-home">
+        <HomePage
+          positions={state.positions}
+          closedTrades={state.closedTrades}
+          criteria={state.criteria}
+          signals={state.signals}
+          watchlist={state.watchlist}
+          showToast={showToast}
+          onShowSignal={id => { setDetailSignalId(id); setOpenModal('signal-detail'); }}
+        />
+      </div>
+
       <div className={`page${activePage === 'pg-signals' ? ' active' : ''}`} id="pg-signals">
         <SignalsPage
           signals={state.signals}
           lastRefresh={state.lastRefresh}
+          evals={evals}
+          evalsLoading={evalsLoading}
           onShowDetail={id => { setDetailSignalId(id); setOpenModal('signal-detail'); }}
         />
       </div>
@@ -367,27 +393,28 @@ export default function App() {
         />
       </div>
 
-      <div className={`page${activePage === 'pg-history' ? ' active' : ''}`} id="pg-history">
-        <HistoryPage positions={state.positions} />
-      </div>
-
-      <div className={`page${activePage === 'pg-tools' ? ' active' : ''}`} id="pg-tools">
-        <ToolsPage onAddPosition={posType => {
-          setEditPositionId(null);
-          setAddLotTicker(null);
-          setAddPosType(posType || null);
-          setOpenModal('pos');
-        }} />
-      </div>
-
-      <div className={`page${activePage === 'pg-criteria' ? ' active' : ''}`} id="pg-criteria">
-        <CriteriaPage
+      <div className={`page${activePage === 'pg-settings' ? ' active' : ''}`} id="pg-settings">
+        <SettingsPage
           criteria={state.criteria}
           onSave={handleSaveCriteria}
           onRefresh={runScreener}
           onPull={syncFromSheet}
+          onAddPosition={posType => {
+            setEditPositionId(null);
+            setAddLotTicker(null);
+            setAddPosType(posType || null);
+            setOpenModal('pos');
+          }}
         />
       </div>
+
+      <BottomNav
+        activePage={activePage}
+        onSwitch={setActivePage}
+        positions={state.positions}
+        watchlist={state.watchlist}
+        signals={state.signals}
+      />
 
       <FAB activePage={activePage} onClick={handleFabClick} />
       <Toast message={toast.message} type={toast.type} visible={toast.visible} />
@@ -433,6 +460,8 @@ export default function App() {
           signalId={detailSignalId}
           signals={state.signals}
           positions={state.positions}
+          evaluation={evals[(state.signals.find(s => s.id === detailSignalId) || {}).ticker] || null}
+          loading={evalsLoading}
           onClose={() => { setOpenModal(null); setDetailSignalId(null); }}
         />
       </ModalOverlay>

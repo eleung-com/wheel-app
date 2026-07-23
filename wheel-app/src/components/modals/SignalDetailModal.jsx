@@ -1,6 +1,7 @@
 import React from 'react';
+import EvalBody from '../pages/SignalsPage/EvalBody';
 
-export default function SignalDetailModal({ signalId, signals, positions, onClose }) {
+export default function SignalDetailModal({ signalId, signals, positions, onClose, evaluation, loading }) {
   const s = signals.find(sig => sig.id === signalId);
   if (!s) return null;
 
@@ -9,9 +10,6 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
   // For roll/close signals, find the underlying position
   const posId = signalId ? parseInt(signalId.replace('roll-', '').replace('close-', '')) : null;
   const pos   = (s.type === 'roll' || s.type === 'close') ? positions.find(p => p.id === posId) : null;
-
-  const contracts = s.contracts || 1;
-  const total     = s.premEst ? (parseFloat(s.premEst) * contracts * 100).toFixed(0) : null;
 
   return (
     <>
@@ -22,25 +20,52 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
         <div className="sugg" style={{ margin: 0 }}>{s.suggestion}</div>
       </div>
 
-      {s.type === 'csp' && !s.partial && (
+      {s.type === 'csp' && (
         <div className="dsec">
-          <div className="dlbl">Technical Snapshot</div>
-          <div className="mgrid c3">
-            <div className="met"><div className="met-l">IVR (est.)</div><div className="met-v b">{s.ivr !== null ? `${s.ivr}%` : '—'}</div></div>
-            <div className="met"><div className="met-l">RSI-14</div><div className="met-v">{s.rsi != null ? s.rsi.toFixed(0) : '—'}</div></div>
-            <div className="met"><div className="met-l">Stoch %K</div><div className="met-v">{s.stoch != null ? s.stoch.toFixed(0) : '—'}</div></div>
+          <div className="dlbl">Pullback Snapshot</div>
+          <div className="mgrid c2">
+            <div className="met"><div className="met-l">Off week high</div><div className="met-v r">{s.dropPct != null ? `${s.dropPct.toFixed(1)}%` : '—'}</div></div>
+            <div className="met"><div className="met-l">Week high</div><div className="met-v">{s.weekHigh != null ? `$${s.weekHigh.toFixed(2)}` : '—'}</div></div>
+            <div className="met"><div className="met-l">In ATR units</div><div className="met-v b">{s.atrDrop != null ? `${s.atrDrop.toFixed(1)}x` : '—'}</div></div>
+            <div className="met">
+              <div className="met-l">vs {s.maPeriod || 200}MA</div>
+              <div className={`met-v ${s.aboveMa === false ? 'r' : s.aboveMa ? 'g' : ''}`}>
+                {s.aboveMa == null ? '—' : s.aboveMa ? 'Above' : 'Below'}
+              </div>
+            </div>
+          </div>
+          <div className="mhint" style={{ marginTop: 8, marginBottom: 0 }}>
+            ATR units scale the drop by this stock&rsquo;s own average daily range, so it stays comparable across the watchlist. Above roughly 2x the move is unusual for the name &mdash; check RSI and Stochastic on the Watchlist chart before selling.
           </div>
         </div>
       )}
 
-      {((s.type === 'csp' && !s.partial) || s.type === 'cc') && (
+      {s.type === 'cc' && (
         <div className="dsec">
-          <div className="dlbl">Premium Estimate</div>
-          <div className="dgrid">
-            <div className="met"><div className="met-l">Per contract (est.)</div><div className="met-v g">{s.premEst ? `$${s.premEst}` : '—'}</div></div>
-            <div className="met"><div className="met-l">Total ({contracts} contract{contracts > 1 ? 's' : ''})</div><div className="met-v g">{total ? `$${total}` : '—'}</div></div>
+          <div className="dlbl">Rally Snapshot</div>
+          <div className="mgrid c3">
+            <div className="met"><div className="met-l">Off week low</div><div className="met-v g">{s.rallyPct != null ? `+${s.rallyPct.toFixed(1)}%` : '—'}</div></div>
+            <div className="met"><div className="met-l">Week low</div><div className="met-v">{s.weekLow != null ? `$${s.weekLow.toFixed(2)}` : '—'}</div></div>
+            <div className="met"><div className="met-l">IVR (est.)</div><div className="met-v b">{s.ivr != null ? `${s.ivr}%` : '—'}</div></div>
           </div>
-          <div className="mhint" style={{ marginTop: 8, marginBottom: 0 }}>Uses HV30. Verify actual chain in Fidelity before placing the order.</div>
+        </div>
+      )}
+
+      {(s.type === 'csp' || s.type === 'cc') && (
+        <div className="dsec">
+          <div className="dlbl">
+            Latest Evaluation
+            {(s.wheel || s.fundamentals) && (
+              <span className="dlbl-x">
+                {s.wheel && `Wheel ${s.wheel}`}
+                {s.wheel && s.fundamentals && ' · '}
+                {s.fundamentals && `Fundamentals ${s.fundamentals}`}
+              </span>
+            )}
+          </div>
+          <div className="evl evl-modal">
+            <EvalBody evaluation={evaluation} notes={s.notes} loading={loading} />
+          </div>
         </div>
       )}
 

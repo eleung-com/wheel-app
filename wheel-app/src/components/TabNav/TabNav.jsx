@@ -1,33 +1,25 @@
 import React from 'react';
+import { NAV_ITEMS, navBadges } from '../../lib/nav';
 
-const ACTIVE_TYPES = new Set(['short_put', 'short_call']);
+const BADGE_CLASS = {
+  'pg-signals':   'g',
+  'pg-positions': 'b',
+  'pg-watchlist': 'p',
+};
 
 export default function TabNav({ activePage, onSwitch, positions, watchlist, signals = [] }) {
-  const activeCount = positions.filter(p => ACTIVE_TYPES.has(p.type) && !p.linkedId).length;
-  // Actionable signals only — partial "watching" cards don't count toward the badge
-  const signalCount = signals.filter(s => !s.partial).length;
-
-  const tabs = [
-    { id: 'pg-history',   label: 'Overview',  badge: null,                     badgeClass: '' },
-    { id: 'pg-signals',   label: 'Signals',   badge: signalCount || null,      badgeClass: 'g' },
-    { id: 'pg-positions', label: 'Positions', badge: activeCount || null,      badgeClass: 'b' },
-    { id: 'pg-watchlist', label: 'Watchlist', badge: watchlist.length || null, badgeClass: 'p' },
-    { id: 'pg-tools',     label: 'Tools',     badge: null,                     badgeClass: '' },
-    { id: 'pg-criteria',  label: 'Settings',  badge: null,                     badgeClass: '' },
-  ];
+  const badges = navBadges({ positions, watchlist, signals });
 
   return (
     <div className="nav">
-      {tabs.map(t => (
+      {NAV_ITEMS.map(t => (
         <div
           key={t.id}
           className={`tab${activePage === t.id ? ' active' : ''}`}
           onClick={() => onSwitch(t.id)}
         >
           {t.label}
-          {t.badge !== null && (
-            <span className={`bdg ${t.badgeClass}`}>{t.badge}</span>
-          )}
+          {badges[t.id] ? <span className={`bdg ${BADGE_CLASS[t.id]}`}>{badges[t.id]}</span> : null}
         </div>
       ))}
     </div>

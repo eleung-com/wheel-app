@@ -13,18 +13,15 @@ export default defineConfig({
         target: process.env.NOTION_PROXY_TARGET || 'https://wheel-tradier-proxy.esthercandy.workers.dev',
         changeOrigin: true,
       },
-      // Yahoo Finance — proxy avoids CORS on localhost; sets browser UA so Yahoo doesn't reject
+      // Yahoo Finance — through the worker, which is also what production uses.
+      // Yahoo rate-limits residential IPs (every direct call from a dev machine
+      // comes back 429), so hitting query1 from here just fails. The worker's
+      // /yf route already sets the browser User-Agent Yahoo requires, so the
+      // path is passed through unrewritten. Set YF_PROXY_TARGET to a stub or to
+      // https://query1.finance.yahoo.com (with the rewrite restored) to bypass it.
       '/yf': {
-        target: 'https://query1.finance.yahoo.com',
+        target: process.env.YF_PROXY_TARGET || 'https://wheel-tradier-proxy.esthercandy.workers.dev',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/yf/, ''),
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-            proxyReq.setHeader('Accept', 'application/json,text/plain,*/*');
-            proxyReq.setHeader('Referer', 'https://finance.yahoo.com/');
-          });
-        },
       },
       // Tradier API — key is injected server-side so it never appears in browser network logs
       '/tr': {

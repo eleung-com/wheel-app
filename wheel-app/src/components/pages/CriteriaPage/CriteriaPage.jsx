@@ -30,7 +30,7 @@ function CriteriaRow({ label, sub, inputId, value, onChange, min, max, pair }) {
 }
 
 const SECTIONS = [
-  { id: 'csp',     label: 'CSP Entry',       sub: 'Indicators, delta & DTE ranges' },
+  { id: 'csp',     label: 'CSP Entry',       sub: 'Pullback, delta & DTE ranges' },
   { id: 'cc',      label: 'Covered Calls',   sub: 'Entry rules for calls on shares' },
   { id: 'exit',    label: 'Exit Rules',      sub: 'Early close thresholds' },
   { id: 'capital', label: 'Account Capital', sub: 'Buying power per account' },
@@ -119,10 +119,9 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
     switch (id) {
       case 'csp': return (
         <>
-          <div className="slabel">CSP Entry — Technical Indicators</div>
+          <div className="slabel">CSP Entry — Pullback</div>
           <div className="ssec">
-            <CriteriaRow label="Max Stochastic %K"     sub="Oversold when Stoch %K < this"             inputId="c-stoch" value={local.stoch} min={0}  max={100} onChange={v => update('stoch', v)} />
-            <CriteriaRow label="Max RSI (14)"          sub="Oversold when RSI < this"                  inputId="c-rsi"   value={local.rsi}   min={0}  max={100} onChange={v => update('rsi', v)} />
+            <CriteriaRow label="Min drop from week high" sub="% below the 5-day high — only Dive-In 🔥 Priority tickers are scanned" inputId="c-drop" value={local.dropPct} min={1} max={40} onChange={v => update('dropPct', v)} />
             <CriteriaRow label="Price above MA"        sub="Moving average period (days)"              inputId="c-ma"    value={local.ma}    min={20} max={250} onChange={v => update('ma', v)} />
             <CriteriaRow label="Avoid earnings within" sub="Days — skip if earnings inside DTE window" inputId="c-earn"  value={local.earn}  onChange={v => update('earn', v)} />
           </div>
@@ -146,7 +145,7 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
           <div className="slabel">Covered Call — Entry</div>
           <div className="ssec">
             <CriteriaRow label="Min shares owned"    sub="Must have at least this many"                   inputId="c-shares"   value={local.shares}  onChange={v => update('shares', v)} />
-            <CriteriaRow label="Min Stoch %K for CC" sub="High stoch signals overbought — good for calls" inputId="c-cc-stoch" value={local.ccStoch} onChange={v => update('ccStoch', v)} />
+            <CriteriaRow label="Min rally from week low" sub="% above the 5-day low — call premium is richest after a run-up" inputId="c-cc-rally" value={local.ccRallyPct} min={1} max={40} onChange={v => update('ccRallyPct', v)} />
             <CriteriaRow
               label="CC target delta range" sub="Strike is chosen at the midpoint delta"
               pair={{ min: local.ccDeltaMin, max: local.ccDeltaMax }}

@@ -74,7 +74,6 @@ html{-webkit-text-size-adjust:100%}
 .scard{background:var(--s1);border:1px solid var(--b1);border-radius:var(--rr);padding:13px 13px 11px;margin-bottom:9px;cursor:pointer;transition:border-color .15s;position:relative;overflow:hidden}
 .scard::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
 .scard.csp::before{background:var(--bl)}.scard.cc::before{background:var(--g)}.scard.roll::before{background:var(--r)}.scard.close::before{background:var(--a)}
-.scard.partial{opacity:.72}
 .scard:active{background:var(--s2)}
 .ctop{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px}
 .tblk{display:flex;flex-direction:column;gap:2px}
@@ -104,6 +103,32 @@ html{-webkit-text-size-adjust:100%}
 /* SUGGESTION */
 .sugg{background:var(--s2);border:1px solid var(--b2);border-radius:var(--rs);padding:9px 11px;font-size:12px;line-height:1.55;color:var(--mu2)}
 .sugg strong{color:var(--tx);font-weight:600}
+
+/* ── Notion evaluation ─────────────────────────────────────────────────────
+   The contents of the first toggle header on a ticker's Notion page. Scrolls
+   inside its own box so a long write-up can't stretch the signal grid row. */
+.evl{margin-top:8px;border-top:1px solid var(--b2);padding-top:8px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.evl-card{max-height:190px;font-size:10px;line-height:1.5}
+.evl-modal{max-height:52vh;font-size:12px;line-height:1.55}
+.evl-empty{color:var(--mu);font-style:italic}
+.evl-date{font-weight:700;color:var(--tx);margin-bottom:5px}
+.evl-h{font-weight:700;color:var(--tx);margin:9px 0 4px}
+.evl-h:first-child{margin-top:0}
+.evl-p{margin:0 0 6px;color:var(--mu2)}
+.evl-li{position:relative;padding-left:11px;margin-bottom:3px;color:var(--mu2)}
+.evl-li::before{content:'•';position:absolute;left:2px;color:var(--mu)}
+.evl-notes{background:var(--s2);border:1px solid var(--b2);border-radius:var(--rs);padding:5px 7px;margin-bottom:7px;color:var(--mu2)}
+.evl-notes-l{text-transform:uppercase;letter-spacing:.6px;color:var(--mu);font-size:.86em;margin-right:3px}
+/* Tables scroll sideways on their own so the card never does. */
+.evl-tw{overflow-x:auto;margin:0 0 7px}
+/* Fixed layout makes the columns share the width and the prose wrap, instead of
+   each sizing to its content and pushing the table past the card edge. */
+.evl-t{border-collapse:collapse;width:100%;table-layout:fixed}
+.evl-t th,.evl-t td{border:1px solid var(--b2);padding:3px 5px;text-align:left;vertical-align:top;color:var(--mu2)}
+.evl-t th{background:var(--s2);color:var(--tx);font-weight:600}
+.scard-wide{grid-column:1/-1}
+.cpill.vpill{background:var(--s2);border-color:var(--b2);color:var(--mu2)}
+.dlbl-x{float:right;text-transform:none;letter-spacing:0;color:var(--mu2)}
 .cftr{display:flex;align-items:center;justify-content:space-between;margin-top:9px;padding-top:9px;border-top:1px solid var(--b1)}
 .ctime{font-size:10px;color:var(--mu);font-family:var(--mono)}
 
@@ -259,3 +284,96 @@ input[type="date"]{color-scheme:light}
 .pw-hint{font-size:10px;color:var(--mu);line-height:1.55;text-align:center;max-width:320px}
 .pw-reset{font-size:10px;color:var(--mu);font-family:var(--mono);cursor:pointer;text-decoration:underline;text-underline-offset:2px;background:none;border:none;padding:0}
 .pw-reset:hover{color:var(--mu2)}
+
+/* ── Bottom nav (mobile) ───────────────────────────────────────────────────── */
+/* The top tab bar and the bottom bar carry the same five destinations; only one
+   is ever on screen. Below 640px the bottom bar takes over. */
+.bnav{display:none}
+@media (max-width:640px){
+  .nav{display:none}
+  .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:150;background:rgba(250,249,244,.94);backdrop-filter:blur(16px);border-top:1px solid var(--b1);padding:7px 4px calc(10px + env(safe-area-inset-bottom,0px))}
+  .page{padding-bottom:104px}
+  .fab{bottom:calc(80px + env(safe-area-inset-bottom,0px))}
+}
+.bni{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 0 3px;min-height:44px;background:none;border:0;cursor:pointer;font-family:var(--sans);font-size:9.5px;font-weight:600;color:var(--mu);transition:color .15s}
+.bni.active{color:var(--ac)}
+.bni:active{transform:scale(.95)}
+.nav-icon{width:21px;height:21px}
+.bni-badge{position:absolute;top:0;left:50%;margin-left:6px;min-width:15px;height:15px;padding:0 4px;border-radius:20px;background:var(--ac);color:var(--ac-tx);font-size:8.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+/* ── Subtabs (Home, Settings) ──────────────────────────────────────────────── */
+.subtabs{display:flex;gap:5px;margin-bottom:14px;flex-wrap:wrap}
+.subtabs button{font-family:var(--sans);font-size:11.5px;font-weight:700;letter-spacing:.3px;padding:8px 15px;min-height:36px;border-radius:20px;background:var(--s2);border:1px solid var(--b1);color:var(--mu2);cursor:pointer;transition:background .15s,color .15s}
+.subtabs button.on{background:var(--tx);border-color:var(--tx);color:var(--s1)}
+.subtabs button:active{transform:scale(.97)}
+
+/* ── Home · Stats ──────────────────────────────────────────────────────────── */
+.greet{font-size:23px;font-weight:800;letter-spacing:-.7px;margin:0}
+.greet-sub{font-size:12.5px;color:var(--mu2);margin:3px 0 0}
+.acctseg{display:inline-flex;gap:2px;padding:3px;background:var(--s2);border-radius:20px;margin:12px 0 4px}
+.acctseg button{font-family:var(--sans);font-size:11.5px;font-weight:600;padding:7px 14px;min-height:36px;border:0;border-radius:20px;background:none;color:var(--mu2);cursor:pointer}
+.acctseg button.on{background:var(--s1);color:var(--tx);box-shadow:0 1px 2px rgba(38,37,36,.07)}
+
+.statgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:10px 0 4px}
+@media (min-width:720px){.statgrid{grid-template-columns:repeat(4,1fr)}}
+.stat{background:var(--s1);border:1px solid var(--b1);border-radius:var(--rr);padding:12px}
+.stat-l{font-size:8.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--mu);font-weight:700}
+.stat-v{font-size:25px;font-weight:800;letter-spacing:-1px;margin-top:5px}
+.stat-v.g{color:var(--g)}.stat-v.r{color:var(--r)}
+.stat-s{font-size:10.5px;color:var(--mu);margin-top:3px}
+.statmeter{height:4px;border-radius:2px;background:var(--s3);margin-top:9px;overflow:hidden}
+.statmeter i{display:block;height:100%;background:var(--ac);border-radius:2px}
+
+.attn{background:var(--s1);border:1px solid var(--b1);border-radius:var(--rr);overflow:hidden}
+.attn-row{display:flex;width:100%;align-items:center;gap:10px;padding:12px 13px;min-height:44px;background:none;border:0;border-bottom:1px solid var(--b1);font-family:var(--sans);font-size:12.5px;line-height:1.4;color:var(--tx);text-align:left;cursor:pointer}
+.attn-row:last-child{border-bottom:0}
+.attn-row:active{background:var(--s2)}
+.adot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--a)}
+.adot.hot{background:var(--ac)}
+.attn-txt{flex:1;min-width:0}
+.attn-chev{color:var(--mu);flex-shrink:0}
+
+/* ── Home · News ───────────────────────────────────────────────────────────── */
+.news-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:18px 0 8px}
+.news-head .slabel{margin:0}
+.news-time{font-size:10px;color:var(--mu)}
+.nrefresh{font-family:var(--mono);font-size:10px;color:var(--mu2);background:var(--s2);border:1px solid var(--b1);border-radius:14px;padding:5px 11px;min-height:30px;cursor:pointer}
+.nrefresh:disabled{opacity:.6;cursor:default}
+.news-empty{background:var(--s1);border:1px solid var(--b1);border-radius:var(--rr);padding:20px;text-align:center;font-size:12.5px;color:var(--mu);display:flex;flex-direction:column;align-items:center;gap:10px}
+
+.nlead,.ntkrow,.nsector{background:var(--s1);border:1px solid var(--b1);border-radius:var(--rr);margin-bottom:7px}
+.nlead{padding:12px 13px}
+.nrank{font-size:9px;font-weight:800;letter-spacing:1px;color:var(--ac);text-transform:uppercase;margin-bottom:5px}
+
+.nstory-hit{display:flex;flex-direction:column;gap:5px;width:100%;background:none;border:0;padding:0;text-align:left;font-family:var(--sans);color:var(--tx);cursor:pointer}
+.nstory-title{font-size:13.5px;line-height:1.34;font-weight:700;letter-spacing:-.2px}
+.nlead .nstory-title{font-size:14.5px}
+.nstory-src{font-size:10.5px;color:var(--mu)}
+.nstory-src em{font-style:normal;color:var(--mu2);font-weight:600}
+.nstory-more{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--b1)}
+.nstory-thumb{width:100%;max-width:260px;border-radius:var(--rs);display:block}
+.nstory-rel{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+.nstory-rel-l{font-size:9px;letter-spacing:1.2px;text-transform:uppercase;color:var(--mu);font-weight:700}
+.nstory-tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--s3);color:var(--mu2)}
+.nstory-when{font-size:10.5px;color:var(--mu)}
+.nstory-link{font-size:11.5px;font-weight:700;color:var(--ac);text-decoration:none}
+.nstory-link:hover{text-decoration:underline;text-underline-offset:2px}
+
+.ntkrow{display:flex;gap:11px;align-items:flex-start;padding:11px 13px}
+.ntk{font-size:11px;font-weight:800;letter-spacing:-.2px;padding:5px 8px;border-radius:7px;background:var(--s3);color:var(--mu2);flex-shrink:0;min-width:54px;text-align:center}
+.ntk.hot{background:var(--acd);color:var(--ac);border:1px solid var(--acd2)}
+.ntk-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.ntk-none{font-size:11.5px;color:var(--mu);padding-top:5px}
+.nflag{font-size:9.5px;font-weight:700;color:var(--a);background:var(--ad);border:1px solid rgba(176,121,26,.3);padding:2px 6px;border-radius:5px;align-self:flex-start}
+
+.nsector{overflow:hidden}
+.nsector summary{list-style:none;cursor:pointer;padding:11px 13px;min-height:44px;display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:700}
+.nsector summary::-webkit-details-marker{display:none}
+.netf{font-size:9px;font-weight:800;letter-spacing:.4px;padding:3px 6px;border-radius:5px;background:var(--s3);color:var(--mu2);flex-shrink:0;min-width:42px;text-align:center}
+.narrow{margin-left:auto;color:var(--mu);font-size:11px;transition:transform .16s}
+.nsector[open] .narrow{transform:rotate(90deg)}
+.nsector-body{padding:0 13px 12px;display:flex;flex-direction:column;gap:11px}
+
+@media (prefers-reduced-motion:reduce){
+  .bni,.subtabs button,.narrow{transition:none}
+}

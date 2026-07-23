@@ -41,6 +41,12 @@ export function useNotion(showToast) {
             notes:    w.notes || '',
             category: w.category || '',
             sector:   w.sector || '',
+            diveIn:   w.diveIn || '',
+            // Shown as pills on the signal cards; lastEval also expires the
+            // cached page-body eval when the Notion entry is rewritten.
+            wheel:        w.wheel        || '',
+            fundamentals: w.fundamentals || '',
+            lastEval:     w.lastEval     || '',
             addedAt:  w.addedAt || Date.now(),
             liveData: existing?.liveData || null,
           };

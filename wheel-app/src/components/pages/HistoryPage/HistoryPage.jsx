@@ -415,11 +415,18 @@ function StatRow({ label, value, color }) {
   );
 }
 
-export default function HistoryPage({ positions }) {
+/**
+ * Pass `account` to drive the account filter from outside and hide the local
+ * control — Home does that, so the page shows one account switcher, not two.
+ */
+export default function HistoryPage({ positions, account }) {
   const [yearFilter,    setYearFilter]    = useState('all');
   const [stratFilter,   setStratFilter]   = useState('all');
-  const [accountFilter, setAccountFilter] = useState('all');
+  const [ownAccount,    setOwnAccount]    = useState('all');
   const [selectedTrade, setSelectedTrade] = useState(null);
+
+  const controlled    = account !== undefined;
+  const accountFilter = controlled ? account : ownAccount;
 
   const posMap = {};
   positions.forEach(p => { posMap[p.id] = p; });
@@ -469,11 +476,12 @@ export default function HistoryPage({ positions }) {
 
   return (
     <div>
-      {/* ── Account filter ────────────────────────────────────── */}
+      {/* ── Account filter (hidden when Home is driving it) ───── */}
+      {!controlled && (
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
         <span style={{ fontSize: 10, color: 'var(--mu)', fontFamily: 'var(--mono)' }}>Account</span>
         {['all', 'Esther', 'Fam'].map(a => (
-          <button key={a} onClick={() => setAccountFilter(a)} style={{
+          <button key={a} onClick={() => setOwnAccount(a)} style={{
             padding: '6px 12px', minHeight: 36, borderRadius: 20, fontSize: 10, cursor: 'pointer',
             border: `1px solid ${accountFilter === a ? 'var(--pu)' : 'var(--b1)'}`,
             background: accountFilter === a ? 'rgba(168,85,247,0.12)' : 'var(--s2)',
@@ -484,6 +492,7 @@ export default function HistoryPage({ positions }) {
           </button>
         ))}
       </div>
+      )}
 
       {/* ── Year filter ───────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>

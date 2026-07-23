@@ -2,11 +2,25 @@ import React from 'react';
 import SummaryBar from './SummaryBar';
 import SignalCard from './SignalCard';
 
-export default function SignalsPage({ signals, lastRefresh, onShowDetail }) {
-  const act  = signals.filter(s => s.type === 'roll' || s.type === 'close');
-  const csp  = signals.filter(s => s.type === 'csp'  && !s.partial);
-  const cspP = signals.filter(s => s.type === 'csp'  &&  s.partial);
-  const cc   = signals.filter(s => s.type === 'cc');
+export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoading, onShowDetail }) {
+  const card = s => (
+    <SignalCard
+      key={s.id}
+      signal={s}
+      evaluation={evals[s.ticker] || null}
+      loading={evalsLoading}
+      onClick={onShowDetail}
+    />
+  );
+
+  const act = signals.filter(s => s.type === 'roll' || s.type === 'close');
+  const cc  = signals.filter(s => s.type === 'cc');
+  // Biggest move relative to the stock's own daily range leads — a 5% drop
+  // means far more on a quiet name than on a volatile one, so this is the
+  // order worth working down when checking RSI and Stochastic by hand.
+  const csp = signals
+    .filter(s => s.type === 'csp')
+    .sort((a, b) => (b.atrDrop ?? 0) - (a.atrDrop ?? 0));
 
   const isEmpty = signals.length === 0;
 
@@ -29,32 +43,26 @@ export default function SignalsPage({ signals, lastRefresh, onShowDetail }) {
           <div className="empty" style={{ gridColumn: '1/-1' }}>
             <div className="empty-icon">✓</div>
             <div className="empty-title">No signals right now</div>
-            <div className="empty-sub">None of your tickers meet criteria. Auto-refreshes every 20 min during market hours.</div>
+            <div className="empty-sub">No Priority ticker has pulled back far enough, and nothing needs rolling. Auto-refreshes every 20 min during market hours.</div>
           </div>
         )}
 
         {act.length > 0 && (
           <>
             <div className="slabel" style={{ gridColumn: '1/-1' }}>⚡ Action Required</div>
-            {act.map(s => <SignalCard key={s.id} signal={s} onClick={onShowDetail} />)}
+            {act.map(card)}
           </>
         )}
         {cc.length > 0 && (
           <>
             <div className="slabel" style={{ gridColumn: '1/-1' }}>🟢 Covered Call Opportunities</div>
-            {cc.map(s => <SignalCard key={s.id} signal={s} onClick={onShowDetail} />)}
+            {cc.map(card)}
           </>
         )}
         {csp.length > 0 && (
           <>
-            <div className="slabel" style={{ gridColumn: '1/-1' }}>🔵 CSP Entry — All Criteria Met</div>
-            {csp.map(s => <SignalCard key={s.id} signal={s} onClick={onShowDetail} />)}
-          </>
-        )}
-        {cspP.length > 0 && (
-          <>
-            <div className="slabel" style={{ gridColumn: '1/-1', color: 'var(--a)' }}>○ Watching — Partial Criteria</div>
-            {cspP.map(s => <SignalCard key={s.id} signal={s} onClick={onShowDetail} />)}
+            <div className="slabel" style={{ gridColumn: '1/-1' }}>🔵 CSP Entry — Priority &amp; Pulled Back</div>
+            {csp.map(card)}
           </>
         )}
 

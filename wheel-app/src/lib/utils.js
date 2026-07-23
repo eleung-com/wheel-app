@@ -11,6 +11,15 @@ export function getSecret()      { return localStorage.getItem(LS_SECRET_KEY) ||
 export function getTradierKey()  { return localStorage.getItem(LS_TRADIER_KEY) || ''; }
 export function isConfigured()   { return !!getSheetUrl() && !!getSecret(); }
 
+// Base for Yahoo Finance calls. Both environments end up at the worker, which
+// sets the browser User-Agent Yahoo requires — Yahoo rate-limits residential IPs,
+// so a dev machine calling query1 directly just gets 429s. On localhost the Vite
+// proxy forwards /yf there; in production the app calls the worker itself.
+export function yahooBase() {
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  return isLocal ? '/yf' : `${WORKER_ORIGIN}/yf`;
+}
+
 // Returns { url, headers } for a Notion call, always via the worker — the Notion
 // token lives there as a secret and must never reach this (public) bundle. The
 // worker gates the route on the same shared secret the sheet already uses.
@@ -72,9 +81,9 @@ export function suggestStrike(price, delta, type) {
 }
 
 export const DEFAULT_CRITERIA = {
-  stoch: 20, rsi: 35, ma: 200, earn: 30,
+  dropPct: 5, ma: 200, earn: 30,
   deltaMin: 20, deltaMax: 35, dteMin: 21, dteMax: 45,
-  shares: 100, ccStoch: 75, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
+  shares: 100, ccRallyPct: 5, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
   closePct: 50, closeDtePct: 50,
   capitalEsther: 0, capitalFam: 0,
   indicatorTickers: '',
@@ -83,8 +92,7 @@ export const DEFAULT_CRITERIA = {
 
 export function parseCriteria(c) {
   return {
-    stoch:      Number(c.stoch)      || 20,
-    rsi:        Number(c.rsi)        || 35,
+    dropPct:    Number(c.dropPct)    || 5,
     ma:         Number(c.ma)         || 200,
     earn:       Number(c.earn)       || 30,
     deltaMin:   Number(c.deltaMin)   || (Number(c.delta) || 20),
@@ -92,7 +100,7 @@ export function parseCriteria(c) {
     dteMin:     Number(c.dteMin)     || 21,
     dteMax:     Number(c.dteMax)     || 45,
     shares:     Number(c.shares)     || 100,
-    ccStoch:    Number(c.ccStoch)    || 75,
+    ccRallyPct: Number(c.ccRallyPct) || 5,
     ccDeltaMin: Number(c.ccDeltaMin) || (Number(c.ccDelta) || 15),
     ccDeltaMax: Number(c.ccDeltaMax) || (Number(c.ccDelta) || 25),
     ccDteMin:   Number(c.ccDteMin)   || 21,

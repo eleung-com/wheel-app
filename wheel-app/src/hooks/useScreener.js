@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { fetchQ } from '../lib/indicators';
 import { fetchOptionPrice, fetchBestStrike } from '../lib/optionPrice';
-import { buildSignals } from '../lib/signals';
+import { buildSignals, PRIORITY } from '../lib/signals';
 import { getTradierKey } from '../lib/utils';
 
 // ── Market-close cache ────────────────────────────────────────────────────────
@@ -187,14 +187,13 @@ export function useScreener(showToast) {
       const strikeMap = {};
 
       for (const w of currentState.watchlist) {
+        if (w.diveIn !== PRIORITY) continue;
         const q = qmap[w.ticker];
-        if (!q) continue;
-        const rsiOk   = q.rsiEst   !== null && q.rsiEst   <= cr.rsi;
-        const stochOk = q.stochEst !== null && q.stochEst <= cr.stoch;
-        const maOk    = q.aboveMa  !== false;
-        const hasOpt  = mergedPositions.some(p =>
+        if (!q || q.dropPct == null) continue;
+        const dropOk = q.dropPct >= cr.dropPct;
+        const hasOpt = mergedPositions.some(p =>
           p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
-        if (rsiOk && stochOk && maOk && !hasOpt) {
+        if (dropOk && !hasOpt) {
           const best = await fetchBestStrike(w.ticker, 'put', cr.deltaMin, cr.deltaMax, cr.dteMin, cr.dteMax);
           if (best) strikeMap[`${w.ticker}:put`] = best;
           await new Promise(r => setTimeout(r, 450));
@@ -203,11 +202,11 @@ export function useScreener(showToast) {
 
       for (const pos of mergedPositions.filter(p => p.type === 'shares' && !p.linkedId && p.qty >= 100)) {
         const q = qmap[pos.ticker];
-        if (!q || strikeMap[`${pos.ticker}:call`]) continue;
-        const stochOk = q.stochEst !== null && q.stochEst >= cr.ccStoch;
+        if (!q || q.rallyPct == null || strikeMap[`${pos.ticker}:call`]) continue;
+        const rallyOk = q.rallyPct >= cr.ccRallyPct;
         const hasCall = mergedPositions.some(p =>
           p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
-        if (stochOk && !hasCall) {
+        if (rallyOk && !hasCall) {
           const best = await fetchBestStrike(pos.ticker, 'call', cr.ccDeltaMin, cr.ccDeltaMax, cr.ccDteMin, cr.ccDteMax);
           if (best) strikeMap[`${pos.ticker}:call`] = best;
           await new Promise(r => setTimeout(r, 450));
