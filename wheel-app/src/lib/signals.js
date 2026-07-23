@@ -1,72 +1,97 @@
 import { dte } from './utils';
 
+// The Dive-In select value in Notion that promotes a watchlist row into the
+// signal engine. Rows reading anything else are never scanned for entries.
+export const PRIORITY = '🔥 Priority';
+
+/** "down 2.3x its average daily range" — omitted when ATR can't be computed. */
+function atrNote(q) {
+  return q.atrDrop != null ? `${q.atrDrop.toFixed(1)}x ATR` : null;
+}
+
 export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {}) {
   const cr   = criteria;
   const sigs = [];
 
-  // ── CSP signals ───────────────────────────────────────────────────────────
-  for (const w of watchlist) {
-    const q = qmap[w.ticker];
-    if (!q) continue;
+  // Covered calls key off a share lot, which may sit on a ticker that never
+  // made the watchlist — hence a lookup rather than reading the row directly.
+  const byTicker = new Map(watchlist.map(w => [w.ticker, w]));
 
-    const rsiOk   = q.rsiEst   !== null && q.rsiEst   <= cr.rsi;
-    const stochOk = q.stochEst !== null && q.stochEst <= cr.stoch;
-    const maOk    = q.aboveMa  !== false;
-    const hasOpt  = positions.find(p => p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
+  /** Notion context every signal carries, so cards can show the latest eval. */
+  const notionOf = (ticker) => {
+    const w = byTicker.get(ticker);
+    return {
+      pageId:       w?.pageId       || null,
+      notes:        w?.notes        || '',
+      wheel:        w?.wheel        || '',
+      fundamentals: w?.fundamentals || '',
+      lastEval:     w?.lastEval     || '',
+    };
+  };
+
+  // ── CSP signals ───────────────────────────────────────────────────────────
+  // Two conditions only: the row is flagged Priority in Notion, and the price
+  // has fallen at least cr.dropPct from its 5-day high. Deliberately does not
+  // gate on RSI or Stochastic — those are checked by eye on the Watchlist
+  // chart, and the ATR figure below says which name to look at first.
+  for (const w of watchlist) {
+    if (w.diveIn !== PRIORITY) continue;
+
+    const q = qmap[w.ticker];
+    if (!q || q.dropPct == null) continue;
+
+    const dropOk = q.dropPct >= cr.dropPct;
+    const hasOpt = positions.find(p => p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
+    if (!dropOk || hasOpt) continue;
+
+    const live    = strikeMap[`${w.ticker}:put`];
+    const strike  = live?.strike ?? null;
+    const dteT    = live?.dte    ?? null;
+    const deltaStr = live?.delta != null
+      ? `Δ${Math.abs(live.delta).toFixed(2)}`
+      : `${cr.deltaMin}–${cr.deltaMax}Δ range`;
 
     const chks = [
-      { l: `RSI ${q.rsiEst   != null ? q.rsiEst.toFixed(0)    : '?'}`, ok: rsiOk,   tgt: `<${cr.rsi}`   },
-      { l: `Stoch ${q.stochEst != null ? q.stochEst.toFixed(0) : '?'}`, ok: stochOk, tgt: `<${cr.stoch}` },
-      { l: `${cr.ma}MA`, ok: maOk, tgt: 'Above' },
+      { l: 'Dive-In Priority', ok: true, tgt: PRIORITY },
+      { l: `${q.dropPct.toFixed(1)}% off week high`, ok: true, tgt: `≥${cr.dropPct}%` },
     ];
-    const allOk = rsiOk && stochOk && maOk;
-    const passN = chks.filter(c => c.ok).length;
+    const note = atrNote(q);
+    if (note) chks.push({ l: note, ok: true, tgt: 'context' });
 
-    if (!hasOpt) {
-      if (allOk) {
-        const live    = strikeMap[`${w.ticker}:put`];
-        const strike  = live?.strike ?? null;
-        const dteT    = live?.dte    ?? null;
-        const premEst = live?.premium != null ? live.premium.toFixed(2) : null;
-        const deltaStr = live?.delta != null
-          ? `Δ${Math.abs(live.delta).toFixed(2)}`
-          : `${cr.deltaMin}–${cr.deltaMax}Δ range`;
-        const suggParts = [];
-        if (dteT != null && strike != null) suggParts.push(`Sell ${dteT}d $${strike} put`);
-        else suggParts.push(`Sell put · ${cr.deltaMin}–${cr.deltaMax}Δ · ${cr.dteMin}–${cr.dteMax}d`);
-        if (live) suggParts.push(deltaStr);
-        if (premEst) suggParts.push(`~$${premEst}/contract`);
-        sigs.push({
-          id: `csp-${w.ticker}`, type: 'csp', ticker: w.ticker,
-          price: q.price, chg: q.chg1d, strike, dteTarget: dteT, premEst,
-          rsi: q.rsiEst, stoch: q.stochEst, chks,
-          suggestion: suggParts.join(' · '),
-          ts: Date.now(),
-        });
-      } else if (passN >= 2) {
-        sigs.push({
-          id: `csp-p-${w.ticker}`, type: 'csp', ticker: w.ticker,
-          price: q.price, chg: q.chg1d, chks, partial: true, passN,
-          suggestion: `${passN}/3 criteria met · Waiting: ${chks.filter(c => !c.ok).map(c => c.l + ' (need ' + c.tgt + ')').join(', ')}`,
-          ts: Date.now(),
-        });
-      }
-    }
+    const suggParts = [];
+    if (dteT != null && strike != null) suggParts.push(`Sell ${dteT}d $${strike} put`);
+    else suggParts.push(`Sell put · ${cr.deltaMin}–${cr.deltaMax}Δ · ${cr.dteMin}–${cr.dteMax}d`);
+    if (live) suggParts.push(deltaStr);
+    // The MA no longer gates the signal, but a deep drop below it is the
+    // difference between a pullback and a falling knife — worth saying out loud.
+    if (q.aboveMa === false) suggParts.push(`⚠ Below the ${cr.ma}MA`);
+    suggParts.push('Confirm RSI & Stoch on the chart first');
+
+    sigs.push({
+      id: `csp-${w.ticker}`, type: 'csp', ticker: w.ticker,
+      price: q.price, chg: q.chg1d, strike, dteTarget: dteT,
+      ivr: q.ivrEst ?? null, aboveMa: q.aboveMa, maPeriod: cr.ma,
+      ...notionOf(w.ticker),
+      dropPct: q.dropPct, weekHigh: q.weekHigh, atrDrop: q.atrDrop, chks,
+      suggestion: suggParts.join(' · '),
+      ts: Date.now(),
+    });
   }
 
   // ── Covered Call signals ──────────────────────────────────────────────────
   const CC_MIN_SHARES = 100;
   for (const pos of positions.filter(p => p.type === 'shares' && !p.linkedId && p.qty >= CC_MIN_SHARES)) {
     const q = qmap[pos.ticker];
-    if (!q) continue;
-    const stochOk = q.stochEst !== null && q.stochEst >= cr.ccStoch;
+    if (!q || q.rallyPct == null) continue;
+    // Mirror of the put rule: a rally off the 5-day low is when call premium
+    // is richest, the same way a drop off the 5-day high is when put premium is.
+    const rallyOk = q.rallyPct >= cr.ccRallyPct;
     const hasCall = positions.find(p => p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
     const contracts = Math.floor(pos.qty / 100);
-    if (stochOk && !hasCall && contracts >= 1) {
+    if (rallyOk && !hasCall && contracts >= 1) {
       const live     = strikeMap[`${pos.ticker}:call`];
       const strike   = live?.strike ?? null;
       const dteT     = live?.dte    ?? null;
-      const premEst  = live?.premium != null ? live.premium.toFixed(2) : null;
       const deltaStr = live?.delta != null
         ? `Δ${Math.abs(live.delta).toFixed(2)}`
         : `${cr.ccDeltaMin}–${cr.ccDeltaMax}Δ range`;
@@ -74,16 +99,18 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       if (dteT != null && strike != null) suggParts.push(`Sell ${contracts} x ${dteT}d $${strike} call`);
       else suggParts.push(`Sell ${contracts} call · ${cr.ccDeltaMin}–${cr.ccDeltaMax}Δ · ${cr.ccDteMin}–${cr.ccDteMax}d`);
       if (live) suggParts.push(deltaStr);
-      if (premEst) suggParts.push(`~$${premEst}/contract`);
-      if (premEst && contracts > 1) suggParts.push(`~$${(parseFloat(premEst) * contracts * 100).toFixed(0)} total`);
+      suggParts.push('Confirm RSI & Stoch on the chart first');
+      const ccChks = [
+        { l: `${pos.qty} shares (${contracts} contract${contracts > 1 ? 's' : ''})`, ok: true },
+        { l: `+${q.rallyPct.toFixed(1)}% off week low`, ok: true, tgt: `≥${cr.ccRallyPct}%` },
+      ];
       sigs.push({
         id: `cc-${pos.id}`, type: 'cc', ticker: pos.ticker,
-        price: q.price, chg: q.chg1d, strike, dteTarget: dteT, premEst,
+        price: q.price, chg: q.chg1d, strike, dteTarget: dteT,
         contracts, sharesOwned: pos.qty,
-        chks: [
-          { l: `${pos.qty} shares (${contracts} contract${contracts > 1 ? 's' : ''})`, ok: true },
-          { l: `Stoch ${q.stochEst !== null ? q.stochEst.toFixed(0) : '?'}`, ok: stochOk },
-        ],
+        ...notionOf(pos.ticker),
+        rallyPct: q.rallyPct, weekLow: q.weekLow, ivr: q.ivrEst ?? null,
+        chks: ccChks,
         suggestion: suggParts.join(' · '),
         ts: Date.now(),
       });

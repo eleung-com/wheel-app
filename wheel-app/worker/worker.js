@@ -115,6 +115,18 @@ async function readWatchlist(env) {
           ? p['App Category'].select.name : '',
         verdict:  p['scanner verdict'] && p['scanner verdict'].select
           ? p['scanner verdict'].select.name : '',
+        // Drives which tickers the news feed pulls — '🔥 Priority' rows lead it.
+        diveIn:   p['Dive-In'] && p['Dive-In'].select
+          ? p['Dive-In'].select.name : '',
+        // Shown as pills on the signal cards. These ride along on the query the
+        // watchlist already makes, so they cost nothing extra and still render
+        // when the (much more expensive) page-body fetch fails.
+        wheel:    p['Wheel (CSP)'] && p['Wheel (CSP)'].select
+          ? p['Wheel (CSP)'].select.name : '',
+        fundamentals: p.Fundamentals && p.Fundamentals.select
+          ? p.Fundamentals.select.name : '',
+        lastEval: p['Last Eval Date'] && p['Last Eval Date'].date
+          ? p['Last Eval Date'].date.start : '',
         sector:   p.sector && p.sector.select ? p.sector.select.name : '',
         addedAt:  Date.parse(page.created_time) || null,
       });
@@ -124,6 +136,87 @@ async function readWatchlist(env) {
   } while (cursor);
 
   return rows;
+}
+
+// ── Latest evaluation ────────────────────────────────────────────────────────
+// Each ticker page is a stack of toggle headers, newest first, whose titles are
+// eval dates ("# 07-21-2026"). The newest evaluation is therefore everything
+// nested under the FIRST toggle header on the page. Nothing below that first
+// header is read, so older evals never leak into the app.
+
+const EVAL_MAX_BLOCKS = 60;   // guards against an unusually long eval
+const EVAL_MAX_TABLES = 6;    // each table costs an extra round trip
+
+async function blockChildren(env, id) {
+  const res = await notionFetch(env, `/v1/blocks/${id}/children?page_size=100`);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`notion blocks ${res.status}: ${detail.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  return data.results || [];
+}
+
+/** A toggle block, or a heading with the toggle arrow turned on. */
+function isToggleHeader(b) {
+  if (b.type === 'toggle') return true;
+  const h = b.type === 'heading_1' || b.type === 'heading_2' || b.type === 'heading_3';
+  return h && b[b.type] && b[b.type].is_toggleable === true;
+}
+
+async function readEval(env, pageId) {
+  const top    = await blockChildren(env, pageId);
+  const header = top.find(isToggleHeader);
+  if (!header) return null;
+
+  const title = plain(header[header.type].rich_text);
+  const kids  = header.has_children ? await blockChildren(env, header.id) : [];
+
+  const blocks = [];
+  let tables = 0;
+
+  for (const b of kids.slice(0, EVAL_MAX_BLOCKS)) {
+    switch (b.type) {
+      case 'heading_1':
+      case 'heading_2':
+      case 'heading_3':
+        blocks.push({ type: 'heading', text: plain(b[b.type].rich_text) });
+        break;
+      case 'paragraph': {
+        const text = plain(b.paragraph.rich_text);
+        if (text.trim()) blocks.push({ type: 'text', text });
+        break;
+      }
+      case 'quote':
+        blocks.push({ type: 'text', text: plain(b.quote.rich_text) });
+        break;
+      case 'bulleted_list_item':
+        blocks.push({ type: 'bullet', text: plain(b.bulleted_list_item.rich_text) });
+        break;
+      case 'numbered_list_item':
+        blocks.push({ type: 'bullet', text: plain(b.numbered_list_item.rich_text) });
+        break;
+      case 'table': {
+        if (!b.has_children || tables >= EVAL_MAX_TABLES) break;
+        tables++;
+        const rowBlocks = await blockChildren(env, b.id);
+        const rows = rowBlocks
+          .filter(r => r.type === 'table_row')
+          .map(r => (r.table_row.cells || []).map(plain))
+          // Notion tables often carry an empty first row when the header is
+          // styled but unfilled — dropping blank rows keeps the app's table honest.
+          .filter(cells => cells.some(c => c.trim()));
+        if (rows.length) {
+          blocks.push({ type: 'table', hasHeader: !!(b.table && b.table.has_column_header), rows });
+        }
+        break;
+      }
+      default:
+        break; // dividers, images, embeds — not part of the written evaluation
+    }
+  }
+
+  return { title, blocks };
 }
 
 /** Patch only the two properties the app owns. Nothing else is ever written. */
@@ -180,6 +273,14 @@ export default {
       try {
         if (url.pathname === '/notion/watchlist' && request.method === 'GET') {
           return json({ watchlist: await readWatchlist(env) }, 200, cors);
+        }
+
+        if (url.pathname === '/notion/eval' && request.method === 'GET') {
+          const pageId = url.searchParams.get('pageId') || '';
+          if (!UUID_RE.test(pageId)) {
+            return json({ error: 'pageId must be a Notion page UUID' }, 400, cors);
+          }
+          return json({ eval: await readEval(env, pageId) }, 200, cors);
         }
 
         if (url.pathname === '/notion/page' && request.method === 'PATCH') {

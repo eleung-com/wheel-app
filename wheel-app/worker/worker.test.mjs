@@ -27,9 +27,24 @@ function page(id, ticker, extra = {}) {
       'App Category': { select: extra.category ? { name: extra.category } : null },
       'scanner verdict': { select: extra.verdict ? { name: extra.verdict } : null },
       sector: { select: extra.sector ? { name: extra.sector } : null },
+      'Dive-In': { select: extra.diveIn ? { name: extra.diveIn } : null },
+      'Wheel (CSP)': { select: extra.wheel ? { name: extra.wheel } : null },
+      Fundamentals: { select: extra.fundamentals ? { name: extra.fundamentals } : null },
+      'Last Eval Date': { date: extra.lastEval ? { start: extra.lastEval } : null },
     },
   };
 }
+
+// ── Notion block fixtures, shaped like the real Stock Scan Results pages ──────
+const rich = (t) => [{ plain_text: t }];
+
+/** A toggleable heading — the shape Notion returns for "# 07-21-2026" with the arrow on. */
+const toggleHeading = (id, text) => ({
+  id, type: 'heading_1', has_children: true,
+  heading_1: { rich_text: rich(text), is_toggleable: true },
+});
+
+const tableRow = (...cells) => ({ type: 'table_row', table_row: { cells: cells.map(rich) } });
 
 const req = (path, opts = {}) =>
   new Request('https://w.dev' + path, {
@@ -83,7 +98,7 @@ console.log('\nGET /notion/watchlist');
     return n === 1
       ? jsonRes({
           results: [
-            page('p1', 'dell', { notes: 'cheap', category: 'Strong Candidate', verdict: 'Interested', sector: 'Technology' }),
+            page('p1', 'dell', { notes: 'cheap', category: 'Strong Candidate', verdict: 'Interested', sector: 'Technology', diveIn: '🔥 Priority', wheel: '✅', fundamentals: '⚠️', lastEval: '2026-07-21' }),
             page('p2', 'AAPL'),
           ],
           has_more: true, next_cursor: 'cur2',
@@ -113,10 +128,96 @@ console.log('\nGET /notion/watchlist');
   check('flattens notes', dell.notes === 'cheap');
   check('flattens category', dell.category === 'Strong Candidate');
   check('keeps verdict separate from category', dell.verdict === 'Interested');
+  check('flattens Dive-In', dell.diveIn === '🔥 Priority');
+  check('flattens Wheel (CSP)', dell.wheel === '✅');
+  check('flattens Fundamentals', dell.fundamentals === '⚠️');
+  check('flattens Last Eval Date', dell.lastEval === '2026-07-21');
   check('parses created_time → addedAt', typeof dell.addedAt === 'number' && dell.addedAt > 0);
   const aapl = body.watchlist.find(w => w.ticker === 'AAPL');
   check('empty notes → empty string', aapl.notes === '');
   check('null select → empty string', aapl.category === '');
+  check('null Dive-In → empty string', aapl.diveIn === '');
+  check('null Wheel → empty string', aapl.wheel === '');
+  check('null Last Eval Date → empty string', aapl.lastEval === '');
+}
+
+// ── Latest evaluation ────────────────────────────────────────────────────────
+console.log('\nNotion /eval');
+{
+  const PID = '35e400a3-854e-8145-980d-c44e616eef8a';
+
+  // Two evals on the page; only the newest (first) one may be read.
+  stubFetch((url) => {
+    if (url.endsWith(`/v1/blocks/${PID}/children?page_size=100`)) {
+      return jsonRes({ results: [
+        toggleHeading('h-new', '07-21-2026'),
+        toggleHeading('h-old', '05-12-2026'),
+      ] });
+    }
+    if (url.includes('/v1/blocks/h-new/children')) {
+      return jsonRes({ results: [
+        { id: 'b1', type: 'heading_2', heading_2: { rich_text: rich('🗳️ Verdict') } },
+        { id: 't1', type: 'table', has_children: true, table: { has_column_header: true } },
+        { id: 'b2', type: 'bulleted_list_item', bulleted_list_item: { rich_text: rich('Heavy leverage') } },
+        { id: 'b3', type: 'paragraph', paragraph: { rich_text: rich('DELL: YES, wheel-ready.') } },
+        { id: 'b4', type: 'paragraph', paragraph: { rich_text: rich('   ') } },
+        { id: 'b5', type: 'divider', divider: {} },
+      ] });
+    }
+    if (url.includes('/v1/blocks/t1/children')) {
+      return jsonRes({ results: [
+        tableRow('', '', ''),                                  // blank styled header
+        tableRow('🎡 Wheel (CSP)', '✅ YES', 'IVR 94, earnings clear'),
+      ] });
+    }
+    if (url.includes('/v1/blocks/h-old/children')) {
+      return jsonRes({ results: [
+        { id: 'x1', type: 'paragraph', paragraph: { rich_text: rich('OLD EVAL — must not appear') } },
+      ] });
+    }
+    return jsonRes({ results: [] });
+  });
+
+  const r = await worker.fetch(req(`/notion/eval?pageId=${PID}`, { headers: { 'x-app-secret': 's3cret' } }), ENV);
+  const body = await r.json();
+  const ev = body.eval;
+
+  check('200 OK', r.status === 200, 'got ' + r.status);
+  check('title is the first toggle header', ev.title === '07-21-2026', ev.title);
+  check('never opens the second toggle',
+    !calls.some(c => c.url.includes('h-old')), calls.map(c => c.url).join('\n      '));
+  check('older eval text absent', !JSON.stringify(ev).includes('must not appear'));
+
+  const types = ev.blocks.map(b => b.type);
+  check('keeps heading, table, bullet, text', types.join(',') === 'heading,table,bullet,text', types.join(','));
+  check('drops blank paragraphs', !ev.blocks.some(b => b.type === 'text' && !b.text.trim()));
+  check('drops dividers', !types.includes('divider'));
+
+  const tbl = ev.blocks.find(b => b.type === 'table');
+  check('drops the all-blank header row', tbl.rows.length === 1, JSON.stringify(tbl.rows));
+  check('keeps table cell text', tbl.rows[0][2] === 'IVR 94, earnings clear');
+  check('carries has_column_header', tbl.hasHeader === true);
+}
+
+// ── /eval guards ─────────────────────────────────────────────────────────────
+{
+  stubFetch(() => jsonRes({ results: [] }));
+  let r = await worker.fetch(req('/notion/eval?pageId=not-a-uuid', { headers: { 'x-app-secret': 's3cret' } }), ENV);
+  check('non-UUID pageId → 400', r.status === 400, 'got ' + r.status);
+  check('bad pageId → Notion never called', calls.length === 0, calls.length + ' calls');
+
+  r = await worker.fetch(req('/notion/eval', { headers: { 'x-app-secret': 's3cret' } }), ENV);
+  check('missing pageId → 400', r.status === 400, 'got ' + r.status);
+
+  const PID = '35e400a3-854e-8145-980d-c44e616eef8a';
+  stubFetch(() => jsonRes({ results: [{ id: 'p', type: 'paragraph', paragraph: { rich_text: rich('no toggles here') } }] }));
+  r = await worker.fetch(req(`/notion/eval?pageId=${PID}`, { headers: { 'x-app-secret': 's3cret' } }), ENV);
+  const b = await r.json();
+  check('page with no toggle header → null eval', r.status === 200 && b.eval === null, JSON.stringify(b));
+
+  stubFetch(() => jsonRes({ results: [] }));
+  r = await worker.fetch(req(`/notion/eval?pageId=${PID}`, { method: 'POST', headers: { 'x-app-secret': 's3cret' } }), ENV);
+  check('POST to /eval → 404', r.status === 404, 'got ' + r.status);
 }
 
 // ── Notion upstream failure ──────────────────────────────────────────────────

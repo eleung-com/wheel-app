@@ -1,25 +1,24 @@
 import React from 'react';
+import { NAV_ITEMS, NavIcon, navBadges } from '../../lib/nav';
 
-const NAV_ITEMS = [
-  { id: 'pg-signals',   icon: '📊', label: 'Signals'   },
-  { id: 'pg-positions', icon: '📂', label: 'Positions' },
-  { id: 'pg-watchlist', icon: '🔭', label: 'Watch'     },
-  { id: 'pg-criteria',  icon: '⚙️', label: 'Criteria'  },
-];
+export default function BottomNav({ activePage, onSwitch, positions, watchlist, signals }) {
+  const badges = navBadges({ positions, watchlist, signals });
 
-export default function BottomNav({ activePage, onSwitch }) {
   return (
-    <div className="bnav">
+    <nav className="bnav">
       {NAV_ITEMS.map(item => (
-        <div
+        <button
           key={item.id}
+          type="button"
           className={`bni${activePage === item.id ? ' active' : ''}`}
+          aria-current={activePage === item.id ? 'page' : undefined}
           onClick={() => onSwitch(item.id)}
         >
-          <div className="bni-icon">{item.icon}</div>
+          <NavIcon name={item.icon} />
           {item.label}
-        </div>
+          {badges[item.id] ? <span className="bni-badge">{badges[item.id]}</span> : null}
+        </button>
       ))}
-    </div>
+    </nav>
   );
 }
