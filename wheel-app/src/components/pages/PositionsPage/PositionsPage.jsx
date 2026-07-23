@@ -59,8 +59,9 @@ export default function PositionsPage({ positions, watchlist, criteria, onSelect
     if (!priceMap[pos.ticker]) priceMap[pos.ticker] = pos._livePrice;
   }
 
-  // Capital allocation per account
-  // Shares: qty * cost; Short puts: strike * qty * 100 (cash reserved); Short calls: 0 (covered)
+  // Capital allocation per account: cash securing the short puts only
+  // (strike * qty * 100). Shares and covered calls are excluded — this tracks
+  // options collateral, not stock already held. Matches Home's "Capital deployed".
   const capitalByAccount = {};
   for (const acct of ACCOUNTS) capitalByAccount[acct] = 0;
 

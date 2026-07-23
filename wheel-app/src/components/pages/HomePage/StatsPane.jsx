@@ -29,14 +29,6 @@ function openOptions(positions, account) {
   );
 }
 
-function shareLots(positions, account) {
-  return positions.filter(p =>
-    p.type === 'shares'
-    && !p.linkedId
-    && (account === 'all' || (p.account || 'Esther') === account)
-  );
-}
-
 export default function StatsPane({
   positions, closedTrades, criteria, signals, account, onAccount, onShowSignal,
 }) {
@@ -47,17 +39,17 @@ export default function StatsPane({
   const premAtRisk = opts.reduce((s, p) => s + (p.prem || 0) * (p.qty || 1) * 100, 0);
   const contracts  = opts.reduce((s, p) => s + (p.qty || 1), 0);
 
-  // Deployed = cash securing the puts + what the share lots cost.
+  // Deployed = cash securing the short puts. Shares are excluded: a covered
+  // call needs no fresh capital, and this figure tracks options collateral, not
+  // stock already held. Matches the Positions page's allocation bar.
   const secured = opts
     .filter(p => p.type === 'short_put')
     .reduce((s, p) => s + (p.strike || 0) * (p.qty || 1) * 100, 0);
-  const shares = shareLots(positions, account)
-    .reduce((s, p) => s + (p.cost || 0) * (p.qty || 0), 0);
   const capital = account === 'all'
     ? (criteria.capitalEsther || 0) + (criteria.capitalFam || 0)
     : account === 'Esther' ? (criteria.capitalEsther || 0) : (criteria.capitalFam || 0);
   const deployedPct = capital > 0
-    ? Math.round(((secured + shares) / capital) * 100)
+    ? Math.round((secured / capital) * 100)
     : null;
 
   // Realized this calendar month.
