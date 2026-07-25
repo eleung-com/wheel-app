@@ -34,6 +34,12 @@ const CACHE_KEY     = 'wd_news_cache';
 const TTL_MS        = 60 * 60 * 1000;  // an hour
 const CONCURRENCY   = 5;               // polite fan-out; the worker forwards each one
 
+// Opening the app refreshes everything else it shows — sheet, watchlist, quotes,
+// signals — so the news would be the one panel serving up-to-an-hour-old
+// headlines. Refresh it once per load; the TTL then governs the rest of the
+// session, and the cached copy still paints first so nothing waits on the fetch.
+let refreshedThisSession = false;
+
 function normalize(item) {
   return {
     id:          item.uuid,
@@ -107,11 +113,15 @@ export function useNews(tickers, showToast) {
     const cached = readCache();
     const fresh  = cached
       && Date.now() - cached.fetchedAt < TTL_MS
-      && cached.tickerKey === tickerKey;
+      && cached.tickerKey === tickerKey
+      && refreshedThisSession;
     if (fresh && !force) {
       setNews(cached);
       return;
     }
+    // Paint whatever is cached while the fetch runs, so a boot refresh never
+    // leaves the panel blank.
+    if (cached) setNews(cached);
 
     inFlight.current = true;
     setLoading(true);
@@ -138,6 +148,7 @@ export function useNews(tickers, showToast) {
       }
 
       const next = { fetchedAt: Date.now(), tickerKey, market, sectors, tickers: byTicker };
+      refreshedThisSession = true;
       setNews(next);
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch { /* quota — fine */ }
       if (force) showToast('News refreshed ✓', 'ok');

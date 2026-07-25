@@ -139,6 +139,7 @@ async function readWatchlist(env) {
         // names the database uses, so renaming the Notion property to any of them
         // keeps working; '' when none is set or the date is empty.
         earnings: dateProp(p, ['Earnings Date', 'Earnings', 'Next Earnings']),
+        // Groups the watchlist cards and the chart's ticker strip.
         sector:   p.sector && p.sector.select ? p.sector.select.name : '',
         addedAt:  Date.parse(page.created_time) || null,
       });

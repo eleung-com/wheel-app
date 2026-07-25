@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { normalizeDate, ACCOUNTS } from '../../lib/utils';
+import YieldSummary from '../pages/ToolsPage/YieldSummary';
+import { PnLChart, StatsBar } from '../pages/PnLPage/PnLChart';
 
 function initState(pos) {
   if (!pos) return {
@@ -15,6 +17,8 @@ function initState(pos) {
     strike:   pos.strike  != null ? String(pos.strike)  : '',
     expiry:   normalizeDate(pos.expiry),
     prem:     pos.prem    != null ? String(pos.prem)    : '',
+    // No longer editable — the screener fetches the live price on every refresh.
+    // Carried through so editing a position doesn't wipe what the sheet has stored.
     curPrem:  pos.curPrem != null ? String(pos.curPrem) : '',
     notes:    pos.notes   || '',
     account:  pos.account || 'Esther',
@@ -30,6 +34,22 @@ export default function PositionModal({ editId, initialType, positions, onSave, 
   });
 
   const isOpt = f.type !== 'shares';
+
+  // Live projection inputs — DTE runs from the open date (or today) to expiry,
+  // and the single short leg drives the same P&L chart used in Settings → Tools.
+  const openMs = f.openDate ? new Date(f.openDate + 'T12:00:00').getTime() : Date.now();
+  const expMs  = f.expiry   ? new Date(f.expiry   + 'T12:00:00').getTime() : null;
+  const dte    = expMs ? Math.max(0, Math.round((expMs - openMs) / 86400000)) : 0;
+  const showProjection = isOpt && parseFloat(f.strike) > 0 && parseFloat(f.prem) > 0;
+  const legs = [{
+    id: 1,
+    action:  'sell',
+    optType: f.type === 'short_call' ? 'call' : 'put',
+    qty:     f.qty || '1',
+    strike:  f.strike,
+    premium: f.prem,
+    expiry:  f.expiry,
+  }];
 
   function set(key, val) { setF(prev => ({ ...prev, [key]: val })); }
 
@@ -145,13 +165,9 @@ export default function PositionModal({ editId, initialType, positions, onSave, 
               <input className="minput norm" type="date" style={{ margin: 0, color: 'var(--tx)' }} value={f.expiry} onChange={e => set('expiry', e.target.value)} />
             </div>
           </div>
-          <div style={{ marginBottom: 9 }}>
+          <div>
             <div className="mlbl">Premium collected / share <span style={{ color: 'var(--mu)', fontSize: 9 }}>— e.g. $1.85 = $185 per contract</span></div>
             <input className="minput norm" type="number" placeholder="1.85" step="0.01" style={{ margin: 0 }} value={f.prem} onChange={e => set('prem', e.target.value)} />
-          </div>
-          <div>
-            <div className="mlbl">Current option price <span style={{ color: 'var(--mu)', fontSize: 9 }}>— auto-fetched on ↻, override if needed</span></div>
-            <input className="minput norm" type="number" placeholder="auto" step="0.01" style={{ margin: 0 }} value={f.curPrem} onChange={e => set('curPrem', e.target.value)} />
           </div>
         </div>
       )}
@@ -161,6 +177,22 @@ export default function PositionModal({ editId, initialType, positions, onSave, 
         <div className="mlbl">Notes <span style={{ color: 'var(--mu)', fontSize: 9 }}>— optional</span></div>
         <input className="minput norm" placeholder="e.g. assigned at 185, part of TSLA wheel" style={{ margin: 0 }} value={f.notes} onChange={e => set('notes', e.target.value)} />
       </div>
+
+      {/* Live yield + P&L projection (options only, once strike & premium are set) */}
+      {showProjection && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--b1)' }}>
+          <div style={{ fontSize: 10, color: 'var(--mu)', letterSpacing: '.5px', textTransform: 'uppercase', marginBottom: 9 }}>
+            Projected yield{dte > 0 ? ` · ${dte} DTE` : ''}
+          </div>
+          <YieldSummary prem={f.prem} strike={f.strike} qty={f.qty} dte={dte} />
+
+          <div style={{ fontSize: 10, color: 'var(--mu)', letterSpacing: '.5px', textTransform: 'uppercase', margin: '14px 0 9px' }}>
+            P&amp;L at expiry
+          </div>
+          <StatsBar legs={legs} />
+          <PnLChart legs={legs} />
+        </div>
+      )}
 
       <div style={{ marginTop: 14 }}>
         <button className="btn-p" onClick={handleSave}>Save Position</button>

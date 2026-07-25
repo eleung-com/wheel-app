@@ -83,23 +83,37 @@ export default function App() {
   const boot = useCallback(async () => {
     // Watchlist lives in Notion; positions, trades and criteria stay in Sheets.
     // Run both together so a slow Notion call doesn't delay the rest of boot.
-    const [data] = await Promise.all([
+    const [data, rows] = await Promise.all([
       sheetRead(),
       notionSyncWatchlist({ quiet: true }),
     ]);
+
+    let positions = null, criteria = null;
     if (data) {
       if (Array.isArray(data.positions)) {
-        dispatch({ type: 'SET_POSITIONS', payload: parsePositions(data.positions) });
+        positions = parsePositions(data.positions);
+        dispatch({ type: 'SET_POSITIONS', payload: positions });
       }
       if (Array.isArray(data.closedTrades)) {
         dispatch({ type: 'SET_CLOSED_TRADES', payload: parseClosedTrades(data.closedTrades) });
       }
       if (data.criteria && typeof data.criteria === 'object' && Object.keys(data.criteria).length > 0) {
-        dispatch({ type: 'SET_CRITERIA', payload: parseCriteria(data.criteria) });
+        criteria = parseCriteria(data.criteria);
+        dispatch({ type: 'SET_CRITERIA', payload: criteria });
       }
     }
     setIsBooting(false);
-    runScreenerRef.current();
+
+    // Hand the screener what boot just loaded. It otherwise reads app state
+    // through a ref that only refreshes after a render, and the dispatches above
+    // haven't been committed yet — so it would see an empty watchlist, bail at
+    // its own guard, and leave the Signals tab blank until the next interval
+    // tick, which never comes at all when markets are closed.
+    runScreenerRef.current(false, {
+      ...(rows      ? { watchlist: rows } : {}),
+      ...(positions ? { positions }       : {}),
+      ...(criteria  ? { criteria }        : {}),
+    });
   }, [sheetRead, notionSyncWatchlist, dispatch]); // runScreener accessed via ref — not a dep
 
   // hasBooted ref prevents re-running if boot/authState reference changes during screener lifecycle

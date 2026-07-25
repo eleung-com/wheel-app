@@ -52,9 +52,6 @@ export default function OptionsTable({ optPositions, criteria, priceMap = {}, on
                 <th>Expiry</th>
                 <th>DTE</th>
                 <th>Prem</th>
-                <th>Curr</th>
-                <th>P&amp;L</th>
-                <th>Cap%</th>
               </tr>
             </thead>
             <tbody>
@@ -65,17 +62,14 @@ export default function OptionsTable({ optPositions, criteria, priceMap = {}, on
                 const dteStr   = days !== null
                   ? (timePct !== null ? `${timePct}% / ${days}d` : `${days}d`)
                   : '—';
+                // Kept for the action badge only (early-close capture %), even
+                // though the Curr / P&L / Cap% columns are no longer shown.
                 const effectiveCurPrem = (pos._liveCurPrem !== undefined && pos._liveCurPrem !== null)
                   ? pos._liveCurPrem : pos.curPrem;
-                const pnl = effectiveCurPrem !== undefined && effectiveCurPrem !== null && pos.prem
-                  ? (pos.prem - effectiveCurPrem) * pos.qty * 100
-                  : null;
                 const pctCap = effectiveCurPrem !== undefined && effectiveCurPrem !== null && pos.prem
                   ? Math.round((1 - effectiveCurPrem / pos.prem) * 100)
                   : null;
-                const curStr    = effectiveCurPrem !== undefined && effectiveCurPrem !== null ? `$${Number(effectiveCurPrem).toFixed(2)}` : '—';
-                const pctCapStr = pctCap !== null ? `${pctCap}%` : '—';
-                const badge     = getActionBadge(pos, days, timePct, pctCap, criteria);
+                const badge  = getActionBadge(pos, days, timePct, pctCap, criteria);
 
                 return (
                   <tr key={pos.id} onClick={() => onSelectPos(pos.id)}>
@@ -102,11 +96,6 @@ export default function OptionsTable({ optPositions, criteria, priceMap = {}, on
                     <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{formatDateDisplay(pos.expiry)}</td>
                     <td style={{ fontFamily: 'var(--mono)', ...(dteColor ? { color: dteColor } : {}) }}>{dteStr}</td>
                     <td style={{ fontFamily: 'var(--mono)', color: 'var(--g)' }}>${pos.prem ? pos.prem.toFixed(2) : '—'}</td>
-                    <td style={{ fontFamily: 'var(--mono)' }}>{curStr}</td>
-                    <td style={{ fontFamily: 'var(--mono)', ...(pnl !== null ? { color: pnl >= 0 ? 'var(--g)' : 'var(--r)' } : {}) }}>
-                      {pnl !== null ? `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(0)}` : '—'}
-                    </td>
-                    <td>{pctCapStr}</td>
                   </tr>
                 );
               })}

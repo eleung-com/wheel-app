@@ -1,18 +1,17 @@
 import React, { useState } from 'react';
 import CriteriaPage   from '../CriteriaPage/CriteriaPage';
-import PnLPage        from '../PnLPage/PnLPage';
-import YieldCalc      from '../ToolsPage/YieldCalc';
 import StrategiesTab  from '../ToolsPage/StrategiesTab';
+import ChartEmbedTab  from './ChartEmbedTab';
 
 /**
  * Settings absorbed the old Tools tab so both navs can carry the same five
- * destinations. The calculators were never settings, but they are reference
- * material you reach for occasionally — which is what this tab is now.
+ * destinations. The P&L and yield calculators moved onto the Add/Edit Position
+ * form, where they project the position you're actually entering — so only the
+ * Criteria and Strategies references live here now.
  */
 const SUBTABS = [
   { id: 'criteria',   label: 'Criteria'   },
-  { id: 'pnl',        label: 'P&L Calc'   },
-  { id: 'yield',      label: 'Yield Calc' },
+  { id: 'chart',      label: 'Chart'      },
   { id: 'strategies', label: 'Strategies' },
 ];
 
@@ -45,8 +44,7 @@ export default function SettingsPage({ criteria, onSave, onRefresh, onPull, onAd
             onPull={onPull}
           />
         )}
-        {active === 'pnl'        && <PnLPage />}
-        {active === 'yield'      && <YieldCalc />}
+        {active === 'chart'      && <ChartEmbedTab />}
         {active === 'strategies' && <StrategiesTab onAddPosition={onAddPosition} />}
       </div>
     </div>

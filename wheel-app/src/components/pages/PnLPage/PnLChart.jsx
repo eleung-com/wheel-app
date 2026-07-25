@@ -1,5 +1,12 @@
 import React, { useState, useRef } from 'react';
 
+/**
+ * Reusable option P&L visuals: the payoff chart and the max-profit / max-loss /
+ * breakeven stats bar. Driven by a `legs` array — each leg
+ * { action:'buy'|'sell', optType:'call'|'put', qty, strike, premium }.
+ * Used by the Add/Edit Position modal to project a single short leg.
+ */
+
 // ── P&L math ──────────────────────────────────────────────────────────────────
 function legPnl(leg, price) {
   const k = parseFloat(leg.strike)  || 0;
@@ -46,7 +53,7 @@ const PAD = { top: 26, right: 16, bottom: 36, left: 60 };
 const CW  = W - PAD.left - PAD.right;
 const CH  = H - PAD.top  - PAD.bottom;
 
-function PnLChart({ legs }) {
+export function PnLChart({ legs }) {
   const [hoverPct, setHoverPct] = useState(null);
   const wrapRef = useRef(null);
 
@@ -150,10 +157,10 @@ function PnLChart({ legs }) {
         {yTicks.map(v => (
           <g key={v}>
             <line x1={PAD.left} y1={toY(v)} x2={PAD.left + CW} y2={toY(v)}
-              stroke={v === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.07)'}
+              style={{ stroke: v === 0 ? 'var(--mu2)' : 'var(--b1)' }}
               strokeWidth={v === 0 ? 1 : 0.8} />
             <text x={PAD.left - 6} y={toY(v) + 3.5}
-              textAnchor="end" fontSize="8.5" fill="rgba(255,255,255,0.4)" fontFamily="monospace">
+              textAnchor="end" fontSize="8.5" style={{ fill: 'var(--mu)' }} fontFamily="monospace">
               {fmtY(v)}
             </text>
           </g>
@@ -163,9 +170,9 @@ function PnLChart({ legs }) {
         {xTicks.map((p, i) => (
           <g key={i}>
             <line x1={toX(p)} y1={PAD.top} x2={toX(p)} y2={PAD.top + CH}
-              stroke="rgba(255,255,255,0.06)" strokeWidth="0.8" />
+              style={{ stroke: 'var(--b1)' }} strokeWidth="0.8" />
             <text x={toX(p)} y={PAD.top + CH + 13}
-              textAnchor="middle" fontSize="8.5" fill="rgba(255,255,255,0.4)" fontFamily="monospace">
+              textAnchor="middle" fontSize="8.5" style={{ fill: 'var(--mu)' }} fontFamily="monospace">
               ${p.toFixed(0)}
             </text>
           </g>
@@ -176,7 +183,7 @@ function PnLChart({ legs }) {
         <path d={areaD} fill="rgba(255,82,82,0.22)"  clipPath="url(#pnl-below)" />
 
         {/* P&L line */}
-        <path d={lineD} fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.8"
+        <path d={lineD} fill="none" style={{ stroke: 'var(--tx)' }} strokeWidth="1.8"
           strokeLinejoin="round" strokeLinecap="round" clipPath="url(#pnl-area)" />
 
         {/* Breakeven markers */}
@@ -190,7 +197,7 @@ function PnLChart({ legs }) {
         {hoverX !== null && (
           <g>
             <line x1={hoverX} y1={PAD.top} x2={hoverX} y2={PAD.top + CH}
-              stroke="rgba(255,255,255,0.28)" strokeWidth="1" strokeDasharray="3,2" />
+              style={{ stroke: 'var(--mu2)' }} strokeWidth="1" strokeDasharray="3,2" />
             <circle cx={hoverX} cy={hoverY} r="5.5"
               fill={hoverPnl >= 0 ? 'rgba(31,216,160,0.25)' : 'rgba(255,82,82,0.25)'} />
             <circle cx={hoverX} cy={hoverY} r="3"
@@ -220,12 +227,12 @@ function PnLChart({ legs }) {
 
         {/* Axis labels */}
         <text x={PAD.left - 46} y={PAD.top + CH / 2} textAnchor="middle"
-          fontSize="8" fill="rgba(255,255,255,0.25)" fontFamily="monospace"
+          fontSize="8" style={{ fill: 'var(--mu)' }} fontFamily="monospace"
           transform={`rotate(-90, ${PAD.left - 46}, ${PAD.top + CH / 2})`}>
           P&amp;L at Expiry ($)
         </text>
         <text x={PAD.left + CW / 2} y={H - 2} textAnchor="middle"
-          fontSize="8" fill="rgba(255,255,255,0.25)" fontFamily="monospace">
+          fontSize="8" style={{ fill: 'var(--mu)' }} fontFamily="monospace">
           Price at Expiry ($)
         </text>
       </svg>
@@ -234,7 +241,7 @@ function PnLChart({ legs }) {
 }
 
 // ── Stats bar ─────────────────────────────────────────────────────────────────
-function StatsBar({ legs }) {
+export function StatsBar({ legs }) {
   const strikes  = legs.map(l => parseFloat(l.strike)).filter(Boolean);
   const refPrice = strikes.length ? Math.max(...strikes) : 50;
 
@@ -246,7 +253,12 @@ function StatsBar({ legs }) {
 
   const maxPnl = Math.max(...pnls);
   const minPnl = Math.min(...pnls);
-  const bes    = findBreakevens(prices.slice(0, -1), pnls.slice(0, -1));
+  // Breakevens run over the real 0…hiStat sweep only. The 0.001 / 1e6 sentinels
+  // above exist just for min/max detection; including them here left prices and
+  // pnls at mismatched lengths, so findBreakevens read an undefined price and
+  // reported a phantom "$NaN" breakeven.
+  const baseLen = prices.length - 1;
+  const bes     = findBreakevens(prices.slice(0, baseLen), pnls.slice(0, baseLen));
 
   const fmt = v => {
     const abs = Math.abs(v);
@@ -278,145 +290,6 @@ function StatsBar({ legs }) {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── Leg row ───────────────────────────────────────────────────────────────────
-function TogglePair({ options, value, onChange, colors }) {
-  return (
-    <div style={{ display: 'flex', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--b1)', width: '100%' }}>
-      {options.map(opt => {
-        const active = value === opt;
-        return (
-          <button key={opt} onClick={() => onChange(opt)} style={{
-            flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 700,
-            cursor: 'pointer', border: 'none',
-            background: active ? (colors?.[opt] ?? 'var(--bl)') : 'transparent',
-            color: active ? (opt === 'buy' || opt === 'sell' ? '#000' : '#fff') : 'var(--mu2)',
-            textTransform: 'capitalize',
-            transition: 'background 0.12s',
-          }}>{opt}</button>
-        );
-      })}
-    </div>
-  );
-}
-
-// Column definitions for header + leg rows
-const LEG_COLS = [
-  { label: 'Action',  w: 76  },
-  { label: 'Type',    w: 76  },
-  { label: 'Qty',     w: 50  },
-  { label: 'Strike',  w: 68  },
-  { label: 'Premium', w: 68  },
-  { label: 'Expiry',  w: 112 },
-  { label: '',        w: 24  },
-];
-
-function LegRow({ leg, idx, onChange, onRemove, canRemove }) {
-  function set(key, val) { onChange(idx, { ...leg, [key]: val }); }
-
-  return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--b1)' }}>
-      <div style={{ width: LEG_COLS[0].w, flexShrink: 0 }}>
-        <TogglePair options={['buy', 'sell']} value={leg.action} onChange={v => set('action', v)}
-          colors={{ buy: 'var(--g)', sell: 'var(--r)' }} />
-      </div>
-      <div style={{ width: LEG_COLS[1].w, flexShrink: 0 }}>
-        <TogglePair options={['call', 'put']} value={leg.optType} onChange={v => set('optType', v)}
-          colors={{ call: 'var(--bl)', put: 'var(--bl)' }} />
-      </div>
-      <input className="sinput" type="number" min="1" value={leg.qty}
-        onChange={e => set('qty', e.target.value)}
-        style={{ width: LEG_COLS[2].w, flexShrink: 0, textAlign: 'center' }} />
-      <input className="sinput" type="number" step="0.5" min="0" value={leg.strike}
-        onChange={e => set('strike', e.target.value)}
-        placeholder="0.00" style={{ width: LEG_COLS[3].w, flexShrink: 0 }} />
-      <input className="sinput" type="number" step="0.01" min="0" value={leg.premium}
-        onChange={e => set('premium', e.target.value)}
-        placeholder="0.00" style={{ width: LEG_COLS[4].w, flexShrink: 0 }} />
-      <input className="sinput" type="date" value={leg.expiry}
-        onChange={e => set('expiry', e.target.value)}
-        style={{ width: LEG_COLS[5].w, flexShrink: 0, fontSize: 12, padding: '6px 8px' }} />
-      <div style={{ width: LEG_COLS[6].w, flexShrink: 0 }}>
-        {canRemove && (
-          <button onClick={() => onRemove(idx)} style={{
-            background: 'none', border: 'none', color: 'var(--mu)',
-            fontSize: 18, cursor: 'pointer', padding: '2px 4px', lineHeight: 1,
-          }}>×</button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
-let nextId = 1;
-function newLeg() {
-  return { id: nextId++, action: 'sell', qty: '1', strike: '', premium: '', optType: 'put', expiry: '' };
-}
-
-export default function PnLPage() {
-  const [legs, setLegs] = useState([newLeg()]);
-
-  const hasValidLegs = legs.some(l => l.strike && l.premium);
-
-  function handleChange(idx, updated) { setLegs(prev => prev.map((l, i) => i === idx ? updated : l)); }
-  function handleRemove(idx)          { setLegs(prev => prev.filter((_, i) => i !== idx)); }
-  function handleAdd()                { setLegs(prev => [...prev, newLeg()]); }
-  function handleReset()              { setLegs([newLeg()]); }
-
-  return (
-    <div>
-      {/* Stats — shown above form once data is entered */}
-      {hasValidLegs && <StatsBar legs={legs} />}
-
-      {/* Leg form */}
-      <div className="ssec" style={{ padding: '0 10px' }}>
-        {/* Scrollable table — single row per leg */}
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          {/* Header */}
-          <div style={{ display: 'flex', gap: 6, padding: '6px 0 4px', borderBottom: '1px solid var(--b1)', minWidth: 'max-content' }}>
-            {LEG_COLS.map((col, i) => (
-              <div key={i} style={{ width: col.w, flexShrink: 0 }}>
-                <span style={{ fontSize: 9, color: 'var(--mu)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {col.label}
-                </span>
-              </div>
-            ))}
-          </div>
-          {legs.map((leg, idx) => (
-            <LegRow key={leg.id} leg={leg} idx={idx}
-              onChange={handleChange} onRemove={handleRemove} canRemove={legs.length > 1} />
-          ))}
-          {/* Add Leg sits inline with the rows */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', minWidth: 'max-content' }}>
-            <button className="btn-s" onClick={handleAdd}
-              style={{ margin: 0, fontSize: 11, padding: '6px 14px' }}>
-              + Add Leg
-            </button>
-          </div>
-        </div>{/* end scroll wrapper */}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 6 }}>
-          <button onClick={handleReset} style={{
-            background: 'none', border: 'none', color: 'var(--mu)',
-            fontSize: 11, cursor: 'pointer', padding: '4px 6px', fontFamily: 'var(--mono)',
-          }}>Reset</button>
-        </div>
-      </div>
-
-      {/* Chart */}
-      {hasValidLegs ? (
-        <div style={{ marginTop: 16 }}>
-          <PnLChart legs={legs} />
-        </div>
-      ) : (
-        <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 12, marginTop: 32, fontFamily: 'var(--mono)' }}>
-          Enter a strike and premium to see the P&L chart
-        </div>
-      )}
     </div>
   );
 }
