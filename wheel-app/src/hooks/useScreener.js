@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { fetchQ } from '../lib/indicators';
 import { fetchOptionPrice, fetchBestStrike } from '../lib/optionPrice';
-import { buildSignals, PRIORITY } from '../lib/signals';
+import { buildSignals, PRIORITY } from '../lib/signalEngine';
 import { getTradierKey } from '../lib/utils';
 
 // ── Market-close cache ────────────────────────────────────────────────────────

@@ -1,0 +1,19 @@
+name = "wheel-tradier-proxy"
+main = "worker/worker.js"
+compatibility_date = "2024-11-01"
+
+# Fires every 30 min, 12:00–21:59 UTC, Mon–Fri. That window is deliberately
+# wider than 9:30–16:00 ET on either side of the DST line (13:30–20:00 UTC in
+# EDT, 14:30–21:00 UTC in EST) — the scheduled() handler's isMarketOpen()
+# guard (worker/marketHours.js) does the real ET-and-holiday-aware check, so
+# firings outside actual market hours are a harmless no-op.
+[triggers]
+crons = ["*/30 12-21 * * 1-5"]
+
+# De-dupe store for the Telegram alert loop (worker/scan.js) — one alert per
+# ticker+signal-type per ET day. Create it once with:
+#   npx wrangler kv namespace create ALERTS_KV
+# then replace the id below with the one it prints.
+[[kv_namespaces]]
+binding = "ALERTS_KV"
+id = "0dc7b7143cdb4d198f58f961a349c555"
