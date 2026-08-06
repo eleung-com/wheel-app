@@ -47,7 +47,7 @@ export default function PositionsPage({ positions, watchlist, criteria, onSelect
   }
 
   // Only active option rows — exclude close entries and any opening row that has been linked (closed)
-  const ACTIVE_OPTION_TYPES = new Set(['short_put', 'short_call']);
+  const ACTIVE_OPTION_TYPES = new Set(['short_put', 'short_call', 'put_spread']);
   const optPositions = positions.filter(p => ACTIVE_OPTION_TYPES.has(p.type) && !p.linkedId);
 
   // Price lookup: watchlist liveData first, then share position _livePrice
@@ -68,6 +68,11 @@ export default function PositionsPage({ positions, watchlist, criteria, onSelect
   for (const pos of positions.filter(p => p.type === 'short_put' && !p.linkedId && p.strike)) {
     const acct = pos.account || 'Esther';
     capitalByAccount[acct] = (capitalByAccount[acct] || 0) + pos.strike * pos.qty * 100;
+  }
+  // Put credit spreads: collateral is the defined-risk width, not the short strike.
+  for (const pos of positions.filter(p => p.type === 'put_spread' && !p.linkedId && p.strike && p.longStrike)) {
+    const acct = pos.account || 'Esther';
+    capitalByAccount[acct] = (capitalByAccount[acct] || 0) + (pos.strike - pos.longStrike) * pos.qty * 100;
   }
 
   const showCapital = criteria && (criteria.capitalEsther > 0 || criteria.capitalFam > 0);

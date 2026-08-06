@@ -5,6 +5,11 @@ export default function ClosePositionModal({ posId, positions, onConfirm, onEdit
   const pos = positions.find(p => p.id === posId);
   if (!pos) return null;
 
+  // Put credit spreads have their own two-leg close flow.
+  if (pos.type === 'put_spread') {
+    return <SpreadCloseBody pos={pos} onConfirm={onConfirm} onEdit={onEdit} onClose={onClose} />;
+  }
+
   const isPut  = pos.type === 'short_put';
   const today  = new Date().toISOString().slice(0, 10);
 
@@ -301,6 +306,218 @@ export default function ClosePositionModal({ posId, positions, onConfirm, onEdit
       <div style={{ marginTop: 14 }}>
         <button className="btn-p" onClick={handleConfirm}>Confirm Close</button>
         <button className="btn-s" onClick={() => onEdit(posId)}>Edit Position</button>
+        <button className="btn-s" onClick={onClose}>Cancel</button>
+      </div>
+    </>
+  );
+}
+
+// ── Put credit spread close flow ─────────────────────────────────────────────
+// Short higher-strike put + long lower-strike put, same expiry.
+//   BTC       — pay net debit to close both legs
+//   Expired   — both legs OTM, keep the full net credit
+//   Assigned  — underlying at/below the short strike; two sub-cases:
+//                 · Take shares  → short assigned, long abandoned, continue wheel
+//                 · Max loss     → full breach below long strike, book defined loss
+function SpreadCloseBody({ pos, onConfirm, onEdit, onClose }) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [closeType, setCloseType] = useState('btc');
+  const [closeDate, setCloseDate] = useState(today);
+  const [btcPrice,  setBtcPrice]  = useState('');
+  const [assignSub, setAssignSub] = useState('shares'); // 'shares' | 'maxloss'
+
+  const qty       = pos.qty || 1;
+  const netCredit = pos.prem || 0;                       // per share
+  const width     = (pos.strike != null && pos.longStrike != null) ? pos.strike - pos.longStrike : 0;
+  const premTotal = netCredit * qty * 100;               // max profit
+  const maxLoss   = Math.max(0, (width - netCredit)) * qty * 100;
+  const effBasis  = (pos.strike || 0) - netCredit;       // share basis if assigned
+
+  const btcNum    = parseFloat(btcPrice);
+  const maxDebit50 = netCredit ? netCredit * 0.5 : null; // pay ≤ half the credit = 50% capture
+  const btcPnl    = !isNaN(btcNum) ? (netCredit - btcNum) * qty * 100 : null;
+  const btcMeets50 = maxDebit50 !== null && !isNaN(btcNum) && btcNum <= maxDebit50;
+
+  function handleConfirm() {
+    const closeDateTs = new Date(closeDate + 'T12:00:00').getTime();
+
+    if (closeType === 'btc') {
+      if (isNaN(btcNum) || btcNum < 0) { alert('Enter the net debit paid to close.'); return; }
+      onConfirm(pos.id, {
+        closeType: 'btc',
+        closeDate: closeDateTs,
+        closePrice: btcNum,
+        pnl: (netCredit - btcNum) * qty * 100,
+      });
+
+    } else if (closeType === 'expired') {
+      onConfirm(pos.id, {
+        closeType: 'expired',
+        closeDate: closeDateTs,
+        closePrice: 0,
+        pnl: premTotal,
+      });
+
+    } else if (closeType === 'assigned') {
+      if (assignSub === 'shares') {
+        onConfirm(pos.id, {
+          closeType: 'assigned',
+          closeDate: closeDateTs,
+          closePrice: pos.strike || 0,
+          pnl: 0,
+          sharesAcquired: qty * 100,
+          costBasis: effBasis,
+        });
+      } else {
+        onConfirm(pos.id, {
+          closeType: 'assigned',
+          closeDate: closeDateTs,
+          closePrice: pos.longStrike || 0,
+          pnl: -maxLoss,
+        });
+      }
+    }
+  }
+
+  const TYPES = [
+    { key: 'btc',      label: 'Buy to Close' },
+    { key: 'expired',  label: 'Expired'      },
+    { key: 'assigned', label: 'Assigned'     },
+  ];
+
+  const pillStyle = (active) => ({
+    padding: '8px 0',
+    borderRadius: 'var(--r)',
+    border: `1px solid ${active ? 'var(--pu)' : 'var(--b1)'}`,
+    background: active ? 'rgba(139,92,246,.15)' : 'var(--s2)',
+    color: active ? 'var(--pu)' : 'var(--mu2)',
+    fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+  });
+
+  const infoBox = (borderColor = 'var(--b1)') => ({
+    background: 'var(--s2)', border: `1px solid ${borderColor}`,
+    borderRadius: 'var(--r)', padding: '9px 12px', fontSize: 11, marginBottom: 12,
+  });
+
+  return (
+    <>
+      <div className="mtitle">Close Spread</div>
+
+      {/* Summary */}
+      <div style={{ ...infoBox(), marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 15 }}>{pos.ticker}</span>
+          <span className="pos-type-pill put">Put Credit Spread</span>
+        </div>
+        <div style={{ display: 'flex', gap: 14, fontFamily: 'var(--mono)', color: 'var(--mu2)', flexWrap: 'wrap' }}>
+          <span>Short ${pos.strike ?? '—'}</span>
+          <span>Long ${pos.longStrike ?? '—'}</span>
+          <span>Exp {formatDateDisplay(pos.expiry)}</span>
+          <span>{qty} spread{qty !== 1 ? 's' : ''}</span>
+        </div>
+        <div style={{ marginTop: 4, fontFamily: 'var(--mono)', color: 'var(--g)' }}>
+          ${netCredit.toFixed(2)}/sh net credit
+          <span style={{ color: 'var(--mu)', marginLeft: 8 }}>
+            = ${premTotal.toFixed(0)} max profit · ${maxLoss.toFixed(0)} max loss
+          </span>
+        </div>
+      </div>
+
+      {/* Type selector */}
+      <div className="mlbl" style={{ marginBottom: 6 }}>Close type</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 14 }}>
+        {TYPES.map(t => (
+          <button key={t.key} style={pillStyle(closeType === t.key)} onClick={() => setCloseType(t.key)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Close date */}
+      <div style={{ marginBottom: 12 }}>
+        <div className="mlbl">Close date</div>
+        <input className="minput norm" type="date" style={{ margin: 0, color: 'var(--tx)' }}
+          value={closeDate} onChange={e => setCloseDate(e.target.value)} />
+      </div>
+
+      {/* ── BTC ─────────────────────────────────────────────────── */}
+      {closeType === 'btc' && (
+        <>
+          <div style={{ marginBottom: 10 }}>
+            <div className="mlbl">Net debit to close / share <span style={{ color: 'var(--mu)', fontSize: 9 }}>— what you pay to buy the spread back</span></div>
+            <input className="minput norm" type="number" placeholder="0.00" step="0.01" style={{ margin: 0 }}
+              value={btcPrice} onChange={e => setBtcPrice(e.target.value)} />
+          </div>
+          <div style={infoBox(btcMeets50 ? 'rgba(57,255,20,.25)' : 'var(--b1)')}>
+            <div style={{ color: 'var(--mu)', marginBottom: 3 }}>50% profit target</div>
+            <div style={{ fontFamily: 'var(--mono)' }}>
+              Max debit to pay: <span style={{ color: 'var(--g)' }}>
+                {maxDebit50 !== null ? `$${maxDebit50.toFixed(2)}` : '—'}
+              </span>
+            </div>
+            {btcPnl !== null && (
+              <div style={{ fontFamily: 'var(--mono)', marginTop: 3 }}>
+                P&amp;L: <span style={{ color: btcPnl >= 0 ? 'var(--g)' : 'var(--r)' }}>
+                  {btcPnl >= 0 ? '+' : ''}${btcPnl.toFixed(0)}
+                </span>
+                {btcMeets50 && <span style={{ color: 'var(--g)', marginLeft: 10 }}>✓ 50% met</span>}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── Expired ─────────────────────────────────────────────── */}
+      {closeType === 'expired' && (
+        <div style={infoBox('rgba(57,255,20,.25)')}>
+          <div style={{ color: 'var(--mu)', marginBottom: 4 }}>Both legs expired worthless — full credit kept</div>
+          <div style={{ fontFamily: 'var(--mono)', color: 'var(--g)', fontSize: 16 }}>
+            +${premTotal.toFixed(0)}
+          </div>
+          <div style={{ color: 'var(--mu)', marginTop: 2 }}>100% of ${premTotal.toFixed(0)} retained</div>
+        </div>
+      )}
+
+      {/* ── Assigned / breach ───────────────────────────────────── */}
+      {closeType === 'assigned' && (
+        <>
+          <div className="mlbl" style={{ marginBottom: 6 }}>What happened?</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
+            <button style={pillStyle(assignSub === 'shares')}  onClick={() => setAssignSub('shares')}>Take shares</button>
+            <button style={pillStyle(assignSub === 'maxloss')} onClick={() => setAssignSub('maxloss')}>Book max loss</button>
+          </div>
+
+          {assignSub === 'shares' ? (
+            <div style={infoBox()}>
+              <div style={{ color: 'var(--mu)', marginBottom: 4 }}>Short put assigned — shares acquired, long put abandoned</div>
+              <div style={{ fontFamily: 'var(--mono)', color: 'var(--tx)' }}>
+                {qty * 100} shares of {pos.ticker} @ ${pos.strike}
+              </div>
+              <div style={{ fontFamily: 'var(--mono)', color: 'var(--bl)', marginTop: 3 }}>
+                Effective cost basis: ${effBasis.toFixed(2)}/share
+              </div>
+              <div style={{ color: 'var(--mu)', marginTop: 6, fontSize: 10 }}>
+                Add a shares position to continue tracking the wheel. Long-leg cost is already netted into the basis.
+              </div>
+            </div>
+          ) : (
+            <div style={infoBox('rgba(255,82,82,.25)')}>
+              <div style={{ color: 'var(--mu)', marginBottom: 4 }}>Full breach below ${pos.longStrike} — defined max loss</div>
+              <div style={{ fontFamily: 'var(--mono)', color: 'var(--r)', fontSize: 16 }}>
+                −${maxLoss.toFixed(0)}
+              </div>
+              <div style={{ color: 'var(--mu)', marginTop: 2, fontFamily: 'var(--mono)' }}>
+                (width ${width.toFixed(2)} − credit ${netCredit.toFixed(2)}) × {qty} × 100
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      <div style={{ marginTop: 14 }}>
+        <button className="btn-p" onClick={handleConfirm}>Confirm Close</button>
+        <button className="btn-s" onClick={() => onEdit(pos.id)}>Edit Position</button>
         <button className="btn-s" onClick={onClose}>Cancel</button>
       </div>
     </>

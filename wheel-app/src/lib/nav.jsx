@@ -12,7 +12,7 @@ export const NAV_ITEMS = [
   { id: 'pg-settings',  label: 'Settings',  icon: 'settings'  },
 ];
 
-const ACTIVE_TYPES = new Set(['short_put', 'short_call']);
+const ACTIVE_TYPES = new Set(['short_put', 'short_call', 'put_spread']);
 
 export function navBadges({ positions = [], watchlist = [], signals = [] }) {
   return {

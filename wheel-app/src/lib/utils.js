@@ -182,6 +182,7 @@ export function parseClosedTrades(raw) {
     closeType:    String(t.closeType    || ''),
     qty:          Number(t.qty)         || 0,
     strike:       t.strike  !== '' && t.strike  != null ? Number(t.strike)  : undefined,
+    longStrike:   t.longStrike !== '' && t.longStrike != null ? Number(t.longStrike) : undefined,
     expiry:       normalizeDate(t.expiry),
     openDate:     Number(t.openDate)    || 0,
     closeDate:    Number(t.closeDate)   || 0,
@@ -222,6 +223,14 @@ export function parsePositions(raw) {
     //  - on opening rows (short_put/short_call/shares): means this position has been closed
     //  - on close rows (btc/expired/assigned/rolled): points back to the opening row
     if (p.linkedId != null && p.linkedId !== '') base.linkedId = Number(p.linkedId);
+
+    // Put-credit-spread fields. strike/prem (from base) hold the SHORT leg and
+    // the NET credit; these carry the long leg + individual leg premiums so the
+    // payoff chart and yield math stay exact. Preserved on close rows too so the
+    // history log can show the full spread.
+    if (p.longStrike != null && p.longStrike !== '') base.longStrike = Number(p.longStrike);
+    if (p.shortPrem  != null && p.shortPrem  !== '') base.shortPrem  = Number(p.shortPrem);
+    if (p.longPrem   != null && p.longPrem   !== '') base.longPrem   = Number(p.longPrem);
 
     // Additional fields only present on close rows
     if (CLOSE_TYPES.has(base.type)) {
