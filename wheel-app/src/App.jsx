@@ -259,11 +259,12 @@ export default function App() {
       id:           Date.now(),
       ticker:       pos.ticker,
       type:         details.closeType,   // 'btc' | 'expired' | 'assigned' | 'rolled'
-      posType:      pos.type,            // original strategy type (short_put / short_call)
+      posType:      pos.type,            // original strategy type (short_put / short_call / put_spread)
       qty:          pos.qty,
       strike:       pos.strike,
+      longStrike:   pos.longStrike,      // spread long leg (undefined for single-leg)
       expiry:       pos.expiry,
-      prem:         pos.prem,            // original premium collected
+      prem:         pos.prem,            // original premium collected (net credit for spreads)
       cost:         0,
       notes:        pos.notes,
       account:      pos.account || 'Esther',
@@ -278,7 +279,7 @@ export default function App() {
     // Also keep closedTrades in sync for future Insights tab
     const logEntry = {
       id: closeEntry.id, ticker: pos.ticker, posType: pos.type,
-      closeType: details.closeType, qty: pos.qty, strike: pos.strike,
+      closeType: details.closeType, qty: pos.qty, strike: pos.strike, longStrike: pos.longStrike,
       expiry: pos.expiry, openDate: pos.enteredAt, closeDate: details.closeDate,
       premCollected: pos.prem, closePrice: details.closePrice, pnl: details.pnl,
       notes: pos.notes, account: pos.account || 'Esther',

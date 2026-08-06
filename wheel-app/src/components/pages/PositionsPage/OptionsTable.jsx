@@ -56,7 +56,8 @@ export default function OptionsTable({ optPositions, criteria, priceMap = {}, on
             </thead>
             <tbody>
               {optPositions.map(pos => {
-                const isPut = pos.type === 'short_put';
+                const isSpread = pos.type === 'put_spread';
+                const isPut = pos.type === 'short_put' || isSpread;
                 const { days, pct: timePct } = dteInfo(pos.expiry, pos.enteredAt);
                 const dteColor = days !== null && days <= 0 ? 'var(--r)' : days !== null && days <= 7 ? 'var(--r)' : days !== null && days <= 14 ? 'var(--a)' : null;
                 const dteStr   = days !== null
@@ -90,9 +91,13 @@ export default function OptionsTable({ optPositions, criteria, priceMap = {}, on
                         >✎</button>
                       </div>
                     </td>
-                    <td><span className={`pos-type-pill ${isPut ? 'put' : 'call'}`}>{isPut ? 'Put' : 'Call'}</span></td>
+                    <td><span className={`pos-type-pill ${isPut ? 'put' : 'call'}`}>{isSpread ? 'Put Spr' : isPut ? 'Put' : 'Call'}</span></td>
                     <td style={{ fontFamily: 'var(--mono)' }}>{priceMap[pos.ticker] != null ? `$${priceMap[pos.ticker].toFixed(2)}` : '—'}</td>
-                    <td style={{ fontFamily: 'var(--mono)', color: 'var(--bl)' }}>${pos.strike || '—'}</td>
+                    <td style={{ fontFamily: 'var(--mono)', color: 'var(--bl)' }}>
+                      {isSpread
+                        ? (pos.strike != null && pos.longStrike != null ? `$${pos.strike}/$${pos.longStrike}` : `$${pos.strike || '—'}`)
+                        : `$${pos.strike || '—'}`}
+                    </td>
                     <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{formatDateDisplay(pos.expiry)}</td>
                     <td style={{ fontFamily: 'var(--mono)', ...(dteColor ? { color: dteColor } : {}) }}>{dteStr}</td>
                     <td style={{ fontFamily: 'var(--mono)', color: 'var(--g)' }}>${pos.prem ? pos.prem.toFixed(2) : '—'}</td>

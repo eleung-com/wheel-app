@@ -2,7 +2,7 @@ import React from 'react';
 import HistoryPage from '../HistoryPage/HistoryPage';
 import { dte, formatDateDisplay } from '../../../lib/utils';
 
-const OPEN_TYPES = new Set(['short_put', 'short_call']);
+const OPEN_TYPES = new Set(['short_put', 'short_call', 'put_spread']);
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
@@ -42,9 +42,14 @@ export default function StatsPane({
   // Deployed = cash securing the short puts. Shares are excluded: a covered
   // call needs no fresh capital, and this figure tracks options collateral, not
   // stock already held. Matches the Positions page's allocation bar.
-  const secured = opts
-    .filter(p => p.type === 'short_put')
-    .reduce((s, p) => s + (p.strike || 0) * (p.qty || 1) * 100, 0);
+  // Short puts secure the full strike; put credit spreads only tie up the width.
+  const secured = opts.reduce((s, p) => {
+    if (p.type === 'short_put') return s + (p.strike || 0) * (p.qty || 1) * 100;
+    if (p.type === 'put_spread' && p.strike != null && p.longStrike != null) {
+      return s + (p.strike - p.longStrike) * (p.qty || 1) * 100;
+    }
+    return s;
+  }, 0);
   const capital = account === 'all'
     ? (criteria.capitalEsther || 0) + (criteria.capitalFam || 0)
     : account === 'Esther' ? (criteria.capitalEsther || 0) : (criteria.capitalFam || 0);
@@ -125,7 +130,7 @@ export default function StatsPane({
           <div className="stat-v">{next ? `${next.d}d` : '—'}</div>
           <div className="stat-s">
             {next
-              ? `${next.ticker} $${next.strike}${next.type === 'short_put' ? 'P' : 'C'} · ${formatDateDisplay(next.expiry)}`
+              ? `${next.ticker} ${next.type === 'put_spread' ? `$${next.strike}/$${next.longStrike} PCS` : `$${next.strike}${next.type === 'short_put' ? 'P' : 'C'}`} · ${formatDateDisplay(next.expiry)}`
               : 'No open options'}
           </div>
         </div>

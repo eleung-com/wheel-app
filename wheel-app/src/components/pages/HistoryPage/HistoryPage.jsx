@@ -4,7 +4,7 @@ import { formatDateDisplay } from '../../../lib/utils';
 const CLOSE_TYPES  = new Set(['btc', 'expired', 'assigned', 'rolled']);
 const CLOSE_LABEL  = { btc: 'BTC', expired: 'Expired', assigned: 'Assigned', rolled: 'Rolled' };
 const CLOSE_COLOR  = { btc: 'var(--bl)', expired: 'var(--g)', assigned: 'var(--a)', rolled: 'var(--pu)' };
-const STRAT_LABEL  = { short_put: 'CSP', short_call: 'CC' };
+const STRAT_LABEL  = { short_put: 'CSP', short_call: 'CC', put_spread: 'PCS' };
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function fmt(n) {
@@ -622,7 +622,9 @@ export default function HistoryPage({ positions, account }) {
                     {CLOSE_LABEL[e.type] || e.type}
                   </td>
                   <td style={{ fontFamily: 'var(--mono)', color: 'var(--bl)' }}>
-                    {e.strike ? `$${e.strike}` : '—'}
+                    {e.posType === 'put_spread' && e.longStrike != null
+                      ? `$${e.strike}/$${e.longStrike}`
+                      : e.strike ? `$${e.strike}` : '—'}
                   </td>
                   <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
                     {formatDateDisplay(e.expiry)}
