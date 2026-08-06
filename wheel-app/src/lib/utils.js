@@ -84,7 +84,7 @@ export const DEFAULT_CRITERIA = {
   dropPct: 5, ma: 200, earn: 30,
   deltaMin: 20, deltaMax: 35, dteMin: 21, dteMax: 45,
   shares: 100, ccRallyPct: 5, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
-  closePct: 50, closeDtePct: 50,
+  closePct: 50, closeDtePct: 50, manageDte: 21,
   capitalEsther: 0, capitalFam: 0,
   indicatorTickers: '',
   watchlistCategories: 'Strong Candidate,Watchlist,Monitoring,Avoid',
@@ -107,6 +107,10 @@ export function parseCriteria(c) {
     ccDteMax:   Number(c.ccDteMax)   || 35,
     closePct:      Number(c.closePct)      || 50,
     closeDtePct:   Number(c.closeDtePct)   || 50,
+    // DTE at or below which an open option gets the daily "time to manage this"
+    // Telegram nudge (worker/scan.js). Falls back to 21 — the wheel convention —
+    // if the Sheet has never stored it, so the alert works before it's ever tuned.
+    manageDte:     Number(c.manageDte)     || 21,
     capitalEsther: Number(c.capitalEsther) || 0,
     capitalFam:    Number(c.capitalFam)    || 0,
     indicatorTickers:    c.indicatorTickers    ? String(c.indicatorTickers)    : '',
@@ -198,7 +202,9 @@ export function parseClosedTrades(raw) {
   return dedupeBy(mapped, t => t.id);
 }
 
-const CLOSE_TYPES = new Set(['btc', 'expired', 'assigned', 'rolled']);
+// Rows that record the *closing* of a position rather than an open one.
+// Exported because the Worker's scan needs the same "is this still open?" test.
+export const CLOSE_TYPES = new Set(['btc', 'expired', 'assigned', 'rolled']);
 
 export const ACCOUNTS = ['Esther', 'Fam'];
 
