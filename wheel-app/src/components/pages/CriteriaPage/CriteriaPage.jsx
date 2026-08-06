@@ -165,6 +165,7 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
           <div className="ssec">
             <CriteriaRow label="Early close — % premium captured" sub="Fire BTC signal when this much is locked in"         inputId="c-close-pct" value={local.closePct}    onChange={v => update('closePct', v)} />
             <CriteriaRow label="Early close — max % DTE elapsed"  sub="Only suggest close if less than this % of time gone" inputId="c-close-dte" value={local.closeDtePct} onChange={v => update('closeDtePct', v)} />
+            <CriteriaRow label="Manage at DTE" sub="Daily Telegram nudge once an open option is this close to expiry — silent on expiry day" inputId="c-manage-dte" value={local.manageDte} min={1} max={90} onChange={v => update('manageDte', v)} />
           </div>
         </>
       );
