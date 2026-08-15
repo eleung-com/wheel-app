@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runScan } from './scan.js';
+import { etDateString } from './marketHours.js';
 
 const SHEET_URL = 'https://sheet.example/exec';
 const ENV_BASE = {
@@ -30,13 +31,40 @@ function flatHistory(price) {
   return { history: { day: Array.from({ length: 25 }, (_, i) => day(i)) } };
 }
 
+/**
+ * An expiry that the shared dte() will report as exactly `n`. Anchored to the
+ * real clock because dte() reads it directly rather than runScan's injectable
+ * `now`, and offset by one because dte() counts expiry day itself as 1 DTE.
+ */
+function expiryForDte(n) {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + n - 1);
+  const pad = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * A short put that is far OTM and showing no premium capture, so the only thing
+ * it can possibly trigger is the DTE nudge — never a roll or close signal.
+ */
+function quietPut(overrides = {}) {
+  return {
+    id: 1, ticker: 'TSLA', type: 'short_put', qty: 1, strike: 200,
+    prem: 5, curPrem: 5, enteredAt: Date.parse('2026-06-01'),
+    expiry: expiryForDte(21), account: 'Esther', ...overrides,
+  };
+}
+
 let telegramCalls;
+let telegramTexts;
 let notionCalls;
 
 function stubFetch({ watchlistPages = [], sheet = { positions: [], criteria: {} }, historyPrice = null, historyOk = true }) {
   telegramCalls = 0;
   notionCalls = 0;
-  globalThis.fetch = async (url) => {
+  telegramTexts = [];
+  globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
     if (u.includes('api.notion.com')) {
       notionCalls++;
@@ -57,6 +85,7 @@ function stubFetch({ watchlistPages = [], sheet = { positions: [], criteria: {} 
     }
     if (u.includes('api.telegram.org')) {
       telegramCalls++;
+      try { telegramTexts.push(JSON.parse(init.body).text); } catch (_) { /* shape asserted elsewhere */ }
       return jsonRes({ ok: true });
     }
     return jsonRes({});
@@ -81,9 +110,11 @@ describe('runScan', () => {
   });
 
   it('alerts once on a breached short put, then de-dupes the same ticker+type for the rest of the ET day', async () => {
+    // Expiry sits well outside the manage window (dte() reads the real clock,
+    // not OPEN_NOW) so this stays a pure roll-signal test with no DTE nudge.
     const positions = [{
       id: 1, ticker: 'TSLA', type: 'short_put', qty: 1, strike: 250,
-      expiry: '2026-08-15', enteredAt: Date.parse('2026-06-01'), prem: 5, curPrem: 5,
+      expiry: expiryForDte(60), enteredAt: Date.parse('2026-06-01'), prem: 5, curPrem: 5,
     }];
     stubFetch({ sheet: { positions, criteria: {} }, historyPrice: 240 });
     const kv = fakeKV();
@@ -98,7 +129,7 @@ describe('runScan', () => {
   });
 
   it('self-alerts exactly once when every ticker fetch fails, and does not repeat the self-alert same day', async () => {
-    const positions = [{ id: 1, ticker: 'TSLA', type: 'short_put', qty: 1, strike: 250, expiry: '2026-08-15' }];
+    const positions = [{ id: 1, ticker: 'TSLA', type: 'short_put', qty: 1, strike: 250, expiry: expiryForDte(60) }];
     stubFetch({ sheet: { positions, criteria: {} }, historyOk: false });
     const kv = fakeKV();
 
@@ -124,5 +155,97 @@ describe('runScan', () => {
     const kv = fakeKV();
     await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
     expect(telegramCalls).toBe(0);
+  });
+});
+
+describe('21-DTE management nudge', () => {
+  it('fires exactly at the threshold and names the position', async () => {
+    stubFetch({ sheet: { positions: [quietPut()], criteria: {} }, historyPrice: 240 });
+    const kv = fakeKV();
+
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
+
+    expect(telegramCalls).toBe(1);
+    expect(telegramTexts[0]).toContain('21-DTE — TSLA');
+    expect(telegramTexts[0]).toContain('Short put');
+    expect(telegramTexts[0]).toContain('$200 strike');
+    expect(telegramTexts[0]).toContain('21 DTE');
+    expect(kv.store.has(`manage-dte|1|${etDateString(OPEN_NOW)}`)).toBe(true);
+  });
+
+  it('stays silent one day outside the window', async () => {
+    stubFetch({ sheet: { positions: [quietPut({ expiry: expiryForDte(22) })], criteria: {} }, historyPrice: 240 });
+    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+    expect(telegramCalls).toBe(0);
+  });
+
+  it('stays silent on expiry day and after it', async () => {
+    // dte() reports 1 on expiry day itself, and goes negative afterwards.
+    for (const days of [1, -2]) {
+      stubFetch({ sheet: { positions: [quietPut({ expiry: expiryForDte(days) })], criteria: {} }, historyPrice: 240 });
+      await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+      expect(telegramCalls, `dte ${days}`).toBe(0);
+    }
+  });
+
+  it('nudges at most once per ET day, then again the next day', async () => {
+    stubFetch({ sheet: { positions: [quietPut()], criteria: {} }, historyPrice: 240 });
+    const kv = fakeKV();
+
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, new Date(Date.UTC(2026, 6, 22, 19, 0)));
+    expect(telegramCalls).toBe(1);
+
+    // Next trading day (Thursday) — same still-open position must nudge again.
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, new Date(Date.UTC(2026, 6, 23, 14, 0)));
+    expect(telegramCalls).toBe(2);
+  });
+
+  it('sends one message per position, not per ticker', async () => {
+    const positions = [
+      quietPut({ id: 1, strike: 200 }),
+      quietPut({ id: 2, strike: 190, expiry: expiryForDte(15) }),
+    ];
+    stubFetch({ sheet: { positions, criteria: {} }, historyPrice: 240 });
+    const kv = fakeKV();
+
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
+
+    expect(telegramCalls).toBe(2);
+    expect(telegramTexts.some(t => t.includes('$200 strike'))).toBe(true);
+    expect(telegramTexts.some(t => t.includes('$190 strike'))).toBe(true);
+  });
+
+  it('ignores positions that are no longer open', async () => {
+    const positions = [
+      quietPut({ id: 1, linkedId: 99 }),                       // opening row, already closed
+      quietPut({ id: 2, type: 'btc' }),                        // the close row itself
+      quietPut({ id: 3, type: 'shares', strike: undefined }),  // not an option
+    ];
+    stubFetch({ sheet: { positions, criteria: {} }, historyPrice: 240 });
+    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+    expect(telegramCalls).toBe(0);
+  });
+
+  it('honours a custom manageDte from the sheet criteria', async () => {
+    const positions = [quietPut({ expiry: expiryForDte(30) })];
+    stubFetch({ sheet: { positions, criteria: { manageDte: 35 } }, historyPrice: 240 });
+    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+    expect(telegramCalls).toBe(1);
+    expect(telegramTexts[0]).toContain('35-DTE — TSLA');
+  });
+
+  it('does not nudge outside market hours', async () => {
+    stubFetch({ sheet: { positions: [quietPut()], criteria: {} }, historyPrice: 240 });
+    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, CLOSED_NOW);
+    expect(telegramCalls).toBe(0);
+  });
+
+  it('still nudges when every market-data fetch fails', async () => {
+    // The nudge is calendar-only, so a Tradier/Yahoo outage must not suppress it —
+    // it runs before the quote pass and owns its own error handling.
+    stubFetch({ sheet: { positions: [quietPut()], criteria: {} }, historyOk: false });
+    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+    expect(telegramTexts.some(t => t.includes('21-DTE — TSLA'))).toBe(true);
   });
 });

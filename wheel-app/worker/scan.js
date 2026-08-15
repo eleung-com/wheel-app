@@ -6,8 +6,8 @@
 
 import { readWatchlist } from './notion.js';
 import { PRIORITY, dte, deriveIndicators, buildSignals } from '../src/lib/signalEngine.js';
-import { parsePositions, parseCriteria } from '../src/lib/utils.js';
-import { sendTelegram, formatAlert } from './telegram.js';
+import { parsePositions, parseCriteria, CLOSE_TYPES } from '../src/lib/utils.js';
+import { sendTelegram, formatAlert, formatDteAlert } from './telegram.js';
 import { isMarketOpen, etDateString } from './marketHours.js';
 
 const TRADIER_ORIGIN = 'https://api.tradier.com';
@@ -202,6 +202,53 @@ async function selfAlertOnce(env, message, now) {
   if (env.ALERTS_KV) await env.ALERTS_KV.put(key, '1', { expirationTtl: SELF_ALERT_TTL_SECONDS });
 }
 
+// ── 21-DTE management nudge ──────────────────────────────────────────────────
+// Wheel convention says decide (roll / close / take assignment) around 21 DTE,
+// where gamma risk starts climbing fast. This pass is deliberately *not* part of
+// buildSignals: nothing has to have moved in the market for it to fire, it's
+// purely the calendar, and it stays out of the dashboard's signal cards.
+
+/** Still-open option row: has a contract, hasn't been closed out or rolled. */
+function isOpenOption(p) {
+  return p.strike != null
+    && !!p.expiry
+    && p.type !== 'shares'
+    && !p.linkedId            // set on the opening row once it's been closed
+    && !CLOSE_TYPES.has(p.type); // the close row itself
+}
+
+/**
+ * One Telegram nudge per open option per ET day while it sits in the management
+ * window. De-duped on position id (not ticker) so two contracts on the same
+ * underlying each get their own message. Runs before the market-data pass and in
+ * its own try/catch — a Tradier/Yahoo outage must not swallow a calendar alert.
+ */
+export async function runDteNudges(env, positions, criteria, now) {
+  const threshold = criteria.manageDte;
+  if (!threshold || threshold < 1) return;
+
+  for (const pos of positions.filter(isOpenOption)) {
+    const days = dte(pos.expiry);
+    // NOTE the `<= 1`. The shared dte() counts expiry day itself as 1 — an
+    // option expiring today reads "1 DTE" everywhere in the dashboard — so
+    // "silent on expiry day, and after it" is days <= 1, not days < 1. The
+    // number in the message is deliberately the same one the dashboard shows.
+    if (days == null || days <= 1 || days > threshold) continue;
+
+    const key = `manage-dte|${pos.id}|${etDateString(now)}`;
+    if (env.ALERTS_KV && await env.ALERTS_KV.get(key)) continue; // already nudged today
+
+    try {
+      await sendTelegram(env, formatDteAlert(pos, days, threshold));
+    } catch (e) {
+      console.error(`[scan] dte nudge send failed for ${key}, will retry next run:`, e?.message || e);
+      continue; // no KV write — a failed send must not go silent for the day
+    }
+    if (env.ALERTS_KV) await env.ALERTS_KV.put(key, '1', { expirationTtl: DEDUPE_TTL_SECONDS });
+    await sleep(1200); // Telegram throttle, same pacing as the signal loop
+  }
+}
+
 // `now` is an injectable clock — worker.js's scheduled() calls this with no
 // second argument (real time); tests pass a fixed Date for determinism.
 export async function runScan(env, now = new Date()) {
@@ -210,6 +257,14 @@ export async function runScan(env, now = new Date()) {
   try {
     const watchlist = await readWatchlist(env);
     const { positions, criteria } = await fetchSheetData(env);
+
+    // Calendar-only, so it runs before (and independently of) the market-data
+    // pass — and its own failure can never take the signal scan down with it.
+    try {
+      await runDteNudges(env, positions, criteria, now);
+    } catch (e) {
+      console.error('[scan] dte nudge pass failed:', e?.message || e);
+    }
 
     const priorityTickers = watchlist.filter(w => w.diveIn === PRIORITY).map(w => w.ticker);
     const heldTickers = positions

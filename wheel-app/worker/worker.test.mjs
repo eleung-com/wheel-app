@@ -300,6 +300,65 @@ console.log('\nPATCH /notion/page');
   check('empty patch → 502 "nothing to update"', r.status === 502, 'got ' + r.status);
 }
 
+// ── Watchlist feed relay ─────────────────────────────────────────────────────
+console.log('\nGET /watchlist-feed/:token');
+{
+  const FEED_ENV = { ...ENV, WATCHLIST_FEED_TOKEN: 'f33d' };
+
+  stubFetch(() => jsonRes({ results: [page('p1', 'DELL', { diveIn: '🔥 Priority' })], has_more: false }));
+  let r = await worker.fetch(req('/watchlist-feed/wrong-token'), FEED_ENV);
+  check('wrong token → 401', r.status === 401, 'got ' + r.status);
+  check('wrong token → Notion never called', calls.length === 0, calls.length + ' calls');
+
+  stubFetch(() => jsonRes({ error: 'no NOTION_TOKEN' }, 500));
+  r = await worker.fetch(req('/watchlist-feed/f33d'), { WATCHLIST_FEED_TOKEN: 'f33d' });
+  check('missing NOTION_TOKEN secret → 500', r.status === 500, 'got ' + r.status);
+  check('missing NOTION_TOKEN → Notion never called', calls.length === 0, calls.length + ' calls');
+
+  stubFetch(() => jsonRes({ results: [page('p1', 'DELL', { diveIn: '🔥 Priority' })], has_more: false }));
+  r = await worker.fetch(req('/watchlist-feed/f33d'), FEED_ENV);
+  const body = await r.json();
+  check('valid token → 200', r.status === 200, 'got ' + r.status);
+  check('returns the same shape as /notion/watchlist', body.watchlist?.[0]?.ticker === 'DELL', JSON.stringify(body));
+  check('no x-app-secret header required', !('x-app-secret' in (calls[0]?.init.headers || {})));
+}
+
+// ── Notify relay ──────────────────────────────────────────────────────────
+console.log('\nPOST /notify/:token');
+{
+  const RELAY_ENV = { ...ENV, NOTIFY_RELAY_TOKEN: 'r3lay', TELEGRAM_BOT_TOKEN: 'bot_fake', TELEGRAM_CHAT_ID: '123' };
+
+  stubFetch(() => jsonRes({ ok: true }));
+  let r = await worker.fetch(req('/notify/wrong-token', { method: 'POST', body: { text: 'hi' } }), RELAY_ENV);
+  check('wrong token → 401', r.status === 401, 'got ' + r.status);
+  check('wrong token → Telegram never called', calls.length === 0, calls.length + ' calls');
+
+  stubFetch(() => jsonRes({ ok: true }));
+  r = await worker.fetch(req('/notify/r3lay', { method: 'GET' }), RELAY_ENV);
+  check('GET → 405', r.status === 405, 'got ' + r.status);
+
+  stubFetch(() => jsonRes({ ok: true }));
+  r = await worker.fetch(req('/notify/r3lay', { method: 'POST', body: {} }), RELAY_ENV);
+  check('missing text → 400', r.status === 400, 'got ' + r.status);
+  check('missing text → Telegram never called', calls.length === 0, calls.length + ' calls');
+
+  stubFetch(() => jsonRes({ ok: true }));
+  r = await worker.fetch(req('/notify/r3lay', { method: 'POST', body: { text: 'Morning scan: 3 candidates' } }), RELAY_ENV);
+  check('valid request → 200', r.status === 200, 'got ' + r.status);
+  check('relays to Telegram sendMessage',
+    calls[0].url === 'https://api.telegram.org/botbot_fake/sendMessage', calls[0]?.url);
+  check('forwards the text', JSON.parse(calls[0].init.body).text === 'Morning scan: 3 candidates');
+  check('forwards the configured chat id', JSON.parse(calls[0].init.body).chat_id === '123');
+
+  stubFetch(() => jsonRes({ ok: true }));
+  r = await worker.fetch(req('/notify/r3lay', { method: 'POST', body: { text: 'x'.repeat(5000) } }), RELAY_ENV);
+  check('text truncated to 4000 chars', JSON.parse(calls[0].init.body).text.length === 4000);
+
+  stubFetch(() => jsonRes({ ok: true }));
+  r = await worker.fetch(req('/notify/r3lay', { method: 'POST', body: { text: 'hi' } }), ENV);
+  check('missing NOTIFY_RELAY_TOKEN secret → 500', r.status === 500, 'got ' + r.status);
+}
+
 // ── No regression on the finance routes ──────────────────────────────────────
 console.log('\nExisting routes still work');
 {

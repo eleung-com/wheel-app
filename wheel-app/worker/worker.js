@@ -13,6 +13,7 @@
 
 import { readWatchlist, readEval, updatePage, UUID_RE } from './notion.js';
 import { runScan } from './scan.js';
+import { sendTelegram } from './telegram.js';
 
 const YAHOO_ORIGIN   = 'https://query1.finance.yahoo.com';
 const TRADIER_ORIGIN = 'https://api.tradier.com';
@@ -108,6 +109,60 @@ export default {
         return json({ error: 'unknown notion route' }, 404, cors);
       } catch (e) {
         return json({ error: String(e.message || e) }, 502, cors);
+      }
+    }
+
+    // ── Watchlist feed (read-only relay) ─────────────────────────────────────
+    // Same pattern as the notify relay below: a random path segment
+    // (WATCHLIST_FEED_TOKEN) instead of the real NOTION_TOKEN/APP_SECRET, for
+    // callers that must never hold those — e.g. a cloud-hosted scheduled
+    // routine. Read-only; returns exactly what /notion/watchlist returns, but
+    // this token can't reach /notion/eval or /notion/page, and can't write.
+    const WATCHLIST_FEED_PREFIX = '/watchlist-feed/';
+    if (url.pathname.startsWith(WATCHLIST_FEED_PREFIX)) {
+      if (!env.WATCHLIST_FEED_TOKEN) {
+        return json({ error: 'WATCHLIST_FEED_TOKEN secret is not set on the worker' }, 500);
+      }
+      if (url.pathname.slice(WATCHLIST_FEED_PREFIX.length) !== env.WATCHLIST_FEED_TOKEN) {
+        return json({ error: 'unauthorized' }, 401);
+      }
+      if (!env.NOTION_TOKEN) {
+        return json({ error: 'NOTION_TOKEN secret is not set on the worker' }, 500);
+      }
+      try {
+        return json({ watchlist: await readWatchlist(env) }, 200);
+      } catch (e) {
+        return json({ error: String(e.message || e) }, 502);
+      }
+    }
+
+    // ── Notify relay ───────────────────────────────────────────────────────
+    // A narrow, single-purpose endpoint: POST {text} here and it's relayed to
+    // the same Telegram bot/chat the alert scan uses. Auth is a random path
+    // segment (NOTIFY_RELAY_TOKEN) instead of the real TELEGRAM_BOT_TOKEN, so
+    // callers that must never hold that token — e.g. a cloud-hosted scheduled
+    // routine, which has no secret storage of its own — can still trigger a
+    // send. If this token leaks, the only thing it can do is post messages to
+    // this one chat; it can't read Notion, Sheets, or anything else.
+    const NOTIFY_PREFIX = '/notify/';
+    if (url.pathname.startsWith(NOTIFY_PREFIX)) {
+      if (!env.NOTIFY_RELAY_TOKEN) {
+        return json({ error: 'NOTIFY_RELAY_TOKEN secret is not set on the worker' }, 500);
+      }
+      if (url.pathname.slice(NOTIFY_PREFIX.length) !== env.NOTIFY_RELAY_TOKEN) {
+        return json({ error: 'unauthorized' }, 401);
+      }
+      if (request.method !== 'POST') {
+        return json({ error: 'POST only' }, 405);
+      }
+      try {
+        const body = await request.json();
+        const text = String(body?.text || '').slice(0, 4000); // Telegram's own message cap is ~4096
+        if (!text) return json({ error: 'text is required' }, 400);
+        await sendTelegram(env, text);
+        return json({ ok: true }, 200);
+      } catch (e) {
+        return json({ error: String(e.message || e) }, 502);
       }
     }
 
