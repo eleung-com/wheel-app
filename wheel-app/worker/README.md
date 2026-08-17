@@ -21,7 +21,7 @@ for Apps Script.
 |---|---|---|
 | `GET` | `/notion/watchlist` | Returns every Stock Scan Results page where `TV Lists` is non-empty, as `{pageId, ticker, notes, category, verdict, sector, diveIn, wheel, fundamentals, lastEval, earnings, addedAt}`. `diveIn` is the Dive-In select — rows reading `🔥 Priority` are the ones the Home news feed and the CSP signals use. `wheel` / `fundamentals` are the `Wheel (CSP)` and `Fundamentals` selects, shown as pills on signal cards. `earnings` is the next earnings date, read from the first present of the `Earnings Date` / `Earnings` / `Next Earnings` date properties — it feeds the Home news-tab earnings calendar. |
 | `GET` | `/notion/eval?pageId=…` | The **latest evaluation** for one ticker: everything nested under the *first* toggle header on its page. Returns `{eval: {title, blocks} \| null}`, or `null` when the page has no toggle header. |
-| `PATCH` | `/notion/page` | Body `{pageId, notes?, category?}`. Writes **only** the `Notes` and `App Category` properties — never touches `scanner verdict`, `TV Lists`, or page content. |
+| `PATCH` | `/notion/page` | Body `{pageId, notes}`. Writes **only** the `Notes` property — never touches `scanner verdict`, `TV Lists`, `Dive-In`, or page content. A body with no `notes` is rejected. |
 
 ### How `/notion/eval` reads a page
 

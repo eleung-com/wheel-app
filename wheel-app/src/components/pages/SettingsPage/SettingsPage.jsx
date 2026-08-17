@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import CriteriaPage   from '../CriteriaPage/CriteriaPage';
 import StrategiesTab  from '../ToolsPage/StrategiesTab';
-import ChartEmbedTab  from './ChartEmbedTab';
 
 /**
  * Settings absorbed the old Tools tab so both navs can carry the same five
@@ -11,7 +10,6 @@ import ChartEmbedTab  from './ChartEmbedTab';
  */
 const SUBTABS = [
   { id: 'criteria',   label: 'Criteria'   },
-  { id: 'chart',      label: 'Chart'      },
   { id: 'strategies', label: 'Strategies' },
 ];
 
@@ -44,7 +42,6 @@ export default function SettingsPage({ criteria, onSave, onRefresh, onPull, onAd
             onPull={onPull}
           />
         )}
-        {active === 'chart'      && <ChartEmbedTab />}
         {active === 'strategies' && <StrategiesTab onAddPosition={onAddPosition} />}
       </div>
     </div>

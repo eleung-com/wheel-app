@@ -24,7 +24,6 @@ function page(id, ticker, extra = {}) {
     properties: {
       Ticker: { title: [{ plain_text: ticker }] },
       Notes: { rich_text: extra.notes ? [{ plain_text: extra.notes }] : [] },
-      'App Category': { select: extra.category ? { name: extra.category } : null },
       'scanner verdict': { select: extra.verdict ? { name: extra.verdict } : null },
       sector: { select: extra.sector ? { name: extra.sector } : null },
       'Dive-In': { select: extra.diveIn ? { name: extra.diveIn } : null },
@@ -127,8 +126,8 @@ console.log('\nGET /notion/watchlist');
   check('uppercases ticker', !!dell);
   check('carries pageId', dell.pageId === 'p1');
   check('flattens notes', dell.notes === 'cheap');
-  check('flattens category', dell.category === 'Strong Candidate');
-  check('keeps verdict separate from category', dell.verdict === 'Interested');
+  check('no longer emits category', !('category' in dell), Object.keys(dell).join(','));
+  check('flattens verdict', dell.verdict === 'Interested');
   check('flattens Dive-In', dell.diveIn === '🔥 Priority');
   check('flattens Wheel (CSP)', dell.wheel === '✅');
   check('flattens Fundamentals', dell.fundamentals === '⚠️');
@@ -137,7 +136,6 @@ console.log('\nGET /notion/watchlist');
   check('parses created_time → addedAt', typeof dell.addedAt === 'number' && dell.addedAt > 0);
   const aapl = body.watchlist.find(w => w.ticker === 'AAPL');
   check('empty notes → empty string', aapl.notes === '');
-  check('null select → empty string', aapl.category === '');
   check('null Dive-In → empty string', aapl.diveIn === '');
   check('null Wheel → empty string', aapl.wheel === '');
   check('null Last Eval Date → empty string', aapl.lastEval === '');
@@ -261,15 +259,16 @@ console.log('\nPATCH /notion/page');
     check('does NOT touch TV Lists', !('TV Lists' in props));
   }
 
+  // App Category was removed — the property never existed in the Notion database,
+  // so every write 400'd and then wiped the edit by re-pulling. A patch carrying
+  // only a category now has nothing to write and must be rejected outright rather
+  // than reaching Notion.
   stubFetch(() => jsonRes({ ok: true }));
-  await worker.fetch(req('/notion/page', {
+  r = await worker.fetch(req('/notion/page', {
     method: 'PATCH', headers: { 'x-app-secret': 's3cret' }, body: { pageId: UUID, category: 'Monitoring' },
   }), ENV);
-  {
-    const props = JSON.parse(calls[0].init.body).properties;
-    check('category → select shape', props['App Category'].select.name === 'Monitoring');
-    check('does NOT touch Notes', !('Notes' in props), Object.keys(props).join(','));
-  }
+  check('category-only patch → not 200', r.status !== 200, 'got ' + r.status);
+  check('category-only patch never reaches Notion', calls.length === 0, calls.length + ' call(s)');
 
   stubFetch(() => jsonRes({ ok: true }));
   await worker.fetch(req('/notion/page', {
@@ -277,13 +276,6 @@ console.log('\nPATCH /notion/page');
   }), ENV);
   check('cleared notes → empty rich_text array',
     JSON.parse(calls[0].init.body).properties.Notes.rich_text.length === 0);
-
-  stubFetch(() => jsonRes({ ok: true }));
-  await worker.fetch(req('/notion/page', {
-    method: 'PATCH', headers: { 'x-app-secret': 's3cret' }, body: { pageId: UUID, category: '' },
-  }), ENV);
-  check('cleared category → select null',
-    JSON.parse(calls[0].init.body).properties['App Category'].select === null);
 
   stubFetch(() => jsonRes({ ok: true }));
   await worker.fetch(req('/notion/page', {

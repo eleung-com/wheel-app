@@ -106,15 +106,6 @@ function reducer(state, action) {
         ),
       };
 
-    case 'UPDATE_WATCH_CATEGORY':
-      // payload: { ticker, category }
-      return {
-        ...state,
-        watchlist: state.watchlist.map(w =>
-          w.ticker === action.payload.ticker ? { ...w, category: action.payload.category } : w
-        ),
-      };
-
     default:
       return state;
   }

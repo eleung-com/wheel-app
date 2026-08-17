@@ -6,8 +6,9 @@ import { notionRequest } from '../lib/utils';
  * Watchlist storage, backed by the Notion "Stock Scan Results" database.
  *
  * Membership is read-only here — tickers are curated in Notion (anything tagged
- * in TV Lists). The app owns exactly two properties, Notes and App Category,
- * and writes them back per-edit.
+ * in TV Lists). The app owns exactly one property, Notes, and writes it back
+ * per-edit. Reads happen at boot and every time the Watchlist tab is opened, so
+ * notes rewritten in Notion show up without a reload.
  *
  * All calls go through the Cloudflare Worker; the browser never holds a Notion
  * token. Each row carries its pageId so writes don't need a second lookup.
@@ -39,7 +40,6 @@ export function useNotion(showToast) {
             ticker,
             pageId:   w.pageId,
             notes:    w.notes || '',
-            category: w.category || '',
             sector:   w.sector || '',
             diveIn:   w.diveIn || '',
             // Shown as pills on the signal cards; lastEval also expires the
@@ -66,7 +66,7 @@ export function useNotion(showToast) {
   }, [dispatch, showToast]);
 
   /**
-   * Patch Notes and/or App Category on one ticker's Notion page.
+   * Patch Notes on one ticker's Notion page.
    * Optimistic: state is already updated by the caller, so on failure we surface
    * the error and re-pull rather than leaving the UI lying about what was saved.
    */

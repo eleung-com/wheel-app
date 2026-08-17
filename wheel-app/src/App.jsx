@@ -170,23 +170,31 @@ export default function App() {
 
   // ── Watchlist handlers ───────────────────────────────────────────────────
   // Membership is curated in Notion (anything tagged in TV Lists), so there is
-  // no add/remove here. The app owns Notes and App Category and writes those back.
+  // no add/remove here. Notes is the one property the app writes back.
 
   function handleUpdateWatchNotes(ticker, notes) {
     dispatch({ type: 'UPDATE_WATCH_NOTES', payload: { ticker, notes } });
     notionUpdateWatch(ticker, { notes });
   }
 
-  function handleUpdateWatchCategory(ticker, category) {
-    dispatch({ type: 'UPDATE_WATCH_CATEGORY', payload: { ticker, category } });
-    notionUpdateWatch(ticker, { category });
-  }
+  // A pull replaces every row's `notes`, so it would swap the text out from
+  // under an open detail modal and lose the draft. The watchlist tells us when
+  // one is up; background pulls no-op until it closes.
+  const watchModalOpen = useRef(false);
+  const handleWatchModalOpenChange = useCallback(open => { watchModalOpen.current = open; }, []);
 
-  function handleUpdateWatchlistCategories(categories) {
-    const nextCriteria = { ...state.criteria, watchlistCategories: categories.join(',') };
-    dispatch({ type: 'SET_CRITERIA', payload: nextCriteria });
-    sheetWriteViaGet({ ...state, criteria: nextCriteria });
-  }
+  const syncNotionWatchlist = useCallback(() => {
+    if (watchModalOpen.current) return;
+    notionSyncWatchlist({ quiet: true });
+  }, [notionSyncWatchlist]);
+
+  // Header refresh pulls Notion as well as prices. Notes edited in Notion would
+  // otherwise not reach the app until a full reload — boot is the only other
+  // place the watchlist is read.
+  const handleHeaderRefresh = useCallback((...args) => {
+    syncNotionWatchlist();
+    return runScreener(...args);
+  }, [syncNotionWatchlist, runScreener]);
 
   // ── Market indicator handlers ────────────────────────────────────────────
   function handleAddIndicator(ticker) {
@@ -350,7 +358,7 @@ export default function App() {
         marketText={marketText}
         syncStatus={syncStatus}
         isScreening={isScreening}
-        onRefresh={runScreener}
+        onRefresh={handleHeaderRefresh}
         onPull={syncFromSheet}
         onHelp={() => setOpenModal('help')}
       />
@@ -399,12 +407,10 @@ export default function App() {
       <div className={`page${activePage === 'pg-watchlist' ? ' active' : ''}`} id="pg-watchlist">
         <WatchlistPage
           watchlist={state.watchlist}
-          categories={state.criteria.watchlistCategories
-            ? state.criteria.watchlistCategories.split(',').map(s => s.trim()).filter(Boolean)
-            : []}
+          isActive={activePage === 'pg-watchlist'}
           onSaveNotes={handleUpdateWatchNotes}
-          onSaveCategory={handleUpdateWatchCategory}
-          onSaveCategories={handleUpdateWatchlistCategories}
+          onSyncNotion={syncNotionWatchlist}
+          onModalOpenChange={handleWatchModalOpenChange}
         />
       </div>
 
