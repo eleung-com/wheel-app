@@ -231,6 +231,19 @@ html{-webkit-text-size-adjust:100%}
 .msel{width:100%;background:var(--s2);border:1px solid var(--b2);border-radius:var(--rs);color:var(--tx);font-family:var(--mono);font-size:16px;padding:11px 10px;outline:none;margin-bottom:9px}
 .mg2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:9px}
 .mg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:9px}
+/* Grid items default to min-width:auto, so a child that refuses to shrink below
+   its intrinsic width spills over the next column instead of being clipped. iOS
+   date inputs have exactly that problem — their native picker chrome carries a
+   wide intrinsic size — which is what made Open date run under the Account
+   select. Both halves are needed: min-width:0 lets the column shrink, and
+   appearance:none drops the chrome forcing the width in the first place. */
+.mg2>*,.mg3>*{min-width:0}
+.minput,.msel{min-width:0;max-width:100%;line-height:1.2}
+.minput[type=date]{-webkit-appearance:none;appearance:none;display:block}
+/* An empty date field renders no value text, so without this it collapses
+   shorter than the select beside it. Matches the shared 1.2 line-height. */
+.minput[type=date]::-webkit-date-and-time-value{text-align:left;margin:0;min-height:1.2em}
+.minput[type=date]::-webkit-calendar-picker-indicator{margin-left:auto;opacity:.55}
 .mlbl{font-size:10px;color:var(--mu);margin-bottom:4px}
 .btn-p{width:100%;padding:14px;background:var(--ac);color:var(--ac-tx);font-family:var(--sans);font-size:15px;font-weight:700;border:none;border-radius:var(--rs);cursor:pointer;min-height:48px}
 .btn-p:active{opacity:.82}

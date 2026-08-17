@@ -21,7 +21,7 @@ for Apps Script.
 |---|---|---|
 | `GET` | `/notion/watchlist` | Returns every Stock Scan Results page where `TV Lists` is non-empty, as `{pageId, ticker, notes, category, verdict, sector, diveIn, wheel, fundamentals, lastEval, earnings, addedAt}`. `diveIn` is the Dive-In select — rows reading `🔥 Priority` are the ones the Home news feed and the CSP signals use. `wheel` / `fundamentals` are the `Wheel (CSP)` and `Fundamentals` selects, shown as pills on signal cards. `earnings` is the next earnings date, read from the first present of the `Earnings Date` / `Earnings` / `Next Earnings` date properties — it feeds the Home news-tab earnings calendar. |
 | `GET` | `/notion/eval?pageId=…` | The **latest evaluation** for one ticker: everything nested under the *first* toggle header on its page. Returns `{eval: {title, blocks} \| null}`, or `null` when the page has no toggle header. |
-| `PATCH` | `/notion/page` | Body `{pageId, notes?, category?}`. Writes **only** the `Notes` and `App Category` properties — never touches `scanner verdict`, `TV Lists`, or page content. |
+| `PATCH` | `/notion/page` | Body `{pageId, notes}`. Writes **only** the `Notes` property — never touches `scanner verdict`, `TV Lists`, `Dive-In`, or page content. A body with no `notes` is rejected. |
 
 ### How `/notion/eval` reads a page
 
@@ -85,6 +85,33 @@ market hours it:
 
 Because the engine's `ivr` field is an HV30 (realized-volatility) estimate,
 not a real IV Rank, every Telegram message labels it "HV30 est."
+
+### 21-DTE management nudge
+
+A second, independent pass (`runDteNudges` in `scan.js`) that runs *before* the
+market-data steps above, because it needs no market data at all — it's purely the
+calendar. For every still-open option position it sends one Telegram DM per ET
+day while the contract sits inside the management window:
+
+| | |
+|---|---|
+| Fires when | `1 < dte <= criteria.manageDte` (default **21**) |
+| Silent when | expiry day or later, outside market hours, position closed |
+| One message per | **position**, not per ticker — two contracts on the same underlying each get their own |
+| De-dupe key | `manage-dte\|<position id>\|<ET date>` in the same `ALERTS_KV` |
+| Stops | automatically, when the position leaves the Sheet — no cleanup step |
+
+`dte()` counts expiry day itself as `1`, which is why the floor is `dte > 1`
+rather than `dte > 0`; the number in the message is the same one the dashboard
+shows for that position.
+
+The threshold lives in the Sheet's saved criteria as `manageDte` and is editable
+at **Settings → Criteria → Exit Rules → Manage at DTE**. `parseCriteria` defaults
+it to 21, so the nudge works correctly even before the key has ever been written
+to the Sheet.
+
+This pass is wrapped in its own `try/catch`: a failure here can't take down the
+signal scan, and a market-data outage can't suppress the nudge.
 
 **Market-hours guard** (`marketHours.js`): the cron fires on a wide UTC window
 that covers both EST and EDT; `isMarketOpen()` does the real ET-and-holiday-aware

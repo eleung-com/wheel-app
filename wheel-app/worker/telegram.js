@@ -2,6 +2,8 @@
 // (no parse_mode) so tickers, dollar signs, and deltas never need HTML/Markdown
 // escaping.
 
+import { formatDateDisplay } from '../src/lib/utils.js';
+
 const APP_URL = 'https://eleung-com.github.io/wheel-app/';
 
 export async function sendTelegram(env, text) {
@@ -65,6 +67,41 @@ export function formatAlert(sig) {
   }
   if (sig.ivr != null) lines.push(`HV30 est: ${sig.ivr}`); // realized-vol estimate, not real IV Rank
   if (sig.suggestion) lines.push(sig.suggestion);
+  lines.push(APP_URL);
+
+  return lines.join('\n');
+}
+
+/** "Short put", "Short call", "Put credit spread", … for the DTE nudge's subtitle. */
+function positionLabel(pos) {
+  if (pos.longStrike != null) return 'Put credit spread';
+  if (pos.type === 'short_put')  return 'Short put';
+  if (pos.type === 'short_call') return 'Short call';
+  return String(pos.type || 'Option').replace(/_/g, ' ');
+}
+
+/**
+ * The daily "this position has hit your management window" nudge — one per open
+ * option per ET day, fired by runScan's DTE pass. Unlike formatAlert's signals
+ * this isn't a market-condition call: nothing has to have moved, it's purely the
+ * calendar. `threshold` is criteria.manageDte so the message always states the
+ * rule the user actually set rather than a hardcoded 21.
+ */
+export function formatDteAlert(pos, days, threshold) {
+  const lines = [`⏳ ${threshold}-DTE — ${pos.ticker}`];
+
+  const bits = [positionLabel(pos)];
+  if (pos.strike != null) {
+    bits.push(pos.longStrike != null ? `$${pos.strike}/$${pos.longStrike}` : `$${pos.strike} strike`);
+  }
+  bits.push(`${days} DTE`);
+  lines.push(bits.join(' · '));
+
+  lines.push(`Expiry: ${formatDateDisplay(pos.expiry)}`);
+  // Account is included because the same ticker/strike can be open in both
+  // accounts — without it two legitimate nudges read as one duplicate.
+  if (pos.account) lines.push(`Account: ${pos.account}`);
+  lines.push('Manage: roll out, or close if premium mostly captured');
   lines.push(APP_URL);
 
   return lines.join('\n');

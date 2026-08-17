@@ -63,8 +63,6 @@ export async function readWatchlist(env) {
         pageId:   page.id,
         ticker,
         notes:    plain(p.Notes && p.Notes.rich_text),
-        category: p['App Category'] && p['App Category'].select
-          ? p['App Category'].select.name : '',
         verdict:  p['scanner verdict'] && p['scanner verdict'].select
           ? p['scanner verdict'].select.name : '',
         // Drives which tickers the news feed pulls — '🔥 Priority' rows lead it.
@@ -176,7 +174,7 @@ export async function readEval(env, pageId) {
   return { title, blocks };
 }
 
-/** Patch only the two properties the app owns. Nothing else is ever written. */
+/** Patch the one property the app owns. Nothing else is ever written. */
 export async function updatePage(env, pageId, patch) {
   const properties = {};
 
@@ -184,10 +182,6 @@ export async function updatePage(env, pageId, patch) {
     // Notion caps a single rich_text chunk at 2000 chars.
     const content = patch.notes.slice(0, 2000);
     properties.Notes = { rich_text: content ? [{ text: { content } }] : [] };
-  }
-
-  if (typeof patch.category === 'string') {
-    properties['App Category'] = patch.category ? { select: { name: patch.category } } : { select: null };
   }
 
   if (!Object.keys(properties).length) throw new Error('nothing to update');
