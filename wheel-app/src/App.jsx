@@ -8,6 +8,7 @@ import { useNotion }      from './hooks/useNotion';
 import { useScreener }    from './hooks/useScreener';
 import useEvals           from './hooks/useEvals';
 import { isConfigured, LS_SESSION_KEY, parseCriteria, parsePositions, parseClosedTrades } from './lib/utils';
+import { sortByDiveIn } from './lib/watchlistOrder';
 
 import AuthGate    from './components/AuthGate/AuthGate';
 import BootScreen  from './components/BootScreen/BootScreen';
@@ -78,6 +79,32 @@ export default function App() {
     [state.signals],
   );
   const { evals, loading: evalsLoading } = useEvals(evalTargets);
+
+  // Watchlist evals. Same Notion page bodies, same localStorage cache (keyed by
+  // pageId, so the two hooks warm each other), but every watched ticker rather
+  // than only the ones signalling.
+  //
+  // Fetched in Dive-In order so Priority resolves first — a cold load is ~8
+  // Notion calls per ticker at 3 requests/second, and the tickers you triaged as
+  // Priority shouldn't be stuck behind the ones you marked Skip.
+  //
+  // Gated on the tab having been opened, so a session that never visits the
+  // watchlist never pays for it. Latched rather than live: leaving the tab must
+  // not empty `evals` and re-fetch on every return.
+  const [watchlistSeen, setWatchlistSeen] = useState(false);
+  useEffect(() => {
+    if (activePage === 'pg-watchlist') setWatchlistSeen(true);
+  }, [activePage]);
+
+  const watchEvalTargets = useMemo(
+    () => (watchlistSeen
+      ? sortByDiveIn(state.watchlist)
+        .filter(w => w.pageId)
+        .map(w => ({ ticker: w.ticker, pageId: w.pageId, lastEval: w.lastEval }))
+      : []),
+    [watchlistSeen, state.watchlist],
+  );
+  const { evals: watchEvals, loading: watchEvalsLoading } = useEvals(watchEvalTargets);
 
   // ── Boot sequence ────────────────────────────────────────────────────────
   const boot = useCallback(async () => {
@@ -408,6 +435,8 @@ export default function App() {
         <WatchlistPage
           watchlist={state.watchlist}
           isActive={activePage === 'pg-watchlist'}
+          evals={watchEvals}
+          evalsLoading={watchEvalsLoading}
           onSaveNotes={handleUpdateWatchNotes}
           onSyncNotion={syncNotionWatchlist}
           onModalOpenChange={handleWatchModalOpenChange}
