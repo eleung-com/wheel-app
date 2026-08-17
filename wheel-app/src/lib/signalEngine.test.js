@@ -3,6 +3,8 @@ import { dte, calcATR, deriveIndicators, buildSignals, PRIORITY } from './signal
 
 const CRITERIA = {
   dropPct: 5, ma: 200,
+  rsiMin: 30, rsiMax: 50, stochBelow: 20,
+  ccRsiMin: 50, ccRsiMax: 70, ccStochAbove: 80,
   deltaMin: 20, deltaMax: 35, dteMin: 21, dteMax: 45,
   ccRallyPct: 5, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
   closePct: 50, closeDtePct: 50,
@@ -114,60 +116,135 @@ describe('deriveIndicators', () => {
 
 describe('buildSignals — CSP', () => {
   const watchlist = [{ ticker: 'AAPL', diveIn: PRIORITY, pageId: 'p1' }];
+  // RSI inside 30–50, and %K rising from a prior bar below 20: the trigger.
+  const trigger = { price: 190, chg1d: -1, dropPct: 6, weekHigh: 200, aboveMa: true,
+                    rsi: 42, stochK: 18, stochKPrev: 12 };
 
-  it('fires when Priority-flagged and dropPct clears the threshold with no existing option', () => {
-    const qmap = { AAPL: { price: 190, chg1d: -1, dropPct: 6, weekHigh: 200, aboveMa: true } };
-    const sigs = buildSignals(watchlist, [], CRITERIA, qmap);
+  it('fires when Priority-flagged and both RSI and Stochastic trigger', () => {
+    const sigs = buildSignals(watchlist, [], CRITERIA, { AAPL: trigger });
     expect(sigs).toHaveLength(1);
-    expect(sigs[0]).toMatchObject({ type: 'csp', ticker: 'AAPL' });
+    expect(sigs[0]).toMatchObject({ type: 'csp', ticker: 'AAPL', rsi: 42, stochK: 18 });
   });
 
   it('does not fire when the row is not Priority-flagged', () => {
     const plain = [{ ticker: 'AAPL', diveIn: 'Watchlist' }];
-    const qmap = { AAPL: { price: 190, chg1d: -1, dropPct: 6, weekHigh: 200 } };
-    expect(buildSignals(plain, [], CRITERIA, qmap)).toHaveLength(0);
+    expect(buildSignals(plain, [], CRITERIA, { AAPL: trigger })).toHaveLength(0);
   });
 
-  it('does not fire when the drop is below threshold', () => {
-    const qmap = { AAPL: { price: 196, chg1d: -1, dropPct: 2, weekHigh: 200 } };
-    expect(buildSignals(watchlist, [], CRITERIA, qmap)).toHaveLength(0);
+  it('does not fire when RSI sits outside the band', () => {
+    for (const rsi of [25, 55, 70]) {
+      expect(buildSignals(watchlist, [], CRITERIA, { AAPL: { ...trigger, rsi } }),
+        `rsi ${rsi}`).toHaveLength(0);
+    }
+  });
+
+  it('does not fire when %K is below 20 but still falling', () => {
+    const falling = { ...trigger, stochK: 12, stochKPrev: 18 };
+    expect(buildSignals(watchlist, [], CRITERIA, { AAPL: falling })).toHaveLength(0);
+  });
+
+  it('does not fire when %K is rising but the prior bar was already above 20', () => {
+    const late = { ...trigger, stochK: 45, stochKPrev: 30 };
+    expect(buildSignals(watchlist, [], CRITERIA, { AAPL: late })).toHaveLength(0);
+  });
+
+  it('does not fire when RSI or Stochastic is unknown', () => {
+    expect(buildSignals(watchlist, [], CRITERIA, { AAPL: { ...trigger, rsi: null } })).toHaveLength(0);
+    expect(buildSignals(watchlist, [], CRITERIA, { AAPL: { ...trigger, stochK: null } })).toHaveLength(0);
+    expect(buildSignals(watchlist, [], CRITERIA, { AAPL: { ...trigger, stochKPrev: null } })).toHaveLength(0);
+  });
+
+  it('no longer gates on the drop — a flat name still fires if the oscillators do', () => {
+    const noDrop = { ...trigger, dropPct: 0.2 };
+    expect(buildSignals(watchlist, [], CRITERIA, { AAPL: noDrop })).toHaveLength(1);
+  });
+
+  it('carries the drop and ATR through for display rather than as pills', () => {
+    const sigs = buildSignals(watchlist, [], CRITERIA, { AAPL: { ...trigger, atrDrop: 2.4 } });
+    expect(sigs[0].dropPct).toBe(6);
+    expect(sigs[0].atrDrop).toBe(2.4);
+    const labels = sigs[0].chks.map(c => c.l);
+    expect(labels).toHaveLength(2);
+    expect(labels.some(l => /Dive-In|week high|ATR/.test(l))).toBe(false);
+    expect(labels[0]).toMatch(/^RSI /);
+    expect(labels[1]).toMatch(/^%K /);
   });
 
   it('does not fire when a short put/call is already open on the ticker', () => {
-    const qmap = { AAPL: { price: 190, chg1d: -1, dropPct: 6, weekHigh: 200 } };
     const positions = [{ id: 1, ticker: 'AAPL', type: 'short_put', qty: 1 }];
-    expect(buildSignals(watchlist, positions, CRITERIA, qmap)).toHaveLength(0);
+    expect(buildSignals(watchlist, positions, CRITERIA, { AAPL: trigger })).toHaveLength(0);
   });
 
   it('uses the live strike/dte from strikeMap when available', () => {
-    const qmap = { AAPL: { price: 190, chg1d: -1, dropPct: 6, weekHigh: 200 } };
     const strikeMap = { 'AAPL:put': { strike: 185, dte: 30, delta: -0.25 } };
-    const sigs = buildSignals(watchlist, [], CRITERIA, qmap, strikeMap);
+    const sigs = buildSignals(watchlist, [], CRITERIA, { AAPL: trigger }, strikeMap);
     expect(sigs[0].strike).toBe(185);
     expect(sigs[0].dteTarget).toBe(30);
     expect(sigs[0].suggestion).toContain('$185');
   });
+
+  it('no longer tells you to go check the chart by hand', () => {
+    const sigs = buildSignals(watchlist, [], CRITERIA, { AAPL: trigger });
+    expect(sigs[0].suggestion).not.toContain('Confirm RSI');
+  });
 });
 
 describe('buildSignals — Covered Call', () => {
-  it('fires on a 100+ share lot with no linked close and no existing call, once rallyPct clears threshold', () => {
+  // Mirror of the CSP trigger: RSI inside 50–70, %K falling from above 80.
+  const ccTrigger = { price: 420, chg1d: 1, rallyPct: 6, weekLow: 396,
+                      rsi: 62, stochK: 82, stochKPrev: 88 };
+
+  it('fires on a 100+ share lot when both RSI and Stochastic trigger', () => {
     const positions = [{ id: 10, ticker: 'MSFT', type: 'shares', qty: 100 }];
-    const qmap = { MSFT: { price: 420, chg1d: 1, rallyPct: 6, weekLow: 396 } };
-    const sigs = buildSignals([], positions, CRITERIA, qmap);
+    const sigs = buildSignals([], positions, CRITERIA, { MSFT: ccTrigger });
     expect(sigs).toHaveLength(1);
-    expect(sigs[0]).toMatchObject({ type: 'cc', ticker: 'MSFT', contracts: 1, sharesOwned: 100 });
+    expect(sigs[0]).toMatchObject({ type: 'cc', ticker: 'MSFT', contracts: 1, sharesOwned: 100, rsi: 62 });
   });
 
-  it('does not fire under 100 shares or below the rally threshold or with a call already open', () => {
-    const qmapOk = { MSFT: { price: 420, chg1d: 1, rallyPct: 6, weekLow: 396 } };
-    expect(buildSignals([], [{ id: 1, ticker: 'MSFT', type: 'shares', qty: 50 }], CRITERIA, qmapOk)).toHaveLength(0);
-    expect(buildSignals([], [{ id: 1, ticker: 'MSFT', type: 'shares', qty: 100 }], CRITERIA,
-      { MSFT: { price: 400, chg1d: 1, rallyPct: 1, weekLow: 396 } })).toHaveLength(0);
+  it('uses the opposite Stochastic direction from the CSP side', () => {
+    const positions = [{ id: 10, ticker: 'MSFT', type: 'shares', qty: 100 }];
+    // Rising from above 80 is the CSP-style direction — wrong for a call.
+    const rising = { ...ccTrigger, stochK: 88, stochKPrev: 82 };
+    expect(buildSignals([], positions, CRITERIA, { MSFT: rising })).toHaveLength(0);
+    // Falling, but from a prior bar that never got above 80.
+    const shallow = { ...ccTrigger, stochK: 70, stochKPrev: 75 };
+    expect(buildSignals([], positions, CRITERIA, { MSFT: shallow })).toHaveLength(0);
+  });
+
+  it('does not fire when CC RSI is outside its band', () => {
+    const positions = [{ id: 10, ticker: 'MSFT', type: 'shares', qty: 100 }];
+    for (const rsi of [40, 75]) {
+      expect(buildSignals([], positions, CRITERIA, { MSFT: { ...ccTrigger, rsi } }),
+        `rsi ${rsi}`).toHaveLength(0);
+    }
+  });
+
+  it('no longer gates on the rally — a flat name still fires if the oscillators do', () => {
+    const positions = [{ id: 10, ticker: 'MSFT', type: 'shares', qty: 100 }];
+    const noRally = { ...ccTrigger, rallyPct: 0.3 };
+    expect(buildSignals([], positions, CRITERIA, { MSFT: noRally })).toHaveLength(1);
+  });
+
+  it('requires at least 100 shares owned — 99 is not enough, 100 is', () => {
+    const at99  = [{ id: 1, ticker: 'MSFT', type: 'shares', qty: 99 }];
+    const at100 = [{ id: 1, ticker: 'MSFT', type: 'shares', qty: 100 }];
+    expect(buildSignals([], at99,  CRITERIA, { MSFT: ccTrigger })).toHaveLength(0);
+    expect(buildSignals([], at100, CRITERIA, { MSFT: ccTrigger })).toHaveLength(1);
+  });
+
+  it('floors the contract count to whole lots', () => {
+    const lot = [{ id: 1, ticker: 'MSFT', type: 'shares', qty: 250 }];
+    expect(buildSignals([], lot, CRITERIA, { MSFT: ccTrigger })[0].contracts).toBe(2);
+  });
+
+  it('does not fire under 100 shares or with a call already open', () => {
+    expect(buildSignals([], [{ id: 1, ticker: 'MSFT', type: 'shares', qty: 50 }], CRITERIA,
+      { MSFT: ccTrigger })).toHaveLength(0);
     const withCall = [
       { id: 1, ticker: 'MSFT', type: 'shares', qty: 100 },
       { id: 2, ticker: 'MSFT', type: 'short_call', qty: 1 },
     ];
-    expect(buildSignals([], withCall, CRITERIA, qmapOk)).toHaveLength(0);
+    expect(buildSignals([], withCall, CRITERIA, { MSFT: ccTrigger })).toHaveLength(0);
   });
 });
 

@@ -82,6 +82,17 @@ export function suggestStrike(price, delta, type) {
 
 export const DEFAULT_CRITERIA = {
   dropPct: 5, ma: 200, earn: 30,
+  // Entry oscillators. These gate the signals; dropPct and ccRallyPct are kept
+  // for display on the cards. CSP buys weakness turning up, CC sells strength
+  // rolling over.
+  //
+  // The Stochastic levels are deliberately wider than the textbook 20/80. Both
+  // triggers are crossings, not levels — %K has to turn while past the line — so
+  // a strict 20/80 only fires on a deep extreme, which across a handful of
+  // Priority tickers can mean nothing for weeks. 30/70 catches the same turn
+  // earlier without loosening the direction requirement.
+  rsiMin: 30, rsiMax: 50, stochBelow: 30,
+  ccRsiMin: 50, ccRsiMax: 70, ccStochAbove: 70,
   deltaMin: 20, deltaMax: 35, dteMin: 21, dteMax: 45,
   shares: 100, ccRallyPct: 5, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
   closePct: 50, closeDtePct: 50, manageDte: 21,
@@ -90,11 +101,27 @@ export const DEFAULT_CRITERIA = {
   watchlistCategories: 'Strong Candidate,Watchlist,Monitoring,Avoid',
 };
 
+/** Number from the sheet, falling back only when absent or unparseable — 0 survives. */
+function numOr(val, fallback) {
+  if (val === '' || val == null) return fallback;
+  const n = Number(val);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export function parseCriteria(c) {
   return {
     dropPct:    Number(c.dropPct)    || 5,
     ma:         Number(c.ma)         || 200,
     earn:       Number(c.earn)       || 30,
+    // `|| default` is wrong for a threshold that can legitimately be 0, so these
+    // fall back only when the sheet has no value at all. A sheet written before
+    // these existed simply gets the defaults.
+    rsiMin:       numOr(c.rsiMin,       30),
+    rsiMax:       numOr(c.rsiMax,       50),
+    stochBelow:   numOr(c.stochBelow,   30),
+    ccRsiMin:     numOr(c.ccRsiMin,     50),
+    ccRsiMax:     numOr(c.ccRsiMax,     70),
+    ccStochAbove: numOr(c.ccStochAbove, 70),
     deltaMin:   Number(c.deltaMin)   || (Number(c.delta) || 20),
     deltaMax:   Number(c.deltaMax)   || (Number(c.delta) || 35),
     dteMin:     Number(c.dteMin)     || 21,
