@@ -3,9 +3,18 @@
 // (useScreener.js, via indicators.js) and the Cloudflare Worker's unattended
 // scan (worker/scan.js) import from here so the two never drift apart.
 
+// Explicit .js extension: this module is imported by worker/scan.js, which runs
+// under plain Node/Cloudflare ESM where extensionless specifiers do not resolve.
+// Vite would happily resolve it, so the browser build hides the breakage.
+import {
+  rsiWilder, stochastic, turningUpFrom, rollingOverFrom, rsiInBand,
+} from './oscillators.js';
+
 // The Dive-In select value in Notion that promotes a watchlist row into the
 // signal engine. Rows reading anything else are never scanned for entries.
 export const PRIORITY = '🔥 Priority';
+
+const RSI_PERIOD = 14;
 
 export function dte(expiry) {
   if (!expiry) return null;
@@ -97,12 +106,38 @@ export function deriveIndicators({ closes, highs, lows, dates = [] }, price, chg
     ivrEst = Math.min(99, Math.round(hv30 * 1.25 + pctFrH * 0.15));
   }
 
+  // ── RSI + Stochastic ──────────────────────────────────────────────────────
+  // Computed from the daily bars already fetched — no extra request. These now
+  // gate entry signals; the drop and ATR figures above are carried for display
+  // only. The previous %K rides along because the triggers are crossings
+  // ("turning up from below 20"), which need two bars to evaluate.
+  const rsiSeries  = rsiWilder(closes, RSI_PERIOD);
+  const { k: kSeries, d: dSeries } = stochastic(highs, lows, closes);
+  const last = closes.length - 1;
+
   return {
     price, chg1d, aboveMa, ivrEst, hv30,
     dropPct, rallyPct, weekHigh, weekLow, atr, atrDrop,
+    rsi:        rsiSeries[last] ?? null,
+    stochK:     kSeries[last]   ?? null,
+    stochD:     dSeries[last]   ?? null,
+    stochKPrev: last > 0 ? (kSeries[last - 1] ?? null) : null,
     closes2m: closes.slice(-45),
     dates2m:  dates.slice(-45),
   };
+}
+
+/** "RSI 42" / "RSI n/a" — n/a when there aren't enough bars yet. */
+function rsiLabel(q) {
+  return q.rsi == null ? 'RSI n/a' : `RSI ${q.rsi.toFixed(0)}`;
+}
+
+/** "%K 18 ↑" — the arrow is the direction the trigger actually tests. */
+function stochLabel(q) {
+  if (q.stochK == null) return '%K n/a';
+  let arrow = '';
+  if (q.stochKPrev != null) arrow = q.stochK > q.stochKPrev ? ' ↑' : (q.stochK < q.stochKPrev ? ' ↓' : ' →');
+  return `%K ${q.stochK.toFixed(0)}${arrow}`;
 }
 
 /** "down 2.3x its average daily range" — omitted when ATR can't be computed. */
@@ -131,19 +166,19 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
   };
 
   // ── CSP signals ───────────────────────────────────────────────────────────
-  // Two conditions only: the row is flagged Priority in Notion, and the price
-  // has fallen at least cr.dropPct from its 5-day high. Deliberately does not
-  // gate on RSI or Stochastic — those are checked by eye on the Watchlist
-  // chart, and the ATR figure below says which name to look at first.
+  // The row must be flagged Priority in Notion, then RSI and Stochastic decide.
+  // The drop from the 5-day high and the ATR multiple are no longer conditions —
+  // they ride along on the card as context for sizing the move.
   for (const w of watchlist) {
     if (w.diveIn !== PRIORITY) continue;
 
     const q = qmap[w.ticker];
-    if (!q || q.dropPct == null) continue;
+    if (!q) continue;
 
-    const dropOk = q.dropPct >= cr.dropPct;
-    const hasOpt = positions.find(p => p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
-    if (!dropOk || hasOpt) continue;
+    const rsiOk   = rsiInBand(q.rsi, cr.rsiMin, cr.rsiMax);
+    const stochOk = turningUpFrom(q.stochK, q.stochKPrev, cr.stochBelow);
+    const hasOpt  = positions.find(p => p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
+    if (!rsiOk || !stochOk || hasOpt) continue;
 
     const live    = strikeMap[`${w.ticker}:put`];
     const strike  = live?.strike ?? null;
@@ -152,12 +187,14 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       ? `Δ${Math.abs(live.delta).toFixed(2)}`
       : `${cr.deltaMin}–${cr.deltaMax}Δ range`;
 
+    // Dive-In, the drop and the ATR multiple were pills here. Dive-In is a
+    // filter every card already passed, and the other two are in the metrics
+    // grid directly below — restating them crowded the card without adding
+    // anything. What's left is the pair that actually decided the signal.
     const chks = [
-      { l: 'Dive-In Priority', ok: true, tgt: PRIORITY },
-      { l: `${q.dropPct.toFixed(1)}% off week high`, ok: true, tgt: `≥${cr.dropPct}%` },
+      { l: rsiLabel(q),   ok: rsiOk,   tgt: `${cr.rsiMin}–${cr.rsiMax}` },
+      { l: stochLabel(q), ok: stochOk, tgt: `up from <${cr.stochBelow}` },
     ];
-    const note = atrNote(q);
-    if (note) chks.push({ l: note, ok: true, tgt: 'context' });
 
     const suggParts = [];
     if (dteT != null && strike != null) suggParts.push(`Sell ${dteT}d $${strike} put`);
@@ -166,14 +203,14 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
     // The MA no longer gates the signal, but a deep drop below it is the
     // difference between a pullback and a falling knife — worth saying out loud.
     if (q.aboveMa === false) suggParts.push(`⚠ Below the ${cr.ma}MA`);
-    suggParts.push('Confirm RSI & Stoch on the chart first');
 
     sigs.push({
       id: `csp-${w.ticker}`, type: 'csp', ticker: w.ticker,
       price: q.price, chg: q.chg1d, strike, dteTarget: dteT,
       ivr: q.ivrEst ?? null, aboveMa: q.aboveMa, maPeriod: cr.ma,
       ...notionOf(w.ticker),
-      dropPct: q.dropPct, weekHigh: q.weekHigh, atrDrop: q.atrDrop, chks,
+      dropPct: q.dropPct, weekHigh: q.weekHigh, atrDrop: q.atrDrop,
+      rsi: q.rsi, stochK: q.stochK, stochD: q.stochD, chks,
       suggestion: suggParts.join(' · '),
       ts: Date.now(),
     });
@@ -183,13 +220,15 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
   const CC_MIN_SHARES = 100;
   for (const pos of positions.filter(p => p.type === 'shares' && !p.linkedId && p.qty >= CC_MIN_SHARES)) {
     const q = qmap[pos.ticker];
-    if (!q || q.rallyPct == null) continue;
-    // Mirror of the put rule: a rally off the 5-day low is when call premium
-    // is richest, the same way a drop off the 5-day high is when put premium is.
-    const rallyOk = q.rallyPct >= cr.ccRallyPct;
+    if (!q) continue;
+    // Mirror of the put rule, one oscillator turn later: calls are sold into
+    // strength rolling over, puts into weakness turning up. The rally off the
+    // 5-day low is context on the card now, not a condition.
+    const ccRsiOk   = rsiInBand(q.rsi, cr.ccRsiMin, cr.ccRsiMax);
+    const ccStochOk = rollingOverFrom(q.stochK, q.stochKPrev, cr.ccStochAbove);
     const hasCall = positions.find(p => p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
     const contracts = Math.floor(pos.qty / 100);
-    if (rallyOk && !hasCall && contracts >= 1) {
+    if (ccRsiOk && ccStochOk && !hasCall && contracts >= 1) {
       const live     = strikeMap[`${pos.ticker}:call`];
       const strike   = live?.strike ?? null;
       const dteT     = live?.dte    ?? null;
@@ -200,10 +239,10 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       if (dteT != null && strike != null) suggParts.push(`Sell ${contracts} x ${dteT}d $${strike} call`);
       else suggParts.push(`Sell ${contracts} call · ${cr.ccDeltaMin}–${cr.ccDeltaMax}Δ · ${cr.ccDteMin}–${cr.ccDteMax}d`);
       if (live) suggParts.push(deltaStr);
-      suggParts.push('Confirm RSI & Stoch on the chart first');
       const ccChks = [
         { l: `${pos.qty} shares (${contracts} contract${contracts > 1 ? 's' : ''})`, ok: true },
-        { l: `+${q.rallyPct.toFixed(1)}% off week low`, ok: true, tgt: `≥${cr.ccRallyPct}%` },
+        { l: rsiLabel(q),   ok: ccRsiOk,   tgt: `${cr.ccRsiMin}–${cr.ccRsiMax}` },
+        { l: stochLabel(q), ok: ccStochOk, tgt: `over from >${cr.ccStochAbove}` },
       ];
       sigs.push({
         id: `cc-${pos.id}`, type: 'cc', ticker: pos.ticker,
@@ -211,6 +250,7 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
         contracts, sharesOwned: pos.qty,
         ...notionOf(pos.ticker),
         rallyPct: q.rallyPct, weekLow: q.weekLow, ivr: q.ivrEst ?? null,
+        rsi: q.rsi, stochK: q.stochK, stochD: q.stochD,
         chks: ccChks,
         suggestion: suggParts.join(' · '),
         ts: Date.now(),

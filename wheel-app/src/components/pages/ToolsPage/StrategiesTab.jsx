@@ -23,7 +23,7 @@ const INITIAL_CARDS = [
       'Cash for 100 × strike, in this account, now',
       'Strike at or below fair value',
       'RSI between 30 and 50 (oversold or neutral)',
-      'Stoch %K turning up from below 20',
+      'Stoch %K turning up from below 30',
       'IV rank above 30',
       'No earnings or catalyst before expiration',
       'On pre-approved "would own" list',
@@ -53,7 +53,7 @@ const INITIAL_CARDS = [
     checks: [
       'Strike at or above cost basis',
       'RSI between 50 and 70 (not overbought)',
-      'Stoch %K rolling over from above 80',
+      'Stoch %K rolling over from above 70',
       'IV rank above 30',
       'No earnings or ex-div before expiration',
       'Genuinely OK if shares are called away',

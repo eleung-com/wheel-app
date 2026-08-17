@@ -119,9 +119,18 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
     switch (id) {
       case 'csp': return (
         <>
-          <div className="slabel">CSP Entry — Pullback</div>
+          <div className="slabel">CSP Entry — Signal trigger</div>
           <div className="ssec">
-            <CriteriaRow label="Min drop from week high" sub="% below the 5-day high — only Dive-In 🔥 Priority tickers are scanned" inputId="c-drop" value={local.dropPct} min={1} max={40} onChange={v => update('dropPct', v)} />
+            <CriteriaRow
+              label="RSI band" sub="Daily RSI(14), Wilder — signal only fires inside this range"
+              pair={{ min: local.rsiMin, max: local.rsiMax }}
+              onChange={v => updatePair('rsiMin', 'rsiMax', v)}
+            />
+            <CriteriaRow label="Stoch %K turning up from below" sub="Slow %K (14,3,3) — prior bar under this level and now rising" inputId="c-stoch" value={local.stochBelow} min={1} max={99} onChange={v => update('stochBelow', v)} />
+          </div>
+          <div className="slabel">CSP Entry — Context</div>
+          <div className="ssec">
+            <CriteriaRow label="Min drop from week high" sub="Shown on the card — no longer gates the signal" inputId="c-drop" value={local.dropPct} min={1} max={40} onChange={v => update('dropPct', v)} />
             <CriteriaRow label="Price above MA"        sub="Moving average period (days)"              inputId="c-ma"    value={local.ma}    min={20} max={250} onChange={v => update('ma', v)} />
             <CriteriaRow label="Avoid earnings within" sub="Days — skip if earnings inside DTE window" inputId="c-earn"  value={local.earn}  onChange={v => update('earn', v)} />
           </div>
@@ -142,10 +151,19 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
       );
       case 'cc': return (
         <>
+          <div className="slabel">Covered Call — Signal trigger</div>
+          <div className="ssec">
+            <CriteriaRow
+              label="CC RSI band" sub="Daily RSI(14), Wilder — signal only fires inside this range"
+              pair={{ min: local.ccRsiMin, max: local.ccRsiMax }}
+              onChange={v => updatePair('ccRsiMin', 'ccRsiMax', v)}
+            />
+            <CriteriaRow label="Stoch %K rolling over from above" sub="Slow %K (14,3,3) — prior bar over this level and now falling" inputId="c-cc-stoch" value={local.ccStochAbove} min={1} max={99} onChange={v => update('ccStochAbove', v)} />
+          </div>
           <div className="slabel">Covered Call — Entry</div>
           <div className="ssec">
             <CriteriaRow label="Min shares owned"    sub="Must have at least this many"                   inputId="c-shares"   value={local.shares}  onChange={v => update('shares', v)} />
-            <CriteriaRow label="Min rally from week low" sub="% above the 5-day low — call premium is richest after a run-up" inputId="c-cc-rally" value={local.ccRallyPct} min={1} max={40} onChange={v => update('ccRallyPct', v)} />
+            <CriteriaRow label="Min rally from week low" sub="Shown on the card — no longer gates the signal" inputId="c-cc-rally" value={local.ccRallyPct} min={1} max={40} onChange={v => update('ccRallyPct', v)} />
             <CriteriaRow
               label="CC target delta range" sub="Strike is chosen at the midpoint delta"
               pair={{ min: local.ccDeltaMin, max: local.ccDeltaMax }}
