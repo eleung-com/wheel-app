@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { fetchQ } from '../lib/indicators';
 import { fetchOptionPrice, fetchBestStrike } from '../lib/optionPrice';
-import { buildSignals, PRIORITY } from '../lib/signalEngine';
+import { buildSignals, cspEntryOk, ccEntryOk, PRIORITY } from '../lib/signalEngine';
 import { getTradierKey } from '../lib/utils';
 
 // ── Market-close cache ────────────────────────────────────────────────────────
@@ -219,36 +219,36 @@ export function useScreener(showToast) {
       );
 
       // ── Live strike lookup for tickers that will produce full signals ────────
-      // Mirror buildSignals' pass conditions so we only hit Tradier for tickers
-      // that actually generate a card. Failures degrade to generic suggestions.
+      // The gate is cspEntryOk/ccEntryOk — the exact predicates buildSignals
+      // decides on — so this loop can never again select a different set of
+      // tickers than the one that produces cards. It used to filter on
+      // `dropPct >= cr.dropPct`, a rule buildSignals stopped using, which is why
+      // most cards rendered without a strike. Failures still degrade to the
+      // generic delta/DTE suggestion.
       const cr = currentState.criteria;
       const strikeMap = {};
 
       for (const w of currentState.watchlist) {
         if (w.diveIn !== PRIORITY) continue;
-        const q = qmap[w.ticker];
-        if (!q || q.dropPct == null) continue;
-        const dropOk = q.dropPct >= cr.dropPct;
+        if (strikeMap[`${w.ticker}:put`]) continue;
+        if (!cspEntryOk(qmap[w.ticker], cr)) continue;
         const hasOpt = mergedPositions.some(p =>
           p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
-        if (dropOk && !hasOpt) {
-          const best = await fetchBestStrike(w.ticker, 'put', cr.deltaMin, cr.deltaMax, cr.dteMin, cr.dteMax);
-          if (best) strikeMap[`${w.ticker}:put`] = best;
-          await new Promise(r => setTimeout(r, 450));
-        }
+        if (hasOpt) continue;
+        const best = await fetchBestStrike(w.ticker, 'put', cr.deltaMin, cr.deltaMax, cr.dteMin, cr.dteMax);
+        if (best) strikeMap[`${w.ticker}:put`] = best;
+        await new Promise(r => setTimeout(r, 450));
       }
 
       for (const pos of mergedPositions.filter(p => p.type === 'shares' && !p.linkedId && p.qty >= 100)) {
-        const q = qmap[pos.ticker];
-        if (!q || q.rallyPct == null || strikeMap[`${pos.ticker}:call`]) continue;
-        const rallyOk = q.rallyPct >= cr.ccRallyPct;
+        if (strikeMap[`${pos.ticker}:call`]) continue;
+        if (!ccEntryOk(qmap[pos.ticker], cr)) continue;
         const hasCall = mergedPositions.some(p =>
           p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
-        if (rallyOk && !hasCall) {
-          const best = await fetchBestStrike(pos.ticker, 'call', cr.ccDeltaMin, cr.ccDeltaMax, cr.ccDteMin, cr.ccDteMax);
-          if (best) strikeMap[`${pos.ticker}:call`] = best;
-          await new Promise(r => setTimeout(r, 450));
-        }
+        if (hasCall) continue;
+        const best = await fetchBestStrike(pos.ticker, 'call', cr.ccDeltaMin, cr.ccDeltaMax, cr.ccDteMin, cr.ccDteMax);
+        if (best) strikeMap[`${pos.ticker}:call`] = best;
+        await new Promise(r => setTimeout(r, 450));
       }
 
       // Build signals and publish — the missing link that left the Signals tab empty
