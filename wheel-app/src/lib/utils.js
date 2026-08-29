@@ -233,6 +233,32 @@ export function parseClosedTrades(raw) {
 // Exported because the Worker's scan needs the same "is this still open?" test.
 export const CLOSE_TYPES = new Set(['btc', 'expired', 'assigned', 'rolled']);
 
+// ── "Is this row still open?" ────────────────────────────────────────────────
+// Closing a position writes a SECOND row (type btc/expired/assigned/rolled) and
+// stamps the original opening row with a linkedId pointing at it. So a closed
+// trade leaves two rows behind, and both must be excluded from anything that
+// costs a network call — but for different reasons, which is why both halves of
+// this test are required:
+//
+//   CLOSE_TYPES.has(type)  → this IS the close row
+//   p.linkedId             → this is an opening row that has since been closed
+//
+// Testing only one of them leaks the other. Close rows keep their strike and
+// expiry, so before this existed the screener re-priced every option ever
+// closed on every run — a cost that grew with trade history and never came back
+// down. A rolled position's replacement is a fresh row with no linkedId, so it
+// stays open and keeps being fetched, which is correct.
+
+/** True when the row represents a position that is still open. */
+export function isOpenPosition(p) {
+  return !!p && !CLOSE_TYPES.has(p.type) && !p.linkedId;
+}
+
+/** True when the row is an open option contract worth pricing (not shares). */
+export function isPriceableOption(p) {
+  return isOpenPosition(p) && p.type !== 'shares' && !!p.expiry && p.strike != null;
+}
+
 export const ACCOUNTS = ['Esther', 'Fam'];
 
 export function parsePositions(raw) {

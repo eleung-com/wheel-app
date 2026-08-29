@@ -43,7 +43,7 @@ export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoa
           <div className="empty" style={{ gridColumn: '1/-1' }}>
             <div className="empty-icon">✓</div>
             <div className="empty-title">No signals right now</div>
-            <div className="empty-sub">No Priority ticker has pulled back far enough, and nothing needs rolling. Auto-refreshes every 20 min during market hours.</div>
+            <div className="empty-sub">No Priority ticker is showing an RSI + Stochastic turn, and nothing needs rolling. Refreshes when you open the app · Telegram alerts run in the background.</div>
           </div>
         )}
 
@@ -68,7 +68,7 @@ export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoa
 
         {!isEmpty && ago !== null && (
           <div style={{ gridColumn: '1/-1', textAlign: 'center', fontSize: 10, color: 'var(--mu)', padding: '14px 0' }}>
-            Last screened {ago < 1 ? 'just now' : `${ago}m ago`} · auto-refreshes every 20m during market hours
+            Last screened {ago < 1 ? 'just now' : `${ago}m ago`} · refreshes when you open the app · Telegram alerts run in the background
           </div>
         )}
       </div>
