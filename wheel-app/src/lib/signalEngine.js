@@ -145,6 +145,36 @@ function atrNote(q) {
   return q.atrDrop != null ? `${q.atrDrop.toFixed(1)}x ATR` : null;
 }
 
+// ── Entry predicates ─────────────────────────────────────────────────────────
+// The market-data half of an entry decision, exported so that everything which
+// needs to answer "will this ticker produce an entry card?" asks the same
+// function rather than re-implementing the test.
+//
+// This exists because the two disagreed. buildSignals moved to RSI + Stochastic
+// in b2c4fd3, but the live-strike prefetch in useScreener.js and worker/scan.js
+// kept selecting tickers by the retired 5-day-drop rule. The two sets barely
+// overlapped, so most cards that fired had no strike fetched for them and
+// rendered the generic "20–35Δ · 21–45d" line, while Tradier calls were spent on
+// tickers that produced no card at all.
+//
+// Callers keep their own structural checks — the Priority flag, a 100-share lot,
+// an already-open contract — because those legitimately differ by caller. What
+// must never differ again is the oscillator test, which lives here now.
+
+/** CSP entry: RSI inside the band and %K turning up from below the level. */
+export function cspEntryOk(q, cr) {
+  if (!q) return false;
+  return rsiInBand(q.rsi, cr.rsiMin, cr.rsiMax)
+    && turningUpFrom(q.stochK, q.stochKPrev, cr.stochBelow);
+}
+
+/** Covered call: the mirror — RSI in its band, %K rolling over from above. */
+export function ccEntryOk(q, cr) {
+  if (!q) return false;
+  return rsiInBand(q.rsi, cr.ccRsiMin, cr.ccRsiMax)
+    && rollingOverFrom(q.stochK, q.stochKPrev, cr.ccStochAbove);
+}
+
 export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {}) {
   const cr   = criteria;
   const sigs = [];
@@ -175,10 +205,11 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
     const q = qmap[w.ticker];
     if (!q) continue;
 
+    // Individual booleans drive the pills below; cspEntryOk is what decides.
     const rsiOk   = rsiInBand(q.rsi, cr.rsiMin, cr.rsiMax);
     const stochOk = turningUpFrom(q.stochK, q.stochKPrev, cr.stochBelow);
     const hasOpt  = positions.find(p => p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
-    if (!rsiOk || !stochOk || hasOpt) continue;
+    if (!cspEntryOk(q, cr) || hasOpt) continue;
 
     const live    = strikeMap[`${w.ticker}:put`];
     const strike  = live?.strike ?? null;
@@ -224,11 +255,12 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
     // Mirror of the put rule, one oscillator turn later: calls are sold into
     // strength rolling over, puts into weakness turning up. The rally off the
     // 5-day low is context on the card now, not a condition.
+    // Individual booleans drive the pills below; ccEntryOk is what decides.
     const ccRsiOk   = rsiInBand(q.rsi, cr.ccRsiMin, cr.ccRsiMax);
     const ccStochOk = rollingOverFrom(q.stochK, q.stochKPrev, cr.ccStochAbove);
     const hasCall = positions.find(p => p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
     const contracts = Math.floor(pos.qty / 100);
-    if (ccRsiOk && ccStochOk && !hasCall && contracts >= 1) {
+    if (ccEntryOk(q, cr) && !hasCall && contracts >= 1) {
       const live     = strikeMap[`${pos.ticker}:call`];
       const strike   = live?.strike ?? null;
       const dteT     = live?.dte    ?? null;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dte, calcATR, deriveIndicators, buildSignals, PRIORITY } from './signalEngine';
+import { dte, calcATR, deriveIndicators, buildSignals, cspEntryOk, ccEntryOk, PRIORITY } from './signalEngine';
 
 const CRITERIA = {
   dropPct: 5, ma: 200,
@@ -307,5 +307,118 @@ describe('buildSignals — Roll / Close', () => {
     const sigs = buildSignals([], positions, CRITERIA, qmap);
     expect(sigs).toHaveLength(1);
     expect(sigs[0].type).toBe('close');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression guard for the strike-prefetch drift (audit 1.1, fixed Phase 1).
+//
+// useScreener.js and worker/scan.js decide which tickers are worth a live
+// Tradier strike lookup. That decision MUST select exactly the tickers that
+// buildSignals will turn into entry cards. When the two drifted apart — the
+// prefetch still filtering on the retired 5-day-drop rule while buildSignals
+// moved to RSI + Stochastic — cards fired with no strike attached and Tradier
+// calls were spent on tickers that produced nothing.
+//
+// These tests assert the predicate and the engine agree on every combination,
+// so re-introducing a separate rule in either caller fails here first.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('entry predicates match buildSignals', () => {
+  const watchlist = [{ ticker: 'AAPL', diveIn: PRIORITY, pageId: 'p1' }];
+
+  /** Does the engine actually emit a CSP card for this quote? */
+  function engineFiresCsp(q) {
+    return buildSignals(watchlist, [], CRITERIA, { AAPL: q })
+      .some(s => s.type === 'csp' && s.ticker === 'AAPL');
+  }
+
+  /** Same for a covered call against a 100-share lot. */
+  function engineFiresCc(q) {
+    const positions = [{ id: 10, ticker: 'MSFT', type: 'shares', qty: 100 }];
+    return buildSignals([], positions, CRITERIA, { MSFT: q })
+      .some(s => s.type === 'cc' && s.ticker === 'MSFT');
+  }
+
+  it('cspEntryOk agrees with the engine across the full RSI × Stochastic matrix', () => {
+    const cases = [];
+    for (const rsi of [null, 20, 29, 30, 42, 50, 51, 65]) {
+      for (const [stochK, stochKPrev] of [
+        [18, 12],    // rising from below the level — the trigger
+        [12, 18],    // below but still falling
+        [45, 30],    // rising, but the prior bar was already above
+        [25, 19],    // crossing up through the level
+        [null, 12],  // unknown current
+        [18, null],  // unknown prior
+      ]) {
+        cases.push({ price: 190, chg1d: -1, dropPct: 6, weekHigh: 200, aboveMa: true,
+                     rsi, stochK, stochKPrev });
+      }
+    }
+
+    for (const q of cases) {
+      const label = `rsi=${q.rsi} k=${q.stochK} prevK=${q.stochKPrev}`;
+      expect(cspEntryOk(q, CRITERIA), label).toBe(engineFiresCsp(q));
+    }
+    // Guard against a matrix that accidentally proves nothing.
+    expect(cases.some(q => cspEntryOk(q, CRITERIA))).toBe(true);
+    expect(cases.some(q => !cspEntryOk(q, CRITERIA))).toBe(true);
+  });
+
+  it('ccEntryOk agrees with the engine across the full RSI × Stochastic matrix', () => {
+    const cases = [];
+    for (const rsi of [null, 40, 49, 50, 62, 70, 71, 85]) {
+      for (const [stochK, stochKPrev] of [
+        [82, 88],    // falling from above the level — the trigger
+        [88, 82],    // above but still rising
+        [30, 45],    // falling, but the prior bar was already below
+        [78, 81],    // crossing down through the level
+        [null, 88],
+        [82, null],
+      ]) {
+        cases.push({ price: 420, chg1d: 1, rallyPct: 6, weekLow: 396,
+                     rsi, stochK, stochKPrev });
+      }
+    }
+
+    for (const q of cases) {
+      const label = `rsi=${q.rsi} k=${q.stochK} prevK=${q.stochKPrev}`;
+      expect(ccEntryOk(q, CRITERIA), label).toBe(engineFiresCc(q));
+    }
+    expect(cases.some(q => ccEntryOk(q, CRITERIA))).toBe(true);
+    expect(cases.some(q => !ccEntryOk(q, CRITERIA))).toBe(true);
+  });
+
+  it('returns false for a missing quote rather than throwing', () => {
+    expect(cspEntryOk(null, CRITERIA)).toBe(false);
+    expect(cspEntryOk(undefined, CRITERIA)).toBe(false);
+    expect(ccEntryOk(null, CRITERIA)).toBe(false);
+    expect(ccEntryOk(undefined, CRITERIA)).toBe(false);
+  });
+
+  // The two shapes the old drop-based gate got wrong, stated explicitly.
+
+  it('a deep drop with no oscillator turn is NOT a candidate (old gate said yes)', () => {
+    const deepDropNoTurn = { price: 150, chg1d: -4, dropPct: 25, weekHigh: 200,
+                             rsi: 65, stochK: 55, stochKPrev: 40 };
+    expect(deepDropNoTurn.dropPct).toBeGreaterThan(CRITERIA.dropPct); // old gate: pass
+    expect(cspEntryOk(deepDropNoTurn, CRITERIA)).toBe(false);
+    expect(engineFiresCsp(deepDropNoTurn)).toBe(false);
+  });
+
+  it('a flat name WITH the oscillator turn IS a candidate (old gate said no — the lost-strike bug)', () => {
+    const flatButTurning = { price: 199, chg1d: 0.1, dropPct: 0.5, weekHigh: 200,
+                             rsi: 42, stochK: 18, stochKPrev: 12 };
+    expect(flatButTurning.dropPct).toBeLessThan(CRITERIA.dropPct); // old gate: skip
+    expect(cspEntryOk(flatButTurning, CRITERIA)).toBe(true);
+    expect(engineFiresCsp(flatButTurning)).toBe(true);
+  });
+
+  it('the covered-call side had the same drift on rallyPct', () => {
+    const flatButRolling = { price: 400, chg1d: -0.2, rallyPct: 0.4, weekLow: 398,
+                             rsi: 62, stochK: 82, stochKPrev: 88 };
+    expect(flatButRolling.rallyPct).toBeLessThan(CRITERIA.ccRallyPct); // old gate: skip
+    expect(ccEntryOk(flatButRolling, CRITERIA)).toBe(true);
+    expect(engineFiresCc(flatButRolling)).toBe(true);
   });
 });

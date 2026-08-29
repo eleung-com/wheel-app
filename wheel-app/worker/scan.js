@@ -5,7 +5,7 @@
 // condition doesn't re-alert all day.
 
 import { readWatchlist } from './notion.js';
-import { PRIORITY, dte, deriveIndicators, buildSignals } from '../src/lib/signalEngine.js';
+import { PRIORITY, dte, deriveIndicators, buildSignals, cspEntryOk, ccEntryOk } from '../src/lib/signalEngine.js';
 import { parsePositions, parseCriteria, CLOSE_TYPES } from '../src/lib/utils.js';
 import { sendTelegram, formatAlert, formatDteAlert } from './telegram.js';
 import { isMarketOpen, etDateString } from './marketHours.js';
@@ -184,7 +184,16 @@ async function fetchBestStrike(env, ticker, optionType, deltaMin, deltaMax, dteM
     const best = deltaPool.reduce((b, o) =>
       Math.abs(o.greeks.delta - targetDelta) < Math.abs(b.greeks.delta - targetDelta) ? o : b);
 
-    return { strike: best.strike, expiry: target.date, dte: target.dte, delta: best.greeks.delta };
+    // Premium is computed here purely to keep this return shape identical to
+    // the browser's fetchBestStrike (src/lib/optionPrice.js). Nothing reads it
+    // yet — but a shape that differs between the two runtimes is a trap set for
+    // whoever adds the first reader, and the mid is free once the chain is in hand.
+    const bid = best.bid ?? null, ask = best.ask ?? null;
+    const premium = (bid !== null && ask !== null && bid > 0 && ask > 0)
+      ? parseFloat(((bid + ask) / 2).toFixed(2))
+      : (best.last > 0 ? parseFloat(best.last.toFixed(2)) : null);
+
+    return { strike: best.strike, expiry: target.date, dte: target.dte, delta: best.greeks.delta, premium };
   } catch (_) {
     return null;
   }
@@ -288,13 +297,16 @@ export async function runScan(env, now = new Date()) {
       return;
     }
 
-    // Live strike lookups, mirroring buildSignals' own pass conditions so we
-    // only spend Tradier calls on tickers that will actually produce a card.
+    // Live strike lookups, gated on the same cspEntryOk/ccEntryOk predicates
+    // buildSignals decides with — so a Telegram alert can never be built for a
+    // ticker whose strike this loop skipped. It used to filter on the retired
+    // 5-day-drop rule, which is why alerts mostly carried the generic
+    // delta/DTE line instead of a concrete contract.
     const strikeMap = {};
     for (const w of watchlist) {
       if (w.diveIn !== PRIORITY) continue;
-      const q = qmap[w.ticker];
-      if (!q || q.dropPct == null || q.dropPct < criteria.dropPct) continue;
+      if (strikeMap[`${w.ticker}:put`]) continue;
+      if (!cspEntryOk(qmap[w.ticker], criteria)) continue;
       const hasOpt = positions.some(p => p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
       if (hasOpt) continue;
       const best = await fetchBestStrike(env, w.ticker, 'put', criteria.deltaMin, criteria.deltaMax, criteria.dteMin, criteria.dteMax);
@@ -302,8 +314,8 @@ export async function runScan(env, now = new Date()) {
       await sleep(450);
     }
     for (const pos of positions.filter(p => p.type === 'shares' && !p.linkedId && p.qty >= 100)) {
-      const q = qmap[pos.ticker];
-      if (!q || q.rallyPct == null || q.rallyPct < criteria.ccRallyPct) continue;
+      if (strikeMap[`${pos.ticker}:call`]) continue;
+      if (!ccEntryOk(qmap[pos.ticker], criteria)) continue;
       const hasCall = positions.some(p => p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
       if (hasCall) continue;
       const best = await fetchBestStrike(env, pos.ticker, 'call', criteria.ccDeltaMin, criteria.ccDeltaMax, criteria.ccDteMin, criteria.ccDteMax);
