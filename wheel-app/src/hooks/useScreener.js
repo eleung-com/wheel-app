@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { fetchQ } from '../lib/indicators';
 import { fetchOptionPrice, fetchBestStrike } from '../lib/optionPrice';
 import { buildSignals, cspEntryOk, ccEntryOk, PRIORITY } from '../lib/signalEngine';
-import { getTradierKey } from '../lib/utils';
+import { getTradierKey, isOpenPosition, isPriceableOption } from '../lib/utils';
 
 // ── Market-close cache ────────────────────────────────────────────────────────
 // When markets are closed we cache the last fetched qmap in localStorage so the
@@ -67,22 +67,6 @@ export function useScreener(showToast) {
   // avoids recreating runScreener on every start/stop which would re-trigger boot().
   const isScreeningRef = useRef(false);
 
-  const refreshOptionPrices = useCallback(async (silent = false) => {
-    const optPositions = stateRef.current.positions.filter(p => p.type !== 'shares' && p.expiry && p.strike);
-    if (!optPositions.length) return;
-    if (!silent) showToast('Refreshing options prices…', '');
-    let updated = 0;
-    for (const pos of optPositions) {
-      const livePrice = await fetchOptionPrice(pos.ticker, pos.type, pos.strike, pos.expiry);
-      if (livePrice !== null) {
-        dispatch({ type: 'UPDATE_POSITION_LIVE_PREM', payload: { id: pos.id, liveCurPrem: livePrice } });
-        updated++;
-      }
-      await new Promise(r => setTimeout(r, 450));
-    }
-    if (!silent && updated > 0)  showToast(`Options prices updated (${updated} position${updated > 1 ? 's' : ''})`, 'ok');
-    if (!silent && updated === 0) showToast('No live option prices found', 'err');
-  }, [dispatch, showToast]);
 
   /**
    * @param silent  suppress toasts (background refreshes)
@@ -101,9 +85,11 @@ export function useScreener(showToast) {
         ? String(currentState.criteria.indicatorTickers).split(',').map(t => t.trim()).filter(Boolean)
         : [];
 
+      // Closed rows carry a ticker but nothing here needs their price — a name
+      // you traded once and exited should stop costing a history fetch forever.
       const tickers = [...new Set([
         ...currentState.watchlist.map(w => w.ticker),
-        ...currentState.positions.map(p => p.ticker),
+        ...currentState.positions.filter(isOpenPosition).map(p => p.ticker),
       ])];
 
       if (!tickers.length && !indicatorTickers.length) { isScreeningRef.current = false; setIsScreening(false); return; }
@@ -194,7 +180,7 @@ export function useScreener(showToast) {
       paintPrices(qmap);
 
       // Update market price on share positions
-      const shareTickers = [...new Set(currentState.positions.filter(p => p.type === 'shares').map(p => p.ticker))];
+      const shareTickers = [...new Set(currentState.positions.filter(p => p.type === 'shares' && isOpenPosition(p)).map(p => p.ticker))];
       for (const ticker of shareTickers) {
         if (qmap[ticker]?.price) {
           dispatch({ type: 'UPDATE_POSITION_MARKET_PRICE', payload: { ticker, price: qmap[ticker].price } });
@@ -202,7 +188,7 @@ export function useScreener(showToast) {
       }
 
       // Fetch live option prices
-      const optPositions = currentState.positions.filter(p => p.type !== 'shares' && p.expiry && p.strike);
+      const optPositions = currentState.positions.filter(isPriceableOption);
       const livePremMap  = {};
       for (const pos of optPositions) {
         const livePrice = await fetchOptionPrice(pos.ticker, pos.type, pos.strike, pos.expiry);
@@ -269,5 +255,5 @@ export function useScreener(showToast) {
     }
   }, [dispatch, showToast]); // no isScreening dep — ref handles guard
 
-  return { isScreening, runScreener, refreshOptionPrices };
+  return { isScreening, runScreener };
 }

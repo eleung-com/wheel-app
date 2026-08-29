@@ -32,6 +32,11 @@ import SignalDetailModal      from './components/modals/SignalDetailModal';
 import HelpModal              from './components/modals/HelpModal';
 import WatchNotesModal        from './components/modals/WatchNotesModal';
 
+// How stale the screened data must be before foregrounding the app refetches.
+// Long enough that flicking away and back is free; short enough that a real
+// return to the app shows current prices.
+const FOREGROUND_STALE_MS = 10 * 60 * 1000;
+
 function getInitialAuthState() {
   if (!isConfigured()) return 'setup';
   if (localStorage.getItem(LS_SESSION_KEY) === '1') return 'booting';
@@ -40,6 +45,11 @@ function getInitialAuthState() {
 
 export default function App() {
   const { state, dispatch } = useAppContext();
+
+  // Read by the foreground-refresh listener, which is registered once and must
+  // not be torn down and re-added on every state change.
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; });
 
   // Auth / boot flow
   const [authState, setAuthState] = useState(getInitialAuthState);
@@ -61,11 +71,16 @@ export default function App() {
   // Signal detail
   const [detailSignalId,    setDetailSignalId]    = useState(null);
 
+  // Also read by the foreground-refresh listener: a silent refetch must not
+  // swap state out from under an open form.
+  const openModalRef = useRef(openModal);
+  useEffect(() => { openModalRef.current = openModal; });
+
   const { toast, showToast }          = useToast();
   const { isOpen: marketOpen, marketText } = useMarketStatus();
   const { syncStatus, sheetRead, sheetWriteViaGet, syncFromSheet } = useSheets(showToast);
   const { notionSyncWatchlist, notionUpdateWatch }                 = useNotion(showToast);
-  const { isScreening, runScreener, refreshOptionPrices }          = useScreener(showToast);
+  const { isScreening, runScreener }                               = useScreener(showToast);
   const runScreenerRef = useRef(runScreener);
   useEffect(() => { runScreenerRef.current = runScreener; });
 
@@ -134,8 +149,8 @@ export default function App() {
     // Hand the screener what boot just loaded. It otherwise reads app state
     // through a ref that only refreshes after a render, and the dispatches above
     // haven't been committed yet — so it would see an empty watchlist, bail at
-    // its own guard, and leave the Signals tab blank until the next interval
-    // tick, which never comes at all when markets are closed.
+    // its own guard, and leave the Signals tab blank until the next manual
+    // refresh — there is no polling loop to bail it out.
     runScreenerRef.current(false, {
       ...(rows      ? { watchlist: rows } : {}),
       ...(positions ? { positions }       : {}),
@@ -152,7 +167,28 @@ export default function App() {
     }
   }, [authState, boot]);
 
-  // ── Auto-refresh (market hours only, 1-min silent background refresh) ──────
+  // ── Refresh on foreground ────────────────────────────────────────────────
+  // There is no polling loop. An idle app makes no network calls at all — the
+  // Cloudflare Worker is what watches the market while this is closed, and it
+  // messages Telegram. This screen is a read-out, so it refreshes when someone
+  // actually looks at it.
+  //
+  // It replaces a 60-second setInterval that re-screened the entire watchlist
+  // for as long as the tab stayed open. With the in-run guard preventing
+  // overlap, that amounted to running back-to-back full screens all session —
+  // roughly two Tradier calls per ticker per cycle. That is the exact pattern
+  // that got this app rate-limited before, and it bought nothing: nobody was
+  // reading the screen between refreshes.
+  //
+  // Three guards, each earning its place:
+  //   • >10 min stale — mobile fires visibilitychange constantly (app switcher,
+  //     notification shade). Without this, every glance is a full screen.
+  //   • market open   — outside hours the data cannot have changed since the
+  //     close, so foregrounding on a Sunday must stay silent.
+  //   • no modal open — a background refresh mid-edit swaps state underneath an
+  //     open form, which is the same class of bug the watchlist pull already
+  //     guards against.
+  // The manual ↻ button bypasses all three, by design.
   useEffect(() => {
     if (isBooting || authState !== 'booting') return;
 
@@ -162,23 +198,18 @@ export default function App() {
       return d >= 1 && d <= 5 && mins >= 570 && mins < 960;
     }
 
-    // Only set up the interval when markets are open; it runs silently in the background.
-    // When markets are closed the boot-time screener run already captured the last close — no repeat needed.
-    if (!isMarketHours()) return;
+    function onVisible() {
+      if (document.visibilityState !== 'visible') return;
+      if (!isMarketHours()) return;
+      if (openModalRef.current) return;
+      const last = stateRef.current.lastRefresh;
+      if (last && Date.now() - last < FOREGROUND_STALE_MS) return;
+      runScreener(true); // silent — no toast, no flash
+    }
 
-    const screenerInterval = setInterval(() => {
-      runScreener(true); // silent=true: no toast, no flash
-    }, 60 * 1000);
-
-    const optionsInterval = setInterval(() => {
-      refreshOptionPrices(true);
-    }, 60 * 60 * 1000);
-
-    return () => {
-      clearInterval(screenerInterval);
-      clearInterval(optionsInterval);
-    };
-  }, [isBooting, authState, runScreener, refreshOptionPrices]);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [isBooting, authState, runScreener]);
 
   // ── Auth handlers ────────────────────────────────────────────────────────
   function handleAuthSuccess() {
