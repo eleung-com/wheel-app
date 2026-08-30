@@ -59,10 +59,13 @@ function quietPut(overrides = {}) {
 let telegramCalls;
 let telegramTexts;
 let notionCalls;
+let chainCalls;
 
-function stubFetch({ watchlistPages = [], sheet = { positions: [], criteria: {} }, historyPrice = null, historyOk = true }) {
+function stubFetch({ watchlistPages = [], sheet = { positions: [], criteria: {} }, historyPrice = null, historyOk = true,
+                     chainOptions = [], chainStatus = 200 }) {
   telegramCalls = 0;
   notionCalls = 0;
+  chainCalls = 0;
   telegramTexts = [];
   globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
@@ -76,6 +79,11 @@ function stubFetch({ watchlistPages = [], sheet = { positions: [], criteria: {} 
     if (u.includes('/v1/markets/history')) {
       if (!historyOk) return jsonRes({}, 500);
       return jsonRes(flatHistory(historyPrice));
+    }
+    if (u.includes('/v1/markets/options/chains')) {
+      chainCalls++;
+      if (chainStatus !== 200) return jsonRes({}, chainStatus);
+      return jsonRes({ options: { option: chainOptions } });
     }
     if (u.includes('/v1/markets/quotes')) {
       return jsonRes({ quotes: {} }); // no quote override → fetchQ falls back to last close
@@ -247,5 +255,122 @@ describe('21-DTE management nudge', () => {
     stubFetch({ sheet: { positions: [quietPut()], criteria: {} }, historyOk: false });
     await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
     expect(telegramTexts.some(t => t.includes('21-DTE — TSLA'))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audit 1.4 (Phase 5). The close rule is "you have captured X% of the premium".
+// This scan used to compute X from the Sheet's `curPrem` — whatever was last
+// hand-typed — while the browser fetched a live price on every run. A close
+// alert built on a stale number tells you to buy back at a price that is not
+// the price, so an unpriceable position now gets no close alert at all.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('runScan — live option premium before close alerts', () => {
+  /** A short put sold for $5, 50% of its life elapsed, far from its strike. */
+  function decayedPut(overrides = {}) {
+    return {
+      id: 7, ticker: 'TSLA', type: 'short_put', qty: 1, strike: 200,
+      prem: 5, curPrem: 5, // Sheet says no decay at all
+      expiry: expiryForDte(30), enteredAt: Date.now() - 30 * 86400000,
+      account: 'Esther', ...overrides,
+    };
+  }
+
+  it('alerts to close using the LIVE premium, not the stale sheet value', async () => {
+    // Sheet says curPrem 5 (0% captured → no signal). The live chain says the
+    // contract is worth $1, i.e. 80% captured → close.
+    stubFetch({
+      sheet: { positions: [decayedPut()], criteria: {} },
+      historyPrice: 260,
+      chainOptions: [{ option_type: 'put', strike: 200, bid: 0.9, ask: 1.1 }],
+    });
+    const kv = fakeKV();
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
+
+    expect(chainCalls).toBeGreaterThan(0);
+    const closeMsg = telegramTexts.find(t => t.includes('CLOSE'));
+    expect(closeMsg).toBeTruthy();
+    expect(closeMsg).toMatch(/80% of premium captured/);
+  });
+
+  it('stays silent when the chain cannot be priced, rather than using the sheet', async () => {
+    // Same position, but make the sheet claim heavy decay (would fire on stale
+    // data) and the chain unavailable.
+    stubFetch({
+      sheet: { positions: [decayedPut({ curPrem: 0.5 })], criteria: {} },
+      historyPrice: 260,
+      chainStatus: 500,
+    });
+    const kv = fakeKV();
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
+
+    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(false);
+  });
+
+  it('suppressing a close alert does not suppress the roll alert for the same position', async () => {
+    // Breached AND (per the stale sheet) heavily decayed, with no chain data.
+    // Roll reads the stock price, so it must still go out.
+    stubFetch({
+      sheet: { positions: [decayedPut({ curPrem: 0.5 })], criteria: {} },
+      historyPrice: 180, // below the 200 strike
+      chainStatus: 500,
+    });
+    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+
+    expect(telegramTexts.some(t => t.includes('ROLL'))).toBe(true);
+    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(false);
+  });
+
+  it('prices a spread as the net of both legs', async () => {
+    // 100/95 spread sold for $1.50 net. Short leg now $0.60, long leg $0.20,
+    // so the spread is worth $0.40 net → 73% captured.
+    const spread = {
+      id: 8, ticker: 'TSLA', type: 'put_spread', qty: 1,
+      strike: 100, longStrike: 95, prem: 1.5, curPrem: 1.5,
+      expiry: expiryForDte(30), enteredAt: Date.now() - 30 * 86400000, account: 'Esther',
+    };
+    stubFetch({
+      sheet: { positions: [spread], criteria: {} },
+      historyPrice: 130,
+      chainOptions: [
+        { option_type: 'put', strike: 100, bid: 0.55, ask: 0.65 },
+        { option_type: 'put', strike: 95,  bid: 0.15, ask: 0.25 },
+      ],
+    });
+    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+
+    const closeMsg = telegramTexts.find(t => t.includes('CLOSE'));
+    expect(closeMsg).toBeTruthy();
+    expect(closeMsg).toMatch(/73% of premium captured/);
+  });
+
+  it('stays silent on a spread when only one leg prices', async () => {
+    const spread = {
+      id: 9, ticker: 'TSLA', type: 'put_spread', qty: 1,
+      strike: 100, longStrike: 95, prem: 1.5, curPrem: 0.2,
+      expiry: expiryForDte(30), enteredAt: Date.now() - 30 * 86400000, account: 'Esther',
+    };
+    stubFetch({
+      sheet: { positions: [spread], criteria: {} },
+      historyPrice: 130,
+      chainOptions: [{ option_type: 'put', strike: 100, bid: 0.55, ask: 0.65 }], // long leg absent
+    });
+    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+
+    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(false);
+  });
+
+  it('without TRADIER_TOKEN it prices nothing and sends no close alerts', async () => {
+    stubFetch({
+      sheet: { positions: [decayedPut({ curPrem: 0.5 })], criteria: {} },
+      historyPrice: 260,
+      chainOptions: [{ option_type: 'put', strike: 200, bid: 0.9, ask: 1.1 }],
+    });
+    const { TRADIER_TOKEN, ...noToken } = ENV_BASE;
+    await runScan({ ...noToken, ALERTS_KV: fakeKV() }, OPEN_NOW);
+
+    expect(chainCalls).toBe(0);
+    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(false);
   });
 });

@@ -6,7 +6,7 @@
 
 import { readWatchlist } from './notion.js';
 import { PRIORITY, dte, deriveIndicators, buildSignals, cspEntryOk, ccEntryOk, OPEN_OPTION_TYPES } from '../src/lib/signalEngine.js';
-import { parsePositions, parseCriteria, CLOSE_TYPES } from '../src/lib/utils.js';
+import { parsePositions, parseCriteria, CLOSE_TYPES, isPriceableOption } from '../src/lib/utils.js';
 import { sendTelegram, formatAlert, formatDteAlert } from './telegram.js';
 import { isMarketOpen, etDateString } from './marketHours.js';
 
@@ -199,6 +199,93 @@ async function fetchBestStrike(env, ticker, optionType, deltaMin, deltaMax, dteM
   }
 }
 
+// ── Live option premium ──────────────────────────────────────────────────────
+// The close signal is "you have captured X% of the premium, take it off". X is
+// computed from what the contract is worth NOW against what it was sold for.
+// The browser fetches that live on every screener run; this scan never did, so
+// it evaluated against `curPrem` — whatever was last hand-typed into the Sheet.
+// A close alert built on a stale number is worse than no alert: it tells you to
+// buy back at a price that is not the price.
+//
+// Mirrors src/lib/optionPrice.js's fetchOptionPrice, with a direct Tradier call
+// instead of the browser's tradierRequest(). The duplication is deliberate for
+// now and is what Phase 6 consolidates.
+//
+// Returns null when the position cannot be priced — the caller suppresses the
+// close alert in that case rather than falling back to the Sheet.
+async function fetchLivePremium(env, pos) {
+  if (!env.TRADIER_TOKEN) return null;
+  try {
+    const isSpread   = pos.type === 'put_spread';
+    const optionType = (pos.type === 'short_put' || isSpread) ? 'put' : 'call';
+
+    const url = `${TRADIER_ORIGIN}/v1/markets/options/chains?symbol=${pos.ticker}&expiration=${pos.expiry}&greeks=false`;
+    const r = await fetch(url, {
+      headers: { Authorization: `Bearer ${env.TRADIER_TOKEN}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    const raw = data?.options?.option;
+    if (!raw) return null;
+
+    const contracts = (Array.isArray(raw) ? raw : [raw]).filter(o => o.option_type === optionType);
+
+    const findAt = (want) =>
+      contracts.find(o => Math.abs(o.strike - want) < 0.01)
+      || contracts.find(o => Math.abs(o.strike - want) <= 0.50)
+      || contracts.find(o => Math.abs(o.strike - want) <= 1.00)
+      || null;
+
+    const midOf = (o) => {
+      if (!o) return null;
+      const bid = o.bid ?? null, ask = o.ask ?? null;
+      if (bid !== null && ask !== null && bid > 0 && ask > 0) return (bid + ask) / 2;
+      if (o.last && o.last > 0) return o.last;
+      return null;
+    };
+
+    const shortMid = midOf(findAt(pos.strike));
+    if (shortMid === null) return null;
+
+    if (isSpread) {
+      if (pos.longStrike == null) return null;
+      const longMid = midOf(findAt(pos.longStrike));
+      if (longMid === null) return null; // both legs or nothing
+      return parseFloat((shortMid - longMid).toFixed(2));
+    }
+    return parseFloat(shortMid.toFixed(2));
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Price every open contract and stamp `_liveCurPrem` on it, exactly as the
+ * browser's screener does before calling buildSignals.
+ *
+ * @returns { priced, unpricedIds } — `unpricedIds` are the positions whose close
+ * signal must be suppressed, because the only premium available for them is the
+ * Sheet's possibly-stale one.
+ */
+async function withLivePremiums(env, positions) {
+  const open = positions.filter(isPriceableOption);
+  if (!open.length) return { priced: positions, unpricedIds: new Set() };
+
+  const live = new Map();
+  const unpricedIds = new Set();
+  for (const pos of open) {
+    const premium = await fetchLivePremium(env, pos);
+    if (premium === null) unpricedIds.add(pos.id);
+    else live.set(pos.id, premium);
+    await sleep(450); // same pacing as the browser's option loop
+  }
+
+  const priced = positions.map(p =>
+    live.has(p.id) ? { ...p, _liveCurPrem: live.get(p.id) } : p);
+  return { priced, unpricedIds };
+}
+
 async function selfAlertOnce(env, message, now) {
   const key = `self-alert|${etDateString(now)}`;
   if (env.ALERTS_KV && await env.ALERTS_KV.get(key)) return;
@@ -323,7 +410,26 @@ export async function runScan(env, now = new Date()) {
       await sleep(450);
     }
 
-    const sigs = buildSignals(watchlist, positions, criteria, qmap, strikeMap);
+    // Price open contracts before the signal pass — the close rule is meaningless
+    // without a current premium, and the Sheet's copy is only as fresh as the
+    // last time it was typed in.
+    let pricedPositions = positions;
+    let unpricedIds = new Set();
+    try {
+      ({ priced: pricedPositions, unpricedIds } = await withLivePremiums(env, positions));
+    } catch (e) {
+      // Pricing is an enhancement to the close rule, not a prerequisite for the
+      // roll/max-loss alerts, which key off the stock price alone. Treat a total
+      // failure as "nothing could be priced" so those still go out.
+      console.error('[scan] live premium pass failed:', e?.message || e);
+      unpricedIds = new Set(positions.filter(isPriceableOption).map(p => p.id));
+    }
+
+    const sigs = buildSignals(watchlist, pricedPositions, criteria, qmap, strikeMap)
+      // A close alert says "buy it back at this price". Sending one computed off
+      // a stale Sheet value is worse than staying quiet — the roll and max-loss
+      // alerts for the same position are unaffected, since those read the stock.
+      .filter(sig => !(sig.type === 'close' && unpricedIds.has(Number(sig.id.slice('close-'.length)))));
 
     for (const sig of sigs) {
       const key = `${sig.ticker}|${sig.type}|${etDateString(now)}`;
