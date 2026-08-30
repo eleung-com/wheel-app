@@ -5,7 +5,7 @@
 // condition doesn't re-alert all day.
 
 import { readWatchlist } from './notion.js';
-import { PRIORITY, dte, deriveIndicators, buildSignals, cspEntryOk, ccEntryOk } from '../src/lib/signalEngine.js';
+import { PRIORITY, dte, deriveIndicators, buildSignals, cspEntryOk, ccEntryOk, OPEN_OPTION_TYPES } from '../src/lib/signalEngine.js';
 import { parsePositions, parseCriteria, CLOSE_TYPES } from '../src/lib/utils.js';
 import { sendTelegram, formatAlert, formatDteAlert } from './telegram.js';
 import { isMarketOpen, etDateString } from './marketHours.js';
@@ -277,7 +277,7 @@ export async function runScan(env, now = new Date()) {
 
     const priorityTickers = watchlist.filter(w => w.diveIn === PRIORITY).map(w => w.ticker);
     const heldTickers = positions
-      .filter(p => (p.type === 'shares' || p.type === 'short_put' || p.type === 'short_call') && !p.linkedId)
+      .filter(p => (p.type === 'shares' || OPEN_OPTION_TYPES.has(p.type)) && !p.linkedId)
       .map(p => p.ticker);
     const tickers = [...new Set([...priorityTickers, ...heldTickers])];
 

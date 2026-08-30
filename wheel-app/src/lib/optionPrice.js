@@ -1,10 +1,24 @@
 import { tradierRequest, dte as calcDte } from './utils';
 
-export async function fetchOptionPrice(ticker, type, strike, expiry) {
+/**
+ * Current price of an open option position.
+ *
+ * For a put credit spread pass `longStrike` too: the position's value is the
+ * NET of both legs, so this prices them together off one chain and returns
+ * short mid − long mid, which is directly comparable to the net credit stored
+ * in `prem`. If either leg can't be priced it returns null rather than a
+ * half-spread number — a wrong percentage captured is worse than none.
+ *
+ * NOTE: this used to read `type === 'short_put' ? 'put' : 'call'`, which sent
+ * put_spread rows to the CALL chain and looked up the short put's strike there.
+ * Whatever came back was meaningless, and it fed the close signal's % captured.
+ */
+export async function fetchOptionPrice(ticker, type, strike, expiry, longStrike = null) {
   const req = tradierRequest('');
   if (!req || !ticker || !strike || !expiry) return null;
 
-  const optionType = type === 'short_put' ? 'put' : 'call';
+  const isSpread   = type === 'put_spread';
+  const optionType = (type === 'short_put' || isSpread) ? 'put' : 'call';
 
   try {
     // Fetch the option chain for the specific expiry date
@@ -20,19 +34,34 @@ export async function fetchOptionPrice(ticker, type, strike, expiry) {
     const contracts = (Array.isArray(raw) ? raw : [raw])
       .filter(o => o.option_type === optionType);
 
-    // Find closest strike
-    const match = contracts.find(o => Math.abs(o.strike - strike) < 0.01)
-      || contracts.find(o => Math.abs(o.strike - strike) <= 0.50)
-      || contracts.find(o => Math.abs(o.strike - strike) <= 1.00);
+    /** Closest listed strike to `want`, widening the tolerance in steps. */
+    const findAt = (want) =>
+      contracts.find(o => Math.abs(o.strike - want) < 0.01)
+      || contracts.find(o => Math.abs(o.strike - want) <= 0.50)
+      || contracts.find(o => Math.abs(o.strike - want) <= 1.00)
+      || null;
 
-    if (!match) return null;
+    /** Mid, or last when the book is empty. */
+    const midOf = (o) => {
+      if (!o) return null;
+      const bid = o.bid ?? null, ask = o.ask ?? null;
+      if (bid !== null && ask !== null && bid > 0 && ask > 0) return (bid + ask) / 2;
+      if (o.last && o.last > 0) return o.last;
+      return null;
+    };
 
-    const bid = match.bid ?? null, ask = match.ask ?? null;
-    if (bid !== null && ask !== null && bid > 0 && ask > 0) {
-      return parseFloat(((bid + ask) / 2).toFixed(2));
+    const shortMid = midOf(findAt(strike));
+    if (shortMid === null) return null;
+
+    if (isSpread) {
+      if (longStrike == null) return null;
+      const longMid = midOf(findAt(longStrike));
+      // Both legs or nothing — a spread priced off one leg is not a spread.
+      if (longMid === null) return null;
+      return parseFloat((shortMid - longMid).toFixed(2));
     }
-    if (match.last && match.last > 0) return parseFloat(match.last.toFixed(2));
-    return null;
+
+    return parseFloat(shortMid.toFixed(2));
   } catch (e) {
     return null;
   }
