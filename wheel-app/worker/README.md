@@ -66,15 +66,15 @@ The Notion integration must also be added to the Stock Scan Results database
 ## Unattended Telegram alert scan
 
 `scan.js` is a scheduled job, wired up via `scheduled()` in `worker.js` and the
-Cron Trigger in `wrangler.toml` at the repo root. Every 30 minutes during US
+Cron Trigger in `wheel-app/wrangler.toml`. Every 30 minutes during US
 market hours it:
 
 1. Re-reads the Notion watchlist (`readWatchlist`, same code the `/notion/watchlist`
    route uses) and the Sheet's positions + saved screener criteria (`SHEET_URL` secret).
-2. Fetches daily history + a live quote per ticker directly from Tradier (Yahoo
-   fallback), the same way `useScreener.js` does in the browser — just without
-   going through the `/yf` or Tradier-token proxy routes, since the Worker has
-   its own `TRADIER_TOKEN` and isn't subject to browser CORS.
+2. Fetches daily history + a live quote per ticker through `src/lib/marketData.js`
+   — the same module the browser uses. The only difference is the injected
+   *transport*: the Worker calls Tradier and Yahoo directly with its own
+   `TRADIER_TOKEN`, while the browser routes through this Worker's proxy.
 3. Runs the **shared** signal engine (`src/lib/signalEngine.js` — the same
    module `useScreener.js` imports) to build CSP / CC / Roll / Close signals.
    There is exactly one signal implementation; the Worker and the browser both
@@ -186,7 +186,8 @@ use Wrangler.
 npx wrangler deploy
 ```
 
-This reads `wrangler.toml` at the repo root (`main = "worker/worker.js"`),
+Run it from `wheel-app/`, which is where `wrangler.toml` lives (NOT the repo
+root). It reads `main = "worker/worker.js"`,
 bundles all of the above, and also registers the Cron Trigger and KV binding.
 
 ## Verifying

@@ -1,71 +1,123 @@
-# Wheel.desk — React / Vite
+# Wheel.desk
 
-Options wheel strategy tracker. Migrated from a single HTML file to a React + Vite project. Functionality and UI are identical to the original.
+Options wheel tracker: a React dashboard for what you hold and what the market
+is offering, plus a Cloudflare Worker that watches the same conditions on a
+schedule and messages Telegram when one fires. Trades are placed in Fidelity —
+nothing here touches a broker.
 
 ## Commands
 
 ```bash
-npm install       # install dependencies
-npm run dev       # dev server at http://localhost:5173
+cd wheel-app
+npm install       # first time
+npm run dev       # http://localhost:5173
+npm test          # unit tests (vitest)
+npm run test:worker  # the Worker's offline harness (plain node)
 npm run build     # production build → dist/
-npm run preview   # preview the production build locally
 ```
+
+## Where things live
+
+| Concern | Home | Why there |
+|---|---|---|
+| Watchlist membership, notes, evaluations, earnings dates | **Notion** (`Stock Scan Results`) | Where the research already happens. The app reads it and writes back only `Notes`. |
+| Positions, closed trades, screening criteria | **Google Sheet** via an Apps Script web app | Predates the app; still the easiest thing to hand-edit. |
+| Live prices, option chains | **Tradier**, with Yahoo as a keyless fallback | Tradier is authenticated with sane limits; Yahoo 429s unauthenticated IPs. |
+| API credentials | **Cloudflare Worker** | The app is a public static site, so no token can ship in the bundle. |
+| Alerts | **Telegram**, from the Worker's cron | The app only alerts you when it's open. The Worker doesn't need to be. |
+
+## How a signal happens
+
+1. **Entry (CSP / covered call).** A watchlist row flagged `🔥 Priority` in Notion,
+   whose RSI(14) sits inside the criteria band and whose Stochastic %K is
+   *turning* — up from below the level for puts, rolling over from above it for
+   calls. Both are crossings, not levels: %K has to move while past the line.
+2. **Exit (roll / close / max loss).** An open contract whose underlying has
+   breached the short strike, or that has given back enough premium early
+   enough to be worth buying back. A put credit spread below its *long* strike
+   is at max loss and gets its own card, not another roll.
+3. Live strike and expiry come from the Tradier chain — the contract nearest the
+   middle of your target delta band and DTE range.
+
+`src/lib/signalEngine.js` is the only implementation of that logic. Both the
+browser and the Worker import it, so the dashboard and your alerts can never
+disagree about what a signal is.
+
+### Earnings are advisory
+
+If a Notion earnings date falls inside the life of the contract, the card and
+the alert say so. **Nothing is suppressed.** Selling through a print is a real
+risk, but which side of it is worth taking is a judgement call, and the date is
+hand-entered — a missing one shows as `⚠ No earnings date on file` rather than
+silently reading as safe. The warn window is `Settings → Criteria → Warn if
+earnings within`.
+
+## Refresh behaviour
+
+There is no polling loop. The app refreshes on load, when you bring it back to
+the foreground after more than 10 minutes, and when you press ↻. Idle, it makes
+no network calls at all — the Worker is what watches the market, every 30
+minutes during market hours, and it messages you rather than the screen.
 
 ## Project structure
 
 ```
 src/
-├── main.jsx               Entry point — mounts App inside AppProvider
-├── App.jsx                Root component: auth/boot flow, page routing, modal state, all event handlers
-├── index.css              All global styles (CSS custom properties, resets, every class from the original)
+├── main.jsx                  Entry point; mounts App in AppProvider + an error boundary
+├── App.jsx                   Auth/boot flow, page routing, modal state, event handlers
+├── index.css                 All styles (CSS custom properties, every class)
 │
-├── context/
-│   └── AppContext.jsx     Global state (watchlist, positions, signals, criteria) via useReducer + Context
+├── context/AppContext.jsx    Global state via useReducer + Context
 │
 ├── hooks/
-│   ├── useToast.js        Toast visibility + auto-dismiss timer
-│   ├── useMarketStatus.js NYSE market open/closed/weekend, 30-second poll
-│   ├── useSheets.js       Google Sheets read/write (sheetRead, sheetWriteViaGet, syncFromSheet)
-│   └── useScreener.js     runScreener (fetch all tickers → build signals → persist), refreshOptionPrices
+│   ├── useScreener.js        runScreener — fetch, build signals, publish
+│   ├── useSheets.js          Apps Script read/write
+│   ├── useNotion.js          Watchlist read + Notes write, via the Worker
+│   ├── useEvals.js           Notion page-body evaluations, cached a day
+│   ├── useNews.js            Yahoo news for Priority tickers, cached an hour
+│   ├── useMarketStatus.js    NYSE open/closed
+│   └── useToast.js           Transient notifications
 │
-├── lib/                   Pure functions — no React
-│   ├── utils.js           dte(), suggestStrike(), parseCriteria(), parsePositions(), localStorage keys
-│   ├── indicators.js      fetchQ() — Yahoo Finance daily OHLCV → RSI-14, Stoch %K, IVR estimate, MA
-│   ├── optionPrice.js     fetchOptionPrice() — Yahoo options chain, multi-strategy expiry lookup
-│   └── signals.js         buildSignals() — CSP / Covered Call / Roll / Close signal generation
+├── lib/                      Pure logic — no React
+│   ├── signalEngine.js       THE signal logic. Shared with the Worker.
+│   ├── marketData.js         Every Tradier/Yahoo call, once, transport-injected
+│   ├── browserTransport.js   The browser half of that contract
+│   ├── oscillators.js        RSI (Wilder) + slow Stochastic, TradingView-exact
+│   ├── optionYield.js        Return and annualised yield, incl. spread width
+│   ├── utils.js              Criteria/position parsing, dates, open-position tests
+│   ├── evalSummary.js        One-line preview from a Notion eval
+│   └── watchlistOrder.js     Dive-In grouping and ordering
 │
 └── components/
-    ├── AuthGate/          Setup form (first device) + login form (returning user)
-    ├── BootScreen/        Full-screen loading spinner shown during initial sheet read
-    ├── Header/            Sticky header: logo, market status dot, sync status, action buttons
-    ├── TabNav/            Top scrollable tab bar with badge counts
-    ├── BottomNav/         Fixed bottom nav (mobile)
-    ├── FAB/               Floating + button (hidden on Signals tab)
-    ├── Toast/             Transient notification strip
-    │
-    ├── pages/
-    │   ├── SignalsPage/   SummaryBar (4 chips) + SignalCard grid, sectioned by type
-    │   ├── PositionsPage/ SharesTable (grouped by ticker, avg cost) + OptionsTable (P&L, DTE, progress)
-    │   ├── WatchlistPage/ WatchlistCard grid with IVR/RSI/Stoch/MA pass-fail pills
-    │   └── CriteriaPage/  Settings form — all screening thresholds, persisted on every change
-    │
-    └── modals/
-        ├── ModalOverlay          Shared slide-up overlay with backdrop-click-to-close
-        ├── AddWatchModal         Ticker input
-        ├── PositionModal         Add/edit form — shares vs options fields toggled by type
-        ├── SignalDetailModal     Technical snapshot + premium estimate + criteria check
-        ├── ShareGroupDetailModal Lot table, unrealized P&L, Add Another Lot
-        └── HelpModal             Static help text
+    ├── pages/                Home (stats + news), Signals, Positions, Watchlist, Settings
+    └── modals/               Position add/edit, close, share group, signal detail, help
+
+worker/
+├── worker.js       Routes: /yf, /notion, /watchlist-feed, /notify, Tradier passthrough
+├── scan.js         The scheduled scan — same engine, Telegram delivery, KV de-dupe
+├── notion.js       Watchlist + evaluation reads, Notes write
+├── telegram.js     Message formatting
+└── marketHours.js  ET + NYSE-holiday guard
 ```
-
-## Data flow
-
-1. On load, `App.jsx` checks `localStorage` for credentials and session key to decide between `setup → login → booting → app`.
-2. During boot, `useSheets.sheetRead()` fetches all data from the Google Apps Script web app. Results are dispatched into `AppContext`.
-3. All mutations (add/remove watchlist, save/delete position, update criteria) dispatch to `AppContext` then immediately call `sheetWriteViaGet()` with the updated state snapshot.
-4. `runScreener()` fetches Yahoo Finance data for all unique tickers, updates `liveData` on watchlist entries, fetches live option prices, then calls `buildSignals()` and dispatches `SET_SIGNALS`.
-5. Auto-refresh: screener every 20 min, option prices every 60 min, sheet pull every 5 min — all only during NYSE market hours (9:30–16:00 ET, Mon–Fri).
 
 ## First-time setup
 
-The app requires a Google Apps Script web app as its backend. On first visit, enter the Apps Script URL and a shared secret key. These are stored in `localStorage` on the device only — they are never in source code.
+The app asks for an Apps Script web-app URL and a shared secret, stored in
+`localStorage` on that device only — they are never in source. A Tradier key
+goes in Settings and is used the same way. Worker secrets are separate; see
+[`worker/README.md`](worker/README.md).
+
+## Deploying
+
+The **app** deploys itself: pushing to `main` builds and publishes to GitHub
+Pages (`.github/workflows/deploy-pages.yml`).
+
+The **Worker** does not. After merging anything that touches `worker/` or
+`src/lib/`:
+
+```bash
+cd wheel-app && npx wrangler deploy
+```
+
+CI posts a reminder on any PR that changes those paths. Skipping it leaves the
+app and the alerts running different versions of the signal engine.
