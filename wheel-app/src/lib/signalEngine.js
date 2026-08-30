@@ -145,6 +145,38 @@ function atrNote(q) {
   return q.atrDrop != null ? `${q.atrDrop.toFixed(1)}x ATR` : null;
 }
 
+// ── Earnings ────────────────────────────────────────────────────────────────
+// Advisory only, by decision: earnings NEVER suppress a signal. Selling a put
+// through an earnings print is a real risk, but which side of that risk is worth
+// taking is a judgement call the screen shouldn't make on its own — especially
+// when the date it would be acting on is hand-entered in Notion and may simply
+// be missing. So this labels; it does not gate.
+//
+// The window is the life of the contract plus `cr.earn` days of buffer. With the
+// buffer at 0 that reads as "earnings land before this contract expires". Expiry
+// is the live strike's DTE when one was fetched, else the far end of the target
+// DTE range — the longest contract the criteria would have you sell.
+
+/**
+ * @returns { known, days, warn } — `known:false` means no usable date on file,
+ * which is itself worth surfacing rather than treating as "safe".
+ */
+export function earningsNote(earnings, dteTarget, cr) {
+  const horizon = (dteTarget != null ? dteTarget : cr.dteMax) + (cr.earn || 0);
+  const days = earnings ? dte(earnings) : null;
+  // dte() counts today as 1, so anything <= 0 is in the past — a stale Notion
+  // entry nobody cleared. Treated as unknown, never as "safely far away".
+  if (days == null || days <= 0) return { known: false, days: null, warn: false };
+  return { known: true, days, warn: days <= horizon };
+}
+
+/** The pill an entry card shows for earnings, or null when there's nothing to say. */
+function earningsPill(note) {
+  if (!note.known) return { l: 'No earnings date', ok: false, warn: true };
+  if (note.warn)   return { l: `Earnings in ${note.days}d`, ok: false, warn: true };
+  return null; // known, and comfortably outside the window
+}
+
 // ── Entry predicates ─────────────────────────────────────────────────────────
 // The market-data half of an entry decision, exported so that everything which
 // needs to answer "will this ticker produce an entry card?" asks the same
@@ -192,6 +224,7 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       wheel:        w?.wheel        || '',
       fundamentals: w?.fundamentals || '',
       lastEval:     w?.lastEval     || '',
+      earnings:     w?.earnings     || '',
     };
   };
 
@@ -222,9 +255,13 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
     // filter every card already passed, and the other two are in the metrics
     // grid directly below — restating them crowded the card without adding
     // anything. What's left is the pair that actually decided the signal.
+    const earnNote = earningsNote(byTicker.get(w.ticker)?.earnings, dteT, cr);
+    const earnPill = earningsPill(earnNote);
+
     const chks = [
       { l: rsiLabel(q),   ok: rsiOk,   tgt: `${cr.rsiMin}–${cr.rsiMax}` },
       { l: stochLabel(q), ok: stochOk, tgt: `up from <${cr.stochBelow}` },
+      ...(earnPill ? [earnPill] : []),
     ];
 
     const suggParts = [];
@@ -242,6 +279,7 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       ...notionOf(w.ticker),
       dropPct: q.dropPct, weekHigh: q.weekHigh, atrDrop: q.atrDrop,
       rsi: q.rsi, stochK: q.stochK, stochD: q.stochD, chks,
+      earnWarn: earnNote,
       suggestion: suggParts.join(' · '),
       ts: Date.now(),
     });
@@ -271,10 +309,13 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       if (dteT != null && strike != null) suggParts.push(`Sell ${contracts} x ${dteT}d $${strike} call`);
       else suggParts.push(`Sell ${contracts} call · ${cr.ccDeltaMin}–${cr.ccDeltaMax}Δ · ${cr.ccDteMin}–${cr.ccDteMax}d`);
       if (live) suggParts.push(deltaStr);
+      const ccEarnNote = earningsNote(byTicker.get(pos.ticker)?.earnings, dteT, cr);
+      const ccEarnPill = earningsPill(ccEarnNote);
       const ccChks = [
         { l: `${pos.qty} shares (${contracts} contract${contracts > 1 ? 's' : ''})`, ok: true },
         { l: rsiLabel(q),   ok: ccRsiOk,   tgt: `${cr.ccRsiMin}–${cr.ccRsiMax}` },
         { l: stochLabel(q), ok: ccStochOk, tgt: `over from >${cr.ccStochAbove}` },
+        ...(ccEarnPill ? [ccEarnPill] : []),
       ];
       sigs.push({
         id: `cc-${pos.id}`, type: 'cc', ticker: pos.ticker,
@@ -284,6 +325,7 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
         rallyPct: q.rallyPct, weekLow: q.weekLow, ivr: q.ivrEst ?? null,
         rsi: q.rsi, stochK: q.stochK, stochD: q.stochD,
         chks: ccChks,
+        earnWarn: ccEarnNote,
         suggestion: suggParts.join(' · '),
         ts: Date.now(),
       });

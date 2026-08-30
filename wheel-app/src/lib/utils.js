@@ -81,7 +81,7 @@ export function suggestStrike(price, delta, type) {
 }
 
 export const DEFAULT_CRITERIA = {
-  dropPct: 5, ma: 200, earn: 30,
+  dropPct: 5, ma: 200, earn: 0,
   // Entry oscillators. These gate the signals; dropPct and ccRallyPct are kept
   // for display on the cards. CSP buys weakness turning up, CC sells strength
   // rolling over.
@@ -112,7 +112,10 @@ export function parseCriteria(c) {
   return {
     dropPct:    Number(c.dropPct)    || 5,
     ma:         Number(c.ma)         || 200,
-    earn:       Number(c.earn)       || 30,
+    // Warn window for earnings, in days past expiry. 0 is a meaningful value
+    // here — it means "warn when earnings land before expiry" — so this must
+    // not use `|| default`, which would silently turn a saved 0 back into 30.
+    earn:       numOr(c.earn, 0),
     // `|| default` is wrong for a threshold that can legitimately be 0, so these
     // fall back only when the sheet has no value at all. A sheet written before
     // these existed simply gets the defaults.

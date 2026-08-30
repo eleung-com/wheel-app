@@ -132,7 +132,7 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
           <div className="ssec">
             <CriteriaRow label="Min drop from week high" sub="Shown on the card — no longer gates the signal" inputId="c-drop" value={local.dropPct} min={1} max={40} onChange={v => update('dropPct', v)} />
             <CriteriaRow label="Price above MA"        sub="Moving average period (days)"              inputId="c-ma"    value={local.ma}    min={20} max={250} onChange={v => update('ma', v)} />
-            <CriteriaRow label="Avoid earnings within" sub="Days — skip if earnings inside DTE window" inputId="c-earn"  value={local.earn}  onChange={v => update('earn', v)} />
+            <CriteriaRow label="Warn if earnings within" sub="Extra days past expiry to flag — 0 warns when earnings land before expiry. Never blocks a signal." inputId="c-earn"  value={local.earn}  onChange={v => update('earn', v)} />
           </div>
           <div className="slabel">CSP — Strike &amp; DTE</div>
           <div className="ssec">

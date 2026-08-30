@@ -164,10 +164,13 @@ describe('buildSignals — CSP', () => {
     expect(sigs[0].dropPct).toBe(6);
     expect(sigs[0].atrDrop).toBe(2.4);
     const labels = sigs[0].chks.map(c => c.l);
-    expect(labels).toHaveLength(2);
+    // The two pills that decided the signal lead, in that order. An earnings
+    // pill may follow (this fixture has no date on file, so it does) — that one
+    // is advisory and is covered in earningsNote.test.js.
     expect(labels.some(l => /Dive-In|week high|ATR/.test(l))).toBe(false);
     expect(labels[0]).toMatch(/^RSI /);
     expect(labels[1]).toMatch(/^%K /);
+    expect(sigs[0].chks.filter(c => !c.warn)).toHaveLength(2);
   });
 
   it('does not fire when a short put/call is already open on the ticker', () => {

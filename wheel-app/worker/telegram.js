@@ -66,6 +66,10 @@ export function formatAlert(sig) {
     lines.push(`Strike: $${sig.strike}${dteT != null ? ` · ${dteT}d` : ''}`);
   }
   if (sig.ivr != null) lines.push(`HV30 est: ${sig.ivr}`); // realized-vol estimate, not real IV Rank
+  // Advisory, never a block — the signal fired regardless. Says its piece and
+  // leaves the call to you, same as the pill on the card.
+  if (sig.earnWarn && sig.earnWarn.warn)        lines.push(`\u26a0 Earnings in ${sig.earnWarn.days}d - before this contract expires`);
+  else if (sig.earnWarn && !sig.earnWarn.known) lines.push('\u26a0 No earnings date on file');
   if (sig.suggestion) lines.push(sig.suggestion);
   lines.push(APP_URL);
 
