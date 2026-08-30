@@ -191,7 +191,7 @@ export function useScreener(showToast) {
       const optPositions = currentState.positions.filter(isPriceableOption);
       const livePremMap  = {};
       for (const pos of optPositions) {
-        const livePrice = await fetchOptionPrice(pos.ticker, pos.type, pos.strike, pos.expiry);
+        const livePrice = await fetchOptionPrice(pos.ticker, pos.type, pos.strike, pos.expiry, pos.longStrike ?? null);
         if (livePrice !== null) {
           livePremMap[pos.id] = livePrice;
           dispatch({ type: 'UPDATE_POSITION_LIVE_PREM', payload: { id: pos.id, liveCurPrem: livePrice } });

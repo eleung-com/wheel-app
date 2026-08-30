@@ -52,6 +52,12 @@ export function formatAlert(sig) {
       title = `✅ CLOSE — ${sig.ticker}`;
       why = `${sig.pctCap}% of premium captured · ${sig.pctT}% of time elapsed`;
       break;
+    // Not actionable in the roll sense — both legs are in the money and the loss
+    // is already capped. Worth knowing the day it happens all the same.
+    case 'maxloss':
+      title = `🛑 MAX LOSS — ${sig.ticker}`;
+      why = `Below the long strike $${sig.longStrike} · spread $${sig.width} wide · ${sig.days}d left`;
+      break;
     default:
       title = `${String(sig.type).toUpperCase()} — ${sig.ticker}`;
       why = '';

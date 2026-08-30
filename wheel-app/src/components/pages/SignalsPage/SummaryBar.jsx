@@ -1,7 +1,7 @@
 import React from 'react';
 
 export default function SummaryBar({ signals }) {
-  const actCount   = signals.filter(s => s.type === 'roll' || s.type === 'close').length;
+  const actCount   = signals.filter(s => s.type === 'roll' || s.type === 'close' || s.type === 'maxloss').length;
   const cspCount   = signals.filter(s => s.type === 'csp').length;
   const ccCount    = signals.filter(s => s.type === 'cc').length;
   const closeCount = signals.filter(s => s.type === 'close').length;

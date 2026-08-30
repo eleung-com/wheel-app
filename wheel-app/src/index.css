@@ -73,7 +73,7 @@ html{-webkit-text-size-adjust:100%}
 /* SIGNAL CARDS */
 .scard{background:var(--s1);border:1px solid var(--b1);border-radius:var(--rr);padding:13px 13px 11px;margin-bottom:9px;cursor:pointer;transition:border-color .15s;position:relative;overflow:hidden}
 .scard::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
-.scard.csp::before{background:var(--bl)}.scard.cc::before{background:var(--g)}.scard.roll::before{background:var(--r)}.scard.close::before{background:var(--a)}
+.scard.csp::before{background:var(--bl)}.scard.cc::before{background:var(--g)}.scard.roll::before{background:var(--r)}.scard.close::before{background:var(--a)}.scard.maxloss::before{background:var(--r)}
 .scard:active{background:var(--s2)}
 .ctop{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px}
 .tblk{display:flex;flex-direction:column;gap:2px}
@@ -84,6 +84,7 @@ html{-webkit-text-size-adjust:100%}
 .stbdg.cc{background:var(--gd);color:var(--g);border:1px solid rgba(31,216,160,.25)}
 .stbdg.roll{background:var(--rd);color:var(--r);border:1px solid rgba(255,82,82,.25)}
 .stbdg.close{background:var(--ad);color:var(--a);border:1px solid rgba(245,166,35,.25)}
+.stbdg.maxloss{background:var(--rd);color:var(--r);border:1px solid rgba(255,82,82,.25)}
 
 /* METRIC GRIDS */
 .mgrid{display:grid;gap:5px;margin-bottom:9px}

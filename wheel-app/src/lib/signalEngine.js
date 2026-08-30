@@ -16,6 +16,12 @@ export const PRIORITY = '🔥 Priority';
 
 const RSI_PERIOD = 14;
 
+// Option rows the roll/close pass evaluates. `put_spread` was added to the app
+// in 414ce3d but never reached the signal engine, so a breached spread produced
+// no card and no alert — the only thing that ever fired on one was the calendar
+// DTE nudge, which uses a different filter in worker/scan.js.
+export const OPEN_OPTION_TYPES = new Set(['short_put', 'short_call', 'put_spread']);
+
 export function dte(expiry) {
   if (!expiry) return null;
   const now = new Date();
@@ -333,7 +339,7 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
   }
 
   // ── Roll / Close signals ──────────────────────────────────────────────────
-  for (const pos of positions.filter(p => (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId)) {
+  for (const pos of positions.filter(p => OPEN_OPTION_TYPES.has(p.type) && !p.linkedId)) {
     const q    = qmap[pos.ticker];
     const days = dte(pos.expiry);
     if (days === null) continue;
@@ -357,25 +363,61 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       ? Math.round((1 - effectiveCurPrem / pos.prem) * 100)
       : null;
 
-    const putBr     = q && pos.type === 'short_put'  && q.price < pos.strike;
+    // A put credit spread's `strike` is the SHORT leg and `longStrike` the long
+    // one, so it has two thresholds rather than one. Below the short strike is
+    // the same "you're being tested" signal a naked put gives. Below the LONG
+    // strike is categorically different: the spread is at max loss, both legs
+    // are in the money, and rolling reflexively is usually the wrong move —
+    // it deserves its own card, not a louder roll.
+    // isPutLike drives the breach test and must not depend on longStrike: a
+    // put_spread row saved without its long leg is malformed, but it is still a
+    // short put at `strike`, and going silent on it would be the worst outcome.
+    // isSpread is the narrower "we can reason about both legs" test.
+    const isPutLike = pos.type === 'short_put' || pos.type === 'put_spread';
+    const isSpread  = pos.type === 'put_spread' && pos.longStrike != null;
+    const maxLoss   = q && isSpread && q.price < pos.longStrike;
+    const putBr     = q && !maxLoss && isPutLike && q.price < pos.strike;
     const callBr    = q && pos.type === 'short_call' && q.price > pos.strike;
     const earlyClose = pctCap !== null && pctCap >= cr.closePct && pctT !== null && pctT < cr.closeDtePct;
 
-    if (putBr || callBr) {
+    // Width is what a spread actually risks — the payoff is capped, so this is
+    // the number that makes "max loss" mean something on the card.
+    const width = isSpread ? pos.strike - pos.longStrike : null;
+
+    if (maxLoss) {
+      sigs.push({
+        id: `maxloss-${pos.id}`, type: 'maxloss', ticker: pos.ticker,
+        price: q?.price, chg: q?.chg1d, strike: pos.strike, longStrike: pos.longStrike,
+        width, days, pctT: pctT ?? '—', pctCap, posType: pos.type,
+        chks: [
+          { l: 'Both legs in the money', ok: false },
+          { l: `${days}d left`, ok: false, warn: true },
+        ],
+        suggestion: `Price $${q.price.toFixed(2)} < long strike $${pos.longStrike} · Spread at max loss ($${width} wide) · ${days}d left — decide, don't roll on reflex`,
+        ts: Date.now(),
+      });
+    } else if (putBr || callBr) {
       sigs.push({
         id: `roll-${pos.id}`, type: 'roll', ticker: pos.ticker,
         price: q?.price, chg: q?.chg1d, strike: pos.strike, days,
-        pctT: pctT ?? '—', pctCap,
-        chks: [{ l: 'Strike breached', ok: false }],
+        ...(isSpread ? { longStrike: pos.longStrike, width } : {}),
+        pctT: pctT ?? '—', pctCap, posType: pos.type,
+        chks: [
+          { l: 'Strike breached', ok: false },
+          // Breached at 40 days and breached at 3 are different decisions, and
+          // the card never said which one you were looking at.
+          { l: `${days}d left`, ok: false, warn: true },
+        ],
         suggestion: putBr
-          ? `Price $${q.price.toFixed(2)} < strike $${pos.strike} · Roll down & out to next expiry`
-          : `Price $${q.price.toFixed(2)} > strike $${pos.strike} · Roll up & out or accept assignment`,
+          ? `Price $${q.price.toFixed(2)} < strike $${pos.strike} · ${days}d left · Roll down & out to next expiry`
+          : `Price $${q.price.toFixed(2)} > strike $${pos.strike} · ${days}d left · Roll up & out or accept assignment`,
         ts: Date.now(),
       });
     } else if (earlyClose) {
       sigs.push({
         id: `close-${pos.id}`, type: 'close', ticker: pos.ticker,
         price: q?.price, chg: q?.chg1d, strike: pos.strike, days, pctT, pctCap,
+        ...(isSpread ? { longStrike: pos.longStrike, width } : {}), posType: pos.type,
         chks: [
           { l: `${pctCap}% captured`, ok: true },
           { l: `${pctT}% elapsed`,    ok: true },

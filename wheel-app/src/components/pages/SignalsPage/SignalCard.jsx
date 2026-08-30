@@ -7,7 +7,7 @@ export default function SignalCard({ signal: s, onClick, evaluation, loading }) 
   // Those that do take the full grid row: the evaluation contains tables, and a
   // three-column table is unreadable in a half-width card.
   const showEval = s.type === 'csp' || s.type === 'cc';
-  const lbl = { csp: 'CSP', cc: 'Cov. Call', roll: 'Roll', close: 'Close' }[s.type];
+  const lbl = { csp: 'CSP', cc: 'Cov. Call', roll: 'Roll', close: 'Close', maxloss: 'Max Loss' }[s.type];
   const chgC   = s.chg > 0 ? 'g' : s.chg < 0 ? 'r' : 'mu2';
   const chgStr = (s.chg !== null && s.chg !== undefined)
     ? <span style={{ color: `var(--${chgC})` }}>{s.chg > 0 ? '+' : ''}{s.chg.toFixed(1)}%</span>

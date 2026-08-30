@@ -13,7 +13,14 @@ export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoa
     />
   );
 
-  const act = signals.filter(s => s.type === 'roll' || s.type === 'close');
+  // Max loss leads: it is the only one of these where the position is already
+  // as bad as it can get. Within the group, fewest days left first — breached at
+  // 3 DTE and breached at 40 are different decisions and the sooner one is the
+  // one to look at.
+  const ACT_ORDER = { maxloss: 0, roll: 1, close: 2 };
+  const act = signals
+    .filter(s => s.type === 'roll' || s.type === 'close' || s.type === 'maxloss')
+    .sort((a, b) => (ACT_ORDER[a.type] - ACT_ORDER[b.type]) || ((a.days ?? 99) - (b.days ?? 99)));
   const cc  = signals.filter(s => s.type === 'cc');
   // Biggest move relative to the stock's own daily range leads — a 5% drop
   // means far more on a quiet name than on a volatile one, so this is the

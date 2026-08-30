@@ -5,7 +5,7 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
   const s = signals.find(sig => sig.id === signalId);
   if (!s) return null;
 
-  const lbl = { csp: 'Cash-Secured Put', cc: 'Covered Call', roll: 'Roll Position', close: 'Buy to Close' }[s.type];
+  const lbl = { csp: 'Cash-Secured Put', cc: 'Covered Call', roll: 'Roll Position', close: 'Buy to Close', maxloss: 'Spread at Max Loss' }[s.type];
 
   // For roll/close signals, find the underlying position
   const posId = signalId ? parseInt(signalId.replace('roll-', '').replace('close-', '')) : null;
