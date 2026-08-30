@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { fetchQ } from '../lib/indicators';
-import { fetchOptionPrice, fetchBestStrike } from '../lib/optionPrice';
+import { fetchQ, fetchOptionPrice, fetchBestStrike } from '../lib/marketData';
+import { browserTransport as tx } from '../lib/browserTransport';
 import { buildSignals, cspEntryOk, ccEntryOk, PRIORITY } from '../lib/signalEngine';
 import { getTradierKey, isOpenPosition, isPriceableOption } from '../lib/utils';
 
@@ -81,10 +81,6 @@ export function useScreener(showToast) {
 
     try {
       const currentState = seed ? { ...stateRef.current, ...seed } : stateRef.current;
-      const indicatorTickers = currentState.criteria.indicatorTickers
-        ? String(currentState.criteria.indicatorTickers).split(',').map(t => t.trim()).filter(Boolean)
-        : [];
-
       // Closed rows carry a ticker but nothing here needs their price — a name
       // you traded once and exited should stop costing a history fetch forever.
       const tickers = [...new Set([
@@ -92,10 +88,9 @@ export function useScreener(showToast) {
         ...currentState.positions.filter(isOpenPosition).map(p => p.ticker),
       ])];
 
-      if (!tickers.length && !indicatorTickers.length) { isScreeningRef.current = false; setIsScreening(false); return; }
+      if (!tickers.length) { isScreeningRef.current = false; setIsScreening(false); return; }
 
       const marketOpen = isMarketOpen();
-      const allTickers = [...new Set([...tickers, ...indicatorTickers])];
 
       const paintPrices = (map) => {
         const batch = {};
@@ -132,10 +127,10 @@ export function useScreener(showToast) {
       const cached = loadQmapCache();
       if (cached) {
         // Only use cache entries for tickers we still care about
-        for (const t of allTickers) {
+        for (const t of tickers) {
           if (cached.qmap[t]) qmap[t] = cached.qmap[t];
         }
-        const allCovered = allTickers.every(t => qmap[t]);
+        const allCovered = tickers.every(t => qmap[t]);
         if (!marketOpen && allCovered && cached.current) {
           needFetch = false; // already the latest close — dispatch cached data below
         } else {
@@ -145,8 +140,8 @@ export function useScreener(showToast) {
 
       if (needFetch) {
         if (!silent) showToast(`Fetching ${tickers.length} ticker${tickers.length > 1 ? 's' : ''}…`, '');
-        for (const t of allTickers) {
-          qmap[t] = await fetchQ(t, currentState.criteria.ma);
+        for (const t of tickers) {
+          qmap[t] = await fetchQ(tx, t, currentState.criteria.ma);
           await new Promise(r => setTimeout(r, 350));
         }
         saveQmapCache(qmap);
@@ -169,11 +164,6 @@ export function useScreener(showToast) {
         showToast(`⚠ No data for ${failedTickers.join(', ')}`, 'err');
       }
 
-      // Dispatch indicator live data (already fetched into qmap above in cache-aware paths)
-      for (const t of indicatorTickers) {
-        if (qmap[t]) dispatch({ type: 'UPDATE_INDICATOR_LIVE_DATA', payload: { ticker: t, liveData: qmap[t] } });
-      }
-
       // Batch-update all watchlist liveData in one dispatch → single re-render, no progressive popping
       // The quote is the only price source now — the sheet's GOOGLEFINANCE column
       // used to win here, but Notion doesn't carry a price.
@@ -191,7 +181,7 @@ export function useScreener(showToast) {
       const optPositions = currentState.positions.filter(isPriceableOption);
       const livePremMap  = {};
       for (const pos of optPositions) {
-        const livePrice = await fetchOptionPrice(pos.ticker, pos.type, pos.strike, pos.expiry, pos.longStrike ?? null);
+        const livePrice = await fetchOptionPrice(tx, pos);
         if (livePrice !== null) {
           livePremMap[pos.id] = livePrice;
           dispatch({ type: 'UPDATE_POSITION_LIVE_PREM', payload: { id: pos.id, liveCurPrem: livePrice } });
@@ -221,7 +211,7 @@ export function useScreener(showToast) {
         const hasOpt = mergedPositions.some(p =>
           p.ticker === w.ticker && (p.type === 'short_put' || p.type === 'short_call') && !p.linkedId);
         if (hasOpt) continue;
-        const best = await fetchBestStrike(w.ticker, 'put', cr.deltaMin, cr.deltaMax, cr.dteMin, cr.dteMax);
+        const best = await fetchBestStrike(tx, w.ticker, 'put', cr.deltaMin, cr.deltaMax, cr.dteMin, cr.dteMax);
         if (best) strikeMap[`${w.ticker}:put`] = best;
         await new Promise(r => setTimeout(r, 450));
       }
@@ -232,7 +222,7 @@ export function useScreener(showToast) {
         const hasCall = mergedPositions.some(p =>
           p.ticker === pos.ticker && p.type === 'short_call' && !p.linkedId);
         if (hasCall) continue;
-        const best = await fetchBestStrike(pos.ticker, 'call', cr.ccDeltaMin, cr.ccDeltaMax, cr.ccDteMin, cr.ccDteMax);
+        const best = await fetchBestStrike(tx, pos.ticker, 'call', cr.ccDeltaMin, cr.ccDeltaMax, cr.ccDteMin, cr.ccDteMax);
         if (best) strikeMap[`${pos.ticker}:call`] = best;
         await new Promise(r => setTimeout(r, 450));
       }
