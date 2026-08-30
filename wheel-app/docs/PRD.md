@@ -1,3 +1,22 @@
+> **⚠ SUPERSEDED — historical record, 2026-07-10.**
+>
+> This document planned the hourly screener as a **GitHub Actions** job with an
+> `alerts_log` tab in the Sheet for de-duping. That is not what was built. The
+> unattended scan runs on a **Cloudflare Worker cron trigger** with **KV** for
+> de-duping (`worker/scan.js`), and the Pine-parity entry rule described in WS-C
+> was later replaced by the RSI + Stochastic crossing test now in
+> `src/lib/signalEngine.js`.
+>
+> Kept because the reasoning in §2 and the findings in WS-B (Yahoo rate-limiting
+> unauthenticated IPs, which is why the Worker proxy exists at all) still explain
+> why the system is shaped the way it is.
+>
+> For what the system does today, see [`../README.md`](../README.md) and
+> [`../worker/README.md`](../worker/README.md). For the August remediation, see
+> the `wheel-app-prd-remediation` doc in the Notion/Claude project.
+
+---
+
 # PRD — Wheel.desk: Signal Engine, Pine Parity, Telegram Alerts & Data Fixes
 
 **Owner:** Esther · **Repo:** `eleung-com/wheel-app` · **Date:** 2026-07-10

@@ -1,0 +1,103 @@
+name: CI
+
+# Runs on pull requests as well as pushes to main. On PRs is the point: a test
+# job that only runs after merge gates nothing.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: wheel-app/package-lock.json
+
+      # `npm ci` deliberately, not `npm install`: it installs exactly what the
+      # lockfile pins and fails if the two disagree. `npm install` on one
+      # platform prunes optional deps for the others, which has broken this
+      # repo's lockfile twice (1954ec2, 70a3535) — ci catches that here rather
+      # than on someone else's machine.
+      - name: Install
+        run: npm ci
+        working-directory: wheel-app
+
+      - name: Unit tests
+        run: npm test
+        working-directory: wheel-app
+
+      # The Worker's own offline harness — plain Node, no vitest.
+      - name: Worker tests
+        run: npm run test:worker
+        working-directory: wheel-app
+
+      - name: Build
+        run: npm run build
+        working-directory: wheel-app
+
+  worker-deploy-check:
+    name: Worker deploy needed?
+    runs-on: ubuntu-latest
+    # Advisory only. The Worker is deployed by hand (`npx wrangler deploy`)
+    # rather than from CI, so that a bad merge can never ship straight to the
+    # job that sends Telegram alerts. The cost of that choice is a deploy you
+    # can forget, and the app and Worker then quietly run different versions of
+    # signalEngine.js — which defeats the point of sharing it. This job makes
+    # forgetting visible; it never fails the build.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for Worker-affecting changes
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          # Markdown and test files are excluded: neither ships in the bundle
+          # wrangler builds, so neither can put the deployed Worker out of date.
+          # A README-only edit under worker/ firing this notice would train you
+          # to ignore it, which is worse than not having it.
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD" -- \
+            wheel-app/worker/ wheel-app/src/lib/ wheel-app/wrangler.toml \
+            ':!*.md' ':!*.test.js' ':!*.test.mjs')
+
+          if [ -z "$CHANGED" ]; then
+            echo "No Worker-affecting files changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "## ⚠ Worker deploy needed after merge"
+            echo
+            echo 'The Worker does not auto-deploy. Until you run this, the'
+            echo 'Telegram alerts keep running the previous bundle:'
+            echo
+            echo '```'
+            echo 'cd wheel-app && npx wrangler deploy'
+            echo '```'
+            echo
+            echo '<details><summary>Files that affect the Worker</summary>'
+            echo
+            echo '```'
+            echo "$CHANGED"
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::notice title=Worker deploy needed::This PR changes worker/ or src/lib/. Run 'npx wrangler deploy' from wheel-app/ after merging."
