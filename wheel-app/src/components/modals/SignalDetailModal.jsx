@@ -20,6 +20,19 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
         <div className="sugg" style={{ margin: 0 }}>{s.suggestion}</div>
       </div>
 
+      {/* Advisory only — the signal fired regardless. Stated in full here
+          because the card has room for a pill, not a sentence. */}
+      {s.earnWarn && (s.earnWarn.warn || !s.earnWarn.known) && (
+        <div className="dsec">
+          <div className="dlbl">Earnings</div>
+          <div className="mhint" style={{ margin: 0 }}>
+            {s.earnWarn.warn
+              ? `Reports in ${s.earnWarn.days} day${s.earnWarn.days === 1 ? '' : 's'} — before this contract would expire. An earnings gap is the risk this flag exists for; the signal is not blocked, the call is yours.`
+              : 'No earnings date on file for this ticker in Notion, so this cannot be checked. Fill in the Earnings Date property to have it flagged here.'}
+          </div>
+        </div>
+      )}
+
       {s.type === 'csp' && (
         <div className="dsec">
           <div className="dlbl">Pullback Snapshot</div>

@@ -62,8 +62,8 @@ export default function SignalCard({ signal: s, onClick, evaluation, loading }) 
       </div>
       <div className="cpills" style={{ marginBottom: 6, gap: 3 }}>
         {(s.chks || []).map((ch, i) => (
-          <span key={i} className={`cpill ${ch.ok ? 'pass' : 'fail'}`} style={{ fontSize: 9, padding: '2px 6px' }}>
-            {ch.ok ? '✓' : '✗'} {ch.l}
+          <span key={i} className={`cpill ${ch.warn ? 'warn' : ch.ok ? 'pass' : 'fail'}`} style={{ fontSize: 9, padding: '2px 6px' }}>
+            {ch.warn ? '⚠' : ch.ok ? '✓' : '✗'} {ch.l}
           </span>
         ))}
         {s.wheel && <span className="cpill vpill" style={{ fontSize: 9, padding: '2px 6px' }}>Wheel {s.wheel}</span>}
