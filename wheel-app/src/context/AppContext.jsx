@@ -7,7 +7,6 @@ const initialState = {
   closedTrades:  [],
   signals:       [],
   criteria:      { ...DEFAULT_CRITERIA },
-  indicatorData: {},
   lastRefresh:   null,
 };
 
@@ -88,13 +87,6 @@ function reducer(state, action) {
         watchlist: state.watchlist.map(w =>
           action.payload[w.ticker] ? { ...w, liveData: action.payload[w.ticker] } : w
         ),
-      };
-
-    case 'UPDATE_INDICATOR_LIVE_DATA':
-      // payload: { ticker, liveData }
-      return {
-        ...state,
-        indicatorData: { ...state.indicatorData, [action.payload.ticker]: action.payload.liveData },
       };
 
     case 'UPDATE_WATCH_NOTES':

@@ -30,7 +30,6 @@ import ClosePositionModal     from './components/modals/ClosePositionModal';
 import ShareGroupDetailModal  from './components/modals/ShareGroupDetailModal';
 import SignalDetailModal      from './components/modals/SignalDetailModal';
 import HelpModal              from './components/modals/HelpModal';
-import WatchNotesModal        from './components/modals/WatchNotesModal';
 
 // How stale the screened data must be before foregrounding the app refetches.
 // Long enough that flicking away and back is free; short enough that a real
@@ -66,8 +65,6 @@ export default function App() {
   // Pre-fill ticker when adding lot from share group modal
   const [addLotTicker,      setAddLotTicker]      = useState(null);
   const [addPosType,        setAddPosType]        = useState(null);
-  // Watchlist notes edit
-  const [editNotesTicker,   setEditNotesTicker]   = useState(null);
   // Signal detail
   const [detailSignalId,    setDetailSignalId]    = useState(null);
 
@@ -253,29 +250,6 @@ export default function App() {
     syncNotionWatchlist();
     return runScreener(...args);
   }, [syncNotionWatchlist, runScreener]);
-
-  // ── Market indicator handlers ────────────────────────────────────────────
-  function handleAddIndicator(ticker) {
-    const current = state.criteria.indicatorTickers
-      ? String(state.criteria.indicatorTickers).split(',').map(t => t.trim()).filter(Boolean)
-      : [];
-    if (current.includes(ticker)) return;
-    const next = [...current, ticker].join(',');
-    const nextCriteria = { ...state.criteria, indicatorTickers: next };
-    dispatch({ type: 'SET_CRITERIA', payload: nextCriteria });
-    sheetWriteViaGet({ ...state, criteria: nextCriteria });
-    runScreener(true);
-  }
-
-  function handleRemoveIndicator(ticker) {
-    const current = state.criteria.indicatorTickers
-      ? String(state.criteria.indicatorTickers).split(',').map(t => t.trim()).filter(Boolean)
-      : [];
-    const next = current.filter(t => t !== ticker).join(',');
-    const nextCriteria = { ...state.criteria, indicatorTickers: next };
-    dispatch({ type: 'SET_CRITERIA', payload: nextCriteria });
-    sheetWriteViaGet({ ...state, criteria: nextCriteria });
-  }
 
   // ── Position handlers ────────────────────────────────────────────────────
   function handleSavePos(pos) {
@@ -551,14 +525,6 @@ export default function App() {
         <HelpModal onClose={() => setOpenModal(null)} />
       </ModalOverlay>
 
-      <ModalOverlay open={openModal === 'watchNotes'} onClose={() => setOpenModal(null)}>
-        <WatchNotesModal
-          ticker={editNotesTicker}
-          watchlist={state.watchlist}
-          onSave={(ticker, notes) => { handleUpdateWatchNotes(ticker, notes); setOpenModal(null); }}
-          onClose={() => setOpenModal(null)}
-        />
-      </ModalOverlay>
     </>
   );
 }
