@@ -4,6 +4,10 @@ import { AppProvider } from './context/AppContext';
 import App from './App';
 import './index.css';
 
+// Tradier was retired 10-02-2026 (account closed). Drop the dead key any
+// browser still holds so it can't be mistaken for a working credential.
+try { localStorage.removeItem('wd_tradier_key'); } catch (_) { /* storage blocked */ }
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);

@@ -1,4 +1,4 @@
-// Runtime-agnostic market-data layer: every Tradier/Yahoo request the app or the
+// Runtime-agnostic market-data layer: every Yahoo/CBOE request the app or the
 // Worker makes, with the parsing and fallback rules written exactly once.
 //
 // This exists because the two runtimes each had their own copy — src/lib
@@ -10,36 +10,30 @@
 //     signals were computed off meaningless prices, and the Worker's separate
 //     copy had to be fixed separately.
 //
-// The only thing that genuinely differs between runtimes is HOW a request is
-// authorised and addressed: the browser goes through a Cloudflare Worker proxy
-// with the key in a header, the Worker calls the APIs directly with a secret.
-// That difference is the `transport`, and it is the whole of the difference.
+// Sources (Tradier removed 10-02-2026 — account closed):
+//   • Yahoo  — daily history + latest price (chart endpoint).
+//   • CBOE   — option chains with delta, from the exchange's free delayed-quote
+//              feed (cdn.cboe.com, ~15 min delayed, no key). One JSON file per
+//              underlying holds every expiry, so it is fetched once per ticker
+//              and cached briefly.
 //
-// A transport is:
+// The only thing that differs between runtimes is HOW a request is addressed:
+// the browser goes through the Cloudflare Worker (no CORS on either source),
+// the Worker calls them directly. That difference is the `transport`:
 //   {
-//     tradier(path, timeoutMs) -> Promise<Response|null>
-//     yahoo(path,   timeoutMs) -> Promise<Response|null>
+//     yahoo(path, timeoutMs) -> Promise<Response|null>   path under query1.finance.yahoo.com
+//     cboe(path,  timeoutMs) -> Promise<Response|null>   path under cdn.cboe.com/api/global/delayed_quotes
 //   }
-// Returning null means "this source isn't configured here" (no API key, no
-// secret) — distinct from a thrown error or a non-ok Response, both of which
-// mean "configured, but the call failed". Callers treat all three as no data.
+// A thrown error, a null, or a non-ok Response all mean "no data" to callers.
 
 import { deriveIndicators, dte } from './signalEngine.js';
 
 const HISTORY_YEARS = 2;
 const MIN_BARS      = 20;   // below this the indicators are not worth computing
 
-const T_HISTORY_TRADIER = 10000;
-const T_HISTORY_YAHOO   = 8000;
-const T_QUOTE           = 5000;
-const T_EXPIRATIONS     = 8000;
-const T_CHAIN           = 10000;
-
-/** Tradier returns a bare object rather than a 1-element array. Normalise. */
-function asArray(x) {
-  if (x == null) return [];
-  return Array.isArray(x) ? x : [x];
-}
+const T_HISTORY_YAHOO = 8000;
+const T_CHAIN         = 15000;
+const CHAIN_TTL_MS    = 5 * 60 * 1000;
 
 /** Mid of the book, falling back to last trade when there is no two-sided market. */
 export function contractMid(o) {
@@ -63,28 +57,7 @@ export function chainSideFor(type) {
   return (type === 'short_put' || type === 'put_spread') ? 'put' : 'call';
 }
 
-// ── Daily OHLC history ──────────────────────────────────────────────────────
-// Tradier is primary: it is authenticated, with documented limits. Yahoo is the
-// keyless fallback only — it 429s unauthenticated IPs aggressively, which is
-// what broke production before the Worker proxy existed.
-
-async function historyFromTradier(transport, ticker) {
-  const start = new Date(Date.now() - HISTORY_YEARS * 365 * 86400000).toISOString().slice(0, 10);
-  const end   = new Date().toISOString().slice(0, 10);
-  const res = await transport.tradier(
-    `/v1/markets/history?symbol=${ticker}&interval=daily&start=${start}&end=${end}&session_filter=all`,
-    T_HISTORY_TRADIER,
-  );
-  if (!res || !res.ok) return null;
-  const data = await res.json();
-
-  const closes = [], highs = [], lows = [], dates = [];
-  for (const d of asArray(data?.history?.day)) {
-    if (d.close == null || d.high == null || d.low == null || d.close === 0) continue;
-    closes.push(d.close); highs.push(d.high); lows.push(d.low); dates.push(d.date);
-  }
-  return closes.length >= MIN_BARS ? { closes, highs, lows, dates } : null;
-}
+// ── Daily OHLC history + latest price (Yahoo) ───────────────────────────────
 
 async function historyFromYahoo(transport, ticker) {
   const res = await transport.yahoo(`/v8/finance/chart/${ticker}?interval=1d&range=${HISTORY_YEARS}y`, T_HISTORY_YAHOO);
@@ -109,34 +82,32 @@ async function historyFromYahoo(transport, ticker) {
     closes.push(adj); highs.push(rawHighs[i] * ratio); lows.push(rawLows[i] * ratio);
     dates.push(new Date(timestamps[i] * 1000).toISOString().slice(0, 10));
   }
-  return closes.length >= MIN_BARS ? { closes, highs, lows, dates } : null;
+  if (closes.length < MIN_BARS) return null;
+
+  // Latest trade price, and the raw close of the last session BEFORE it, so the
+  // day change is right whether or not today's bar is already in the series.
+  const meta = result.meta || {};
+  let live = null;
+  if (meta.regularMarketPrice > 0) {
+    const liveDay = meta.regularMarketTime
+      ? new Date(meta.regularMarketTime * 1000).toISOString().slice(0, 10) : null;
+    let prevclose = null;
+    for (let i = timestamps.length - 1; i >= 0; i--) {
+      const day = new Date(timestamps[i] * 1000).toISOString().slice(0, 10);
+      if (rawCloses[i] != null && rawCloses[i] > 0 && (!liveDay || day < liveDay)) { prevclose = rawCloses[i]; break; }
+    }
+    live = { price: meta.regularMarketPrice, prevclose };
+  }
+  return { closes, highs, lows, dates, live };
 }
 
-/** `{closes, highs, lows, dates}` from whichever source answers, else null. */
+/** `{closes, highs, lows, dates, live}` from Yahoo, else null. */
 export async function fetchHistory(transport, ticker) {
-  try {
-    const t = await historyFromTradier(transport, ticker);
-    if (t) return t;
-  } catch (_) { /* fall through to Yahoo */ }
   try {
     return await historyFromYahoo(transport, ticker);
   } catch (_) {
     return null;
   }
-}
-
-/** Live last/prevclose, or null when unavailable — callers fall back to the last close. */
-export async function fetchQuote(transport, ticker) {
-  try {
-    const res = await transport.tradier(`/v1/markets/quotes?symbols=${ticker}`, T_QUOTE);
-    if (!res || !res.ok) return null;
-    const q = (await res.json())?.quotes?.quote;
-    const quote = Array.isArray(q) ? q.find(x => x.symbol === ticker) : q;
-    if (quote?.last && quote.last > 0) {
-      return { price: quote.last, prevclose: quote.prevclose > 0 ? quote.prevclose : null };
-    }
-  } catch (_) { /* fall back to last adj close */ }
-  return null;
 }
 
 /** History + live quote → the derived-indicator bundle buildSignals reads. */
@@ -150,25 +121,98 @@ export async function fetchQ(transport, ticker, maPeriod = 200) {
     ? ((price - closes[closes.length - 2]) / closes[closes.length - 2] * 100)
     : null;
 
-  const quote = await fetchQuote(transport, ticker);
-  if (quote) {
-    price = quote.price;
-    if (quote.prevclose) chg1d = (price - quote.prevclose) / quote.prevclose * 100;
+  if (hist.live) {
+    price = hist.live.price;
+    if (hist.live.prevclose) chg1d = (price - hist.live.prevclose) / hist.live.prevclose * 100;
   }
 
   return deriveIndicators(hist, price, chg1d, maPeriod);
 }
 
-// ── Option chains ───────────────────────────────────────────────────────────
+// ── Option chains (CBOE delayed quotes) ─────────────────────────────────────
 
-/** Every contract for one expiry, one side. `greeks` costs nothing extra to ask for. */
-async function fetchChain(transport, ticker, expiry, side, greeks) {
-  const res = await transport.tradier(
-    `/v1/markets/options/chains?symbol=${ticker}&expiration=${expiry}&greeks=${greeks ? 'true' : 'false'}`,
-    T_CHAIN,
-  );
-  if (!res || !res.ok) return null;
-  const contracts = asArray((await res.json())?.options?.option).filter(o => o.option_type === side);
+// Cash-settled indexes live under an underscore-prefixed file on CBOE.
+const CBOE_INDEXES = new Set(['SPX', 'XSP', 'VIX', 'NDX', 'RUT', 'DJX', 'OEX', 'XEO', 'MRUT']);
+export function cboeSymbol(ticker) {
+  const t = String(ticker || '').toUpperCase();
+  return CBOE_INDEXES.has(t) ? `_${t}` : t;
+}
+
+/**
+ * OCC option symbol → parts. ROOT + YYMMDD + C|P + strike×1000 (8 digits),
+ * e.g. AAPL261016P00250000 → AAPL, 2026-10-16, put, 250.
+ */
+export function parseOcc(sym) {
+  const m = /^([A-Z0-9.]+?)(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/.exec(String(sym || '').trim());
+  if (!m) return null;
+  return {
+    root: m[1],
+    expiry: `20${m[2]}-${m[3]}-${m[4]}`,
+    side: m[5] === 'P' ? 'put' : 'call',
+    strike: Number(m[6]) / 1000,
+  };
+}
+
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/**
+ * CBOE body → contracts in the shape the rest of this file uses:
+ * { expiry, option_type, strike, bid, ask, last, greeks: { delta }, iv, openInterest }.
+ * Only the underlying's own roots are kept (SPX also lists SPXW weeklies);
+ * adjusted roots after splits/mergers (e.g. AAPL1) are dropped. Delta is
+ * normalised to negative for puts, positive for calls, whatever the feed sends.
+ */
+export function parseCboeChain(body, ticker) {
+  const base = String(ticker || '').toUpperCase();
+  const roots = new Set([base, `${base}W`]);
+  const out = [];
+  for (const o of body?.data?.options || []) {
+    const p = parseOcc(o.option);
+    if (!p || !roots.has(p.root)) continue;
+    const d = num(o.delta);
+    out.push({
+      expiry: p.expiry,
+      option_type: p.side,
+      strike: p.strike,
+      bid: num(o.bid),
+      ask: num(o.ask),
+      last: num(o.last_trade_price),
+      greeks: { delta: d === null || d === 0 ? null : (p.side === 'put' ? -Math.abs(d) : Math.abs(d)) },
+      iv: num(o.iv),
+      openInterest: num(o.open_interest),
+    });
+  }
+  return out;
+}
+
+// One CBOE file holds every expiry, and a single scan asks for the same ticker
+// more than once (pricing a position, then suggesting the next contract), so
+// keep the parsed chain for a few minutes. In-flight requests are shared too.
+const chainCache = new Map(); // ticker → { at, promise }
+
+export function clearChainCache() { chainCache.clear(); }
+
+async function fetchFullChain(transport, ticker) {
+  const key = String(ticker || '').toUpperCase();
+  const hit = chainCache.get(key);
+  if (hit && Date.now() - hit.at < CHAIN_TTL_MS) return hit.promise;
+  const promise = (async () => {
+    const res = await transport.cboe(`/options/${cboeSymbol(key)}.json`, T_CHAIN);
+    if (!res || !res.ok) return null;
+    const contracts = parseCboeChain(await res.json(), key);
+    return contracts.length ? contracts : null;
+  })().catch(() => null);
+  chainCache.set(key, { at: Date.now(), promise });
+  const result = await promise;
+  if (!result) chainCache.delete(key); // don't cache a failure
+  return result;
+}
+
+/** Every contract for one expiry, one side. */
+async function fetchChain(transport, ticker, expiry, side) {
+  const all = await fetchFullChain(transport, ticker);
+  if (!all) return null;
+  const contracts = all.filter(o => o.expiry === expiry && o.option_type === side);
   return contracts.length ? contracts : null;
 }
 
@@ -184,7 +228,7 @@ export async function fetchOptionPrice(transport, { ticker, type, strike, expiry
   if (!ticker || strike == null || !expiry) return null;
   try {
     const isSpread  = type === 'put_spread';
-    const contracts = await fetchChain(transport, ticker, expiry, chainSideFor(type), false);
+    const contracts = await fetchChain(transport, ticker, expiry, chainSideFor(type));
     if (!contracts) return null;
 
     const shortMid = contractMid(findAtStrike(contracts, strike));
@@ -206,19 +250,16 @@ export async function fetchOptionPrice(transport, { ticker, type, strike, expiry
  * The contract to suggest for a new entry: the expiry nearest the middle of the
  * target DTE range, then the strike nearest the middle of the target delta band.
  *
- * Tradier reports put deltas as negative; the criteria are positive whole
- * numbers (20 means 0.20), so the band is mirrored for puts.
+ * Put deltas are negative (parseCboeChain guarantees it); the criteria are
+ * positive whole numbers (20 means 0.20), so the band is mirrored for puts.
  *
  * @returns { strike, expiry, dte, delta, premium } or null.
  */
 export async function fetchBestStrike(transport, ticker, optionType, deltaMin, deltaMax, dteMin, dteMax) {
   try {
-    const expRes = await transport.tradier(
-      `/v1/markets/options/expirations?symbol=${ticker}&includeAllRoots=true&strikes=false`,
-      T_EXPIRATIONS,
-    );
-    if (!expRes || !expRes.ok) return null;
-    const dateArr = asArray((await expRes.json())?.expirations?.date);
+    const full = await fetchFullChain(transport, ticker);
+    if (!full) return null;
+    const dateArr = [...new Set(full.filter(o => o.option_type === optionType).map(o => o.expiry))].sort();
     if (!dateArr.length) return null;
 
     const dteMid   = (dteMin + dteMax) / 2;
@@ -229,7 +270,7 @@ export async function fetchBestStrike(transport, ticker, optionType, deltaMin, d
     const pool    = inRange.length ? inRange : allDated;
     const target  = pool.reduce((best, d) => Math.abs(d.dte - dteMid) < Math.abs(best.dte - dteMid) ? d : best);
 
-    const all = await fetchChain(transport, ticker, target.date, optionType, true);
+    const all = await fetchChain(transport, ticker, target.date, optionType);
     if (!all) return null;
     const contracts = all.filter(o => o.greeks?.delta != null);
     if (!contracts.length) return null;

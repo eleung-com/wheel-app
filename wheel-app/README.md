@@ -22,7 +22,8 @@ npm run build     # production build → dist/
 |---|---|---|
 | Watchlist membership, notes, evaluations, earnings dates | **Notion** (`Stock Scan Results`) | Where the research already happens. The app reads it and writes back only `Notes`. |
 | Positions, closed trades, screening criteria | **Google Sheet** via an Apps Script web app | Predates the app; still the easiest thing to hand-edit. |
-| Live prices, option chains | **Tradier**, with Yahoo as a keyless fallback | Tradier is authenticated with sane limits; Yahoo 429s unauthenticated IPs. |
+| Prices + history | **Yahoo**, via the Worker | Free and keyless. Yahoo 429s residential IPs, so every call goes through the Worker. |
+| Option chains (strike, delta, premium) | **CBOE** delayed quotes, via the Worker | Free, no key, includes delta. ~15 min delayed — fine for 30–45 DTE entries placed by hand. Tradier was retired 10-02-2026 (account closed). |
 | API credentials | **Cloudflare Worker** | The app is a public static site, so no token can ship in the bundle. |
 | Alerts | **Telegram**, from the Worker's cron | The app only alerts you when it's open. The Worker doesn't need to be. |
 
@@ -36,7 +37,7 @@ npm run build     # production build → dist/
    breached the short strike, or that has given back enough premium early
    enough to be worth buying back. A put credit spread below its *long* strike
    is at max loss and gets its own card, not another roll.
-3. Live strike and expiry come from the Tradier chain — the contract nearest the
+3. Strike and expiry come from the CBOE option chain — the contract nearest the
    middle of your target delta band and DTE range.
 
 `src/lib/signalEngine.js` is the only implementation of that logic. Both the
@@ -80,7 +81,7 @@ src/
 │
 ├── lib/                      Pure logic — no React
 │   ├── signalEngine.js       THE signal logic. Shared with the Worker.
-│   ├── marketData.js         Every Tradier/Yahoo call, once, transport-injected
+│   ├── marketData.js         Every Yahoo/CBOE call, once, transport-injected
 │   ├── browserTransport.js   The browser half of that contract
 │   ├── oscillators.js        RSI (Wilder) + slow Stochastic, TradingView-exact
 │   ├── optionYield.js        Return and annualised yield, incl. spread width
@@ -93,7 +94,7 @@ src/
     └── modals/               Position add/edit, close, share group, signal detail, help
 
 worker/
-├── worker.js       Routes: /yf, /notion, /watchlist-feed, /notify, Tradier passthrough
+├── worker.js       Routes: /yf, /cboe, /notion, /watchlist-feed, /notify
 ├── scan.js         The scheduled scan — same engine, Telegram delivery, KV de-dupe
 ├── notion.js       Watchlist + evaluation reads, Notes write
 ├── telegram.js     Message formatting
@@ -103,8 +104,8 @@ worker/
 ## First-time setup
 
 The app asks for an Apps Script web-app URL and a shared secret, stored in
-`localStorage` on that device only — they are never in source. A Tradier key
-goes in Settings and is used the same way. Worker secrets are separate; see
+`localStorage` on that device only — they are never in source. Market data
+needs no key. Worker secrets are separate; see
 [`worker/README.md`](worker/README.md).
 
 ## Deploying

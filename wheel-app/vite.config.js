@@ -23,23 +23,11 @@ export default defineConfig({
         target: process.env.YF_PROXY_TARGET || 'https://wheel-tradier-proxy.esthercandy.workers.dev',
         changeOrigin: true,
       },
-      // Tradier API — key is injected server-side so it never appears in browser network logs
-      '/tr': {
-        target: 'https://api.tradier.com',
+      // CBOE delayed option chains — through the worker's /cboe pass-through,
+      // same as production (cdn.cboe.com sends no CORS headers).
+      '/cboe': {
+        target: process.env.CBOE_PROXY_TARGET || 'https://wheel-tradier-proxy.esthercandy.workers.dev',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/tr/, ''),
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq, req) => {
-            // Read key from the x-tradier-token header set by the client,
-            // then replace it with the real Authorization header going to Tradier.
-            const token = req.headers['x-tradier-token'];
-            if (token) {
-              proxyReq.setHeader('Authorization', `Bearer ${token}`);
-              proxyReq.removeHeader('x-tradier-token');
-            }
-            proxyReq.setHeader('Accept', 'application/json');
-          });
-        },
       },
     },
   },

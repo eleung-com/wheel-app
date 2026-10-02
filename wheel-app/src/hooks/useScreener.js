@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { fetchQ, fetchOptionPrice, fetchBestStrike } from '../lib/marketData';
 import { browserTransport as tx } from '../lib/browserTransport';
 import { buildSignals, cspEntryOk, ccEntryOk, PRIORITY } from '../lib/signalEngine';
-import { getTradierKey, isOpenPosition, isPriceableOption } from '../lib/utils';
+import { isOpenPosition, isPriceableOption } from '../lib/utils';
 
 // ── Market-close cache ────────────────────────────────────────────────────────
 // When markets are closed we cache the last fetched qmap in localStorage so the
@@ -149,13 +149,7 @@ export function useScreener(showToast) {
 
       const gotAny = Object.values(qmap).some(v => v !== null);
       if (!silent && !gotAny) {
-        const hasKey = !!getTradierKey();
-        showToast(
-          hasKey
-            ? '⚠ No market data — Tradier API call failed (check console for details)'
-            : '⚠ No market data — add your Tradier API key in Settings',
-          'err'
-        );
+        showToast('⚠ No market data — Yahoo price history unreachable (check console for details)', 'err');
       }
 
       // Surface per-ticker failures instead of silently showing stale data

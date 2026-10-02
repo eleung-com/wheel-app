@@ -11,7 +11,7 @@ import { fetchQ, fetchOptionPrice, fetchBestStrike } from '../src/lib/marketData
 import { sendTelegram, formatAlert, formatDteAlert } from './telegram.js';
 import { isMarketOpen, etDateString } from './marketHours.js';
 
-const TRADIER_ORIGIN = 'https://api.tradier.com';
+const CBOE_ORIGIN    = 'https://cdn.cboe.com/api/global/delayed_quotes';
 const YAHOO_ORIGIN   = 'https://query1.finance.yahoo.com';
 
 // A signal that fires and gets dismissed still shouldn't re-alert same-day —
@@ -40,24 +40,22 @@ async function fetchSheetData(env) {
 }
 
 // ── Transport ────────────────────────────────────────────────────────────────
-// The Worker half of the marketData contract. Unlike the browser it holds the
-// credentials itself and isn't subject to CORS, so it calls both APIs directly.
-// Yahoo still needs a browser User-Agent — it rejects bare server requests.
+// The Worker half of the marketData contract. Unlike the browser it isn't
+// subject to CORS, so it calls both sources directly. Both want a browser
+// User-Agent — Yahoo rejects bare server requests.
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 function workerTransport(env) {
   return {
-    async tradier(path, timeoutMs) {
-      // null, not an error: an unset TRADIER_TOKEN is a configuration state, and
-      // marketData falls back to Yahoo for history accordingly.
-      if (!env.TRADIER_TOKEN) return null;
-      return fetch(TRADIER_ORIGIN + path, {
-        headers: { Authorization: `Bearer ${env.TRADIER_TOKEN}`, Accept: 'application/json' },
+    async cboe(path, timeoutMs) {
+      return fetch(CBOE_ORIGIN + path, {
+        headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' },
         signal: AbortSignal.timeout(timeoutMs),
       });
     },
     async yahoo(path, timeoutMs) {
       return fetch(YAHOO_ORIGIN + path, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'User-Agent': BROWSER_UA,
           'Accept': 'application/json,text/plain,*/*',
           'Referer': 'https://finance.yahoo.com/',
         },
@@ -125,7 +123,7 @@ function isOpenOption(p) {
  * One Telegram nudge per open option per ET day while it sits in the management
  * window. De-duped on position id (not ticker) so two contracts on the same
  * underlying each get their own message. Runs before the market-data pass and in
- * its own try/catch — a Tradier/Yahoo outage must not swallow a calendar alert.
+ * its own try/catch — a Yahoo/CBOE outage must not swallow a calendar alert.
  */
 export async function runDteNudges(env, positions, criteria, now) {
   const threshold = criteria.manageDte;
@@ -186,11 +184,11 @@ export async function runScan(env, now = new Date()) {
       try { qmap[t] = await fetchQ(tx, t, criteria.ma); }
       catch (e) { console.error(`[scan] ${t} fetch failed, skipping:`, e?.message || e); qmap[t] = null; }
       if (qmap[t]) gotAny = true;
-      await sleep(350); // Tradier throttle — matches useScreener.js's pacing
+      await sleep(350); // Yahoo pacing — matches useScreener.js
     }
 
     if (!gotAny) {
-      await selfAlertOnce(env, 'Every ticker fetch failed this run — Yahoo (and Tradier, if configured) may be unreachable, or TRADIER_TOKEN may have expired.', now);
+      await selfAlertOnce(env, 'Every ticker fetch failed this run — Yahoo price history may be unreachable or blocking the Worker.', now);
       return;
     }
 

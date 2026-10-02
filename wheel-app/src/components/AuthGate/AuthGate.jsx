@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { LS_URL_KEY, LS_SECRET_KEY, LS_SESSION_KEY, LS_TRADIER_KEY, getSecret } from '../../lib/utils';
+import { LS_URL_KEY, LS_SECRET_KEY, LS_SESSION_KEY, getSecret } from '../../lib/utils';
 
 export default function AuthGate({ mode, onSuccess, onResetToSetup }) {
   const isSetup = mode === 'setup';
@@ -7,7 +7,6 @@ export default function AuthGate({ mode, onSuccess, onResetToSetup }) {
   // Setup form state
   const [url,         setUrl]         = useState('');
   const [secret,      setSecret]      = useState('');
-  const [tradierKey,  setTradierKey]  = useState('');
   const [setupErr,    setSetupErr]    = useState('');
 
   // Login form state
@@ -50,7 +49,6 @@ export default function AuthGate({ mode, onSuccess, onResetToSetup }) {
     }
     localStorage.setItem(LS_URL_KEY,     trimmedUrl);
     localStorage.setItem(LS_SECRET_KEY,  trimmedSecret);
-    if (tradierKey.trim()) localStorage.setItem(LS_TRADIER_KEY, tradierKey.trim());
     localStorage.setItem(LS_SESSION_KEY, '1');
     onSuccess();
   }
@@ -110,17 +108,6 @@ export default function AuthGate({ mode, onSuccess, onResetToSetup }) {
               autoComplete="off"
               value={secret}
               onChange={e => setSecret(e.target.value)}
-            />
-          </div>
-          <div>
-            <div className="pw-field-lbl">Tradier API key <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional — add later in Settings)</span></div>
-            <input
-              className="pw-input large"
-              type="password"
-              placeholder="your-tradier-token"
-              autoComplete="off"
-              value={tradierKey}
-              onChange={e => setTradierKey(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && doSetup()}
             />
           </div>
@@ -128,7 +115,7 @@ export default function AuthGate({ mode, onSuccess, onResetToSetup }) {
           <button className="pw-btn" onClick={doSetup}>Connect &amp; Save</button>
           <div className="pw-hint">
             All credentials are stored in this browser only — never in the source code or the sheet.
-            You will enter these once per device. The Tradier key can be added later in Settings.
+            You will enter these once per device.
           </div>
         </div>
       ) : (

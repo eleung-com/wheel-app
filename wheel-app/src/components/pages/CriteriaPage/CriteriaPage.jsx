@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LS_TRADIER_KEY, LS_URL_KEY, LS_SECRET_KEY, getTradierKey, getSheetUrl, getSecret } from '../../../lib/utils';
+import { LS_URL_KEY, LS_SECRET_KEY, getSheetUrl, getSecret } from '../../../lib/utils';
 
 function CriteriaRow({ label, sub, inputId, value, onChange, min, max, pair }) {
   return (
@@ -35,17 +35,14 @@ const SECTIONS = [
   { id: 'exit',    label: 'Exit Rules',      sub: 'Early close thresholds' },
   { id: 'capital', label: 'Account Capital', sub: 'Buying power per account' },
   { id: 'sheets',  label: 'Google Sheets',   sub: 'Backend connection' },
-  { id: 'api',     label: 'API Keys',        sub: 'Tradier market data' },
 ];
 
 const MOBILE_QUERY = '(max-width: 720px)';
 
 export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
   const [local,       setLocal]       = useState(criteria);
-  const [tradierKey,  setTradierKey]  = useState(() => getTradierKey());
   const [sheetUrl,    setSheetUrl]    = useState(() => getSheetUrl());
   const [sheetSecret, setSheetSecret] = useState(() => getSecret());
-  const [keySaved,    setKeySaved]    = useState(false);
   const [sheetSaved,  setSheetSaved]  = useState(false);
 
   // Section navigation: sidebar on desktop, drill-down list on mobile
@@ -71,15 +68,6 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
     const next = { ...local, [minKey]: val.min, [maxKey]: val.max };
     setLocal(next);
     onSave(next);
-  }
-
-  function saveTradierKey() {
-    const trimmed = tradierKey.trim();
-    if (trimmed) {
-      localStorage.setItem(LS_TRADIER_KEY, trimmed);
-      setKeySaved(true);
-      setTimeout(() => setKeySaved(false), 2000);
-    }
   }
 
   function saveSheetCredentials() {
@@ -220,23 +208,6 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
               onChange: setSheetSecret,
               onSaveFn: saveSheetCredentials,
               saved: sheetSaved,
-            })}
-          </div>
-        </>
-      );
-      case 'api': return (
-        <>
-          <div className="slabel">API Keys</div>
-          <div className="ssec">
-            {credentialRow({
-              label: 'Tradier API key',
-              sub: 'Used for live prices, indicators, and option chains. Stored in this browser only — never in the code or sheet.',
-              type: 'password',
-              placeholder: 'your-tradier-token',
-              value: tradierKey,
-              onChange: setTradierKey,
-              onSaveFn: saveTradierKey,
-              saved: keySaved,
             })}
           </div>
         </>

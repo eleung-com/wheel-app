@@ -3,13 +3,16 @@
 `worker.js` is the source for the Worker deployed at
 `https://wheel-tradier-proxy.esthercandy.workers.dev`.
 
-It serves three jobs for the production app (GitHub Pages):
+It serves these jobs for the production app (GitHub Pages). The name is
+historical — Tradier was retired 10-02-2026 — and is kept because the app's
+URLs point at it.
 
 | Route | Proxies to | Why |
 |---|---|---|
 | `/yf/*` | `query1.finance.yahoo.com` | Yahoo sends no CORS headers, so the browser can't fetch it directly. The Worker adds a browser User-Agent and returns the response with `Access-Control-Allow-Origin: *`. |
 | `/notion/*` | `api.notion.com` | Holds the Notion token. The app is a public static site, so the token can never ship in the bundle — and Notion blocks browser calls anyway. |
-| everything else | `api.tradier.com` | Swaps the app's `x-tradier-token` header for the real `Authorization` header, keeping the key out of URLs. |
+| `/cboe/*` | `cdn.cboe.com/api/global/delayed_quotes` | Free delayed option chains with delta. No CORS upstream. Pure pass-through: the body is streamed back unparsed, so a multi-MB chain costs the Worker almost no CPU. |
+| anything else | — | 404. |
 
 ## Notion routes
 
@@ -73,8 +76,8 @@ market hours it:
    route uses) and the Sheet's positions + saved screener criteria (`SHEET_URL` secret).
 2. Fetches daily history + a live quote per ticker through `src/lib/marketData.js`
    — the same module the browser uses. The only difference is the injected
-   *transport*: the Worker calls Tradier and Yahoo directly with its own
-   `TRADIER_TOKEN`, while the browser routes through this Worker's proxy.
+   *transport*: the Worker calls Yahoo and CBOE directly, while the browser
+   routes through this Worker's `/yf` and `/cboe` proxies.
 3. Runs the **shared** signal engine (`src/lib/signalEngine.js` — the same
    module `useScreener.js` imports) to build CSP / CC / Roll / Close signals.
    There is exactly one signal implementation; the Worker and the browser both
@@ -119,8 +122,8 @@ check, so firings outside actual trading hours are a silent no-op. The NYSE
 holiday list needs a yearly top-up — see the comment at the top of that file.
 
 **Failure handling:** a single ticker's fetch failing skips just that ticker
-(the batch continues). If *every* ticker fetch fails in one run — both Tradier
-and Yahoo down, or (if set) `TRADIER_TOKEN` expired — the Worker sends one
+(the batch continues). If *every* ticker fetch fails in one run — Yahoo down
+or blocking the Worker — the Worker sends one
 self-alert to Telegram and suppresses repeats for the rest of the ET day,
 rather than paging on every run.
 
@@ -135,21 +138,21 @@ npx wrangler secret put SHEET_URL          --name wheel-tradier-proxy   # your A
 `NOTION_TOKEN` and `APP_SECRET` are already required by the `/notion/*` routes
 above and are reused as-is by the scan — no new setup needed for those two.
 
-### `TRADIER_TOKEN` — optional
+### Option chains — CBOE (no secret)
 
-Every Tradier call in `scan.js` (`fetchHistoryTradier`, `fetchQuote`,
-`fetchBestStrike`) checks for `env.TRADIER_TOKEN` first and simply returns
-`null` if it's not set — no error, no crash. Without it:
+Option chains come from CBOE's free delayed-quote file, one per underlying
+(`/options/MU.json`; cash-settled indexes use `_XSP`, `_SPX`). It carries every
+expiry with bid/ask and delta, ~15 minutes delayed. `marketData.js` downloads a
+ticker's file once and reuses it for a few minutes, so pricing a position and
+suggesting the next contract cost one download, not two.
 
-- Daily price history comes from Yahoo Finance instead (same free route the
-  app's own charts already use in production, so it's a proven path).
-- There's no live intraday quote refinement — price/change use Yahoo's most
-  recent daily close, same as the browser does whenever its own Tradier call fails.
-- There's no live options-chain lookup, so CSP/CC alerts show the generic
-  delta/DTE range ("Sell put · 20–35Δ · 21–45d") instead of an exact strike
-  and expiration — you'd look up the actual contract yourself off the alert.
+**Watch:** in the scheduled scan the Worker parses the file itself. Big
+chains (SPY ≈ 6 MB) may hit the free plan's per-request CPU limit. If alerts
+start missing contracts for large tickers, check the Worker logs for
+"exceeded CPU" — the fix is trimming work per run, or the $5/mo plan.
 
-To add it later: `npx wrangler secret put TRADIER_TOKEN --name wheel-tradier-proxy`.
+`TRADIER_TOKEN` is no longer read anywhere and can be deleted:
+`npx wrangler secret delete TRADIER_TOKEN --name wheel-tradier-proxy`.
 
 ### KV namespace (new)
 
@@ -198,9 +201,8 @@ After deploying, both of these should return JSON (not a CORS or 4xx error):
 # Yahoo route (no token needed)
 curl 'https://wheel-tradier-proxy.esthercandy.workers.dev/yf/v8/finance/chart/AAPL?interval=1d&range=5d'
 
-# Tradier route (needs your key)
-curl -H 'x-tradier-token: YOUR_KEY' \
-  'https://wheel-tradier-proxy.esthercandy.workers.dev/v1/markets/quotes?symbols=AAPL'
+# CBOE route (no key) — large JSON with data.options[]
+curl -s 'https://wheel-tradier-proxy.esthercandy.workers.dev/cboe/options/MU.json' | head -c 300
 
 # Notion route (needs your app secret) — should list ~29 tickers
 curl -H 'x-app-secret: YOUR_SECRET' \
@@ -225,6 +227,6 @@ curl "http://localhost:8787/__scheduled?cron=*/30+12-21+*+*+1-5"
 Check the `wrangler dev` terminal output for `[scan] ...` log lines, and check
 Telegram for the DM(s). Note this runs against whatever `.dev.vars` / secrets
 your local Wrangler session has — see [Wrangler's docs on local secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
-if you want to point a local run at the real Notion/Sheet/Tradier/Telegram
+if you want to point a local run at the real Notion/Sheet/Telegram
 without touching production KV state (or just accept that a local test run
 sends a real Telegram DM and writes a real KV de-dupe key, like production would).
