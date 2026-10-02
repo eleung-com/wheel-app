@@ -109,6 +109,26 @@ describe('fetchQ', () => {
   });
 });
 
+describe('index tickers on Yahoo', () => {
+  it('asks Yahoo for ^XSP, not XSP', async () => {
+    const tx = fakeTransport({ '%5EXSP': yahooChart(700) });
+    const q = await fetchQ(tx, 'XSP');
+    expect(q.price).toBe(700);
+    expect(tx.calls[0][1]).toContain('/v8/finance/chart/%5EXSP');
+  });
+
+  it('falls back to the S&P 500 ÷ 10 when Yahoo has no ^XSP series', async () => {
+    const tx = fakeTransport({ '%5EXSP': json({}, 404), '%5EGSPC': yahooChart(7000, 30, { regularMarketPrice: 7100 }) });
+    const q = await fetchQ(tx, 'XSP');
+    expect(q.price).toBeCloseTo(710, 6);
+  });
+
+  it('leaves ordinary tickers alone', async () => {
+    const tx = fakeTransport({ '/chart/MU': yahooChart(100) });
+    expect((await fetchQ(tx, 'MU')).price).toBe(100);
+  });
+});
+
 describe('CBOE parsing', () => {
   it('parseOcc splits root, expiry, side and strike', () => {
     expect(parseOcc('AAPL261016P00250000')).toEqual({ root: 'AAPL', expiry: '2026-10-16', side: 'put', strike: 250 });
