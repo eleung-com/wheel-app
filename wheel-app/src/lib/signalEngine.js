@@ -58,7 +58,7 @@ export function calcATR(highs, lows, closes, length = 14) {
 /**
  * Pure derived-indicator math shared by browser and Worker: both already have
  * `{closes, highs, lows, dates}` daily history plus a live price/chg1d from
- * their own fetch path (Tradier direct for the Worker, tradierRequest for the
+ * their own fetch path (direct for the Worker, the Worker proxy for the
  * browser) — this just turns those arrays into the fields buildSignals reads.
  */
 export function deriveIndicators({ closes, highs, lows, dates = [] }, price, chg1d, maPeriod = 200) {

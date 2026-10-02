@@ -5,8 +5,9 @@
 //                 bare server requests, and browsers can't call Yahoo directly due to CORS)
 //   /notion/*   → api.notion.com            (holds NOTION_TOKEN server-side — the app is a
 //                 public static site, so the token can never reach the client)
-//   /*          → api.tradier.com           (swaps the x-tradier-token header for the
-//                 Authorization header so the key never rides in a URL)
+//   /cboe/*     → cdn.cboe.com/api/global/delayed_quotes (free delayed option chains
+//                 with greeks; no CORS headers upstream, so the browser comes through here)
+//   anything else → 404 (the Tradier proxy that lived here was retired 10-02-2026)
 //
 // Deploy: see worker/README.md. This file is the source of truth for the worker
 // running at https://wheel-tradier-proxy.esthercandy.workers.dev
@@ -16,7 +17,7 @@ import { runScan } from './scan.js';
 import { sendTelegram } from './telegram.js';
 
 const YAHOO_ORIGIN   = 'https://query1.finance.yahoo.com';
-const TRADIER_ORIGIN = 'https://api.tradier.com';
+const CBOE_ORIGIN    = 'https://cdn.cboe.com/api/global/delayed_quotes';
 
 // Notion routes carry a shared secret, so unlike the finance proxies they are not
 // open to any origin. Browsers enforce this; the secret is what stops everything else.
@@ -29,7 +30,7 @@ const ALLOWED_ORIGINS = [
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'x-tradier-token, accept, content-type',
+  'Access-Control-Allow-Headers': 'accept, content-type',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -183,21 +184,21 @@ export default {
       return withCors(res);
     }
 
-    // ── Tradier proxy ────────────────────────────────────────────────────
-    const token = request.headers.get('x-tradier-token');
-    if (!token) {
-      return new Response(JSON.stringify({ error: 'missing x-tradier-token header' }), {
-        status: 401,
-        headers: { 'content-type': 'application/json', ...CORS_HEADERS },
+    // ── CBOE delayed option chains ──────────────────────────────────────
+    // Pass-through only: the body is streamed back unparsed, so a multi-MB
+    // chain costs this request almost no CPU. Parsing happens in the browser.
+    if (url.pathname.startsWith('/cboe/')) {
+      const target = CBOE_ORIGIN + url.pathname.slice(5) + url.search;
+      const res = await fetch(target, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'application/json,text/plain,*/*',
+        },
       });
+      return withCors(res);
     }
-    const res = await fetch(TRADIER_ORIGIN + url.pathname + url.search, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json',
-      },
-    });
-    return withCors(res);
+
+    return json({ error: 'unknown route' }, 404, CORS_HEADERS);
   },
 
   // Cron Trigger entry (see wrangler.toml [triggers]). Runs the unattended

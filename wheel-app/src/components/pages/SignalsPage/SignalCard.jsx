@@ -15,7 +15,7 @@ export default function SignalCard({ signal: s, onClick, evaluation, loading }) 
   const priceS = s.price ? `$${s.price.toFixed(2)}` : '—';
 
   let mets = null;
-  // Strike and DTE need a Tradier key to resolve and are already spelled out in
+  // Strike and DTE need the CBOE option chain to resolve and are already spelled out in
   // the suggestion line, so the grid leads with the figures that always exist:
   // how far the stock fell, and how big that is against its own daily range.
   if (s.type === 'csp')

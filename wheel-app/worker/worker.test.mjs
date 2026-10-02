@@ -361,17 +361,19 @@ console.log('\nExisting routes still work');
     calls[0].url === 'https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=5d', calls[0].url);
   check('yf sends browser UA', /Mozilla/.test(calls[0].headers?.['User-Agent'] || calls[0].init.headers['User-Agent']));
 
-  stubFetch(() => jsonRes({ quotes: {} }));
-  r = await worker.fetch(new Request('https://w.dev/v1/markets/quotes?symbols=AAPL'), ENV);
-  check('tradier without token → 401', r.status === 401, 'got ' + r.status);
+  stubFetch(() => jsonRes({ data: { options: [] } }));
+  r = await worker.fetch(new Request('https://w.dev/cboe/options/MU.json'), ENV);
+  check('cboe route → 200', r.status === 200, 'got ' + r.status);
+  check('cboe maps to delayed_quotes',
+    calls[0].url === 'https://cdn.cboe.com/api/global/delayed_quotes/options/MU.json', calls[0].url);
+  check('cboe response carries CORS for the app', r.headers.get('Access-Control-Allow-Origin') === '*');
 
   stubFetch(() => jsonRes({ quotes: {} }));
   r = await worker.fetch(new Request('https://w.dev/v1/markets/quotes?symbols=AAPL', {
     headers: { 'x-tradier-token': 'tk' },
   }), ENV);
-  check('tradier with token → 200', r.status === 200, 'got ' + r.status);
-  check('tradier swaps to Authorization header',
-    calls[0].init.headers.Authorization === 'Bearer tk');
+  check('retired tradier path → 404', r.status === 404, 'got ' + r.status);
+  check('retired tradier path → no upstream call', calls.length === 0, calls.length + ' calls');
 }
 
 console.log('\n' + (fail === 0 ? '✅' : '❌') + ` ${pass} passed, ${fail} failed\n`);

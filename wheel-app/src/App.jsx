@@ -173,7 +173,7 @@ export default function App() {
   // It replaces a 60-second setInterval that re-screened the entire watchlist
   // for as long as the tab stayed open. With the in-run guard preventing
   // overlap, that amounted to running back-to-back full screens all session —
-  // roughly two Tradier calls per ticker per cycle. That is the exact pattern
+  // roughly two market-data calls per ticker per cycle. That is the exact pattern
   // that got this app rate-limited before, and it bought nothing: nobody was
   // reading the screen between refreshes.
   //

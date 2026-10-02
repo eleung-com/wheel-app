@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { clearChainCache } from '../src/lib/marketData.js';
 import { runScan } from './scan.js';
 import { etDateString } from './marketHours.js';
 
@@ -7,7 +8,6 @@ const ENV_BASE = {
   NOTION_TOKEN: 'ntn_fake',
   APP_SECRET: 's3cret',
   SHEET_URL,
-  TRADIER_TOKEN: 'tradier_fake',
   TELEGRAM_BOT_TOKEN: 'bot_fake',
   TELEGRAM_CHAT_ID: '12345',
 };
@@ -25,10 +25,28 @@ const OPEN_NOW = new Date(Date.UTC(2026, 6, 22, 14, 0));
 // A Saturday — outside market hours regardless of time-of-day.
 const CLOSED_NOW = new Date(Date.UTC(2026, 6, 25, 14, 0));
 
-/** 25 flat daily bars at `price`, enough for fetchHistoryTradier + deriveIndicators. */
+/** Yahoo chart body: 25 flat daily bars at `price` — enough for deriveIndicators. */
 function flatHistory(price) {
-  const day = (i) => ({ date: `2026-06-${String(i + 1).padStart(2, '0')}`, close: price, high: price + 1, low: price - 1 });
-  return { history: { day: Array.from({ length: 25 }, (_, i) => day(i)) } };
+  const ts = Array.from({ length: 25 }, (_, i) => Date.UTC(2026, 5, i + 1) / 1000);
+  return { chart: { result: [{
+    meta: {},
+    timestamp: ts,
+    indicators: {
+      adjclose: [{ adjclose: ts.map(() => price) }],
+      quote: [{ close: ts.map(() => price), high: ts.map(() => price + 1), low: ts.map(() => price - 1) }],
+    },
+  }] } };
+}
+
+/** CBOE delayed-quote body for `ticker` from Tradier-style rows; expiry defaults to 30 DTE. */
+function cboeBody(ticker, rows) {
+  const occ = (r) => {
+    const [y, m, d] = (r.expiry || expiryForDte(30)).split('-');
+    return `${ticker}${y.slice(2)}${m}${d}${r.option_type === 'put' ? 'P' : 'C'}${String(Math.round(r.strike * 1000)).padStart(8, '0')}`;
+  };
+  return { data: { symbol: ticker, options: rows.map(r => ({
+    option: occ(r), bid: r.bid, ask: r.ask, last_trade_price: 0, delta: r.delta ?? 0,
+  })) } };
 }
 
 /**
@@ -76,20 +94,15 @@ function stubFetch({ watchlistPages = [], sheet = { positions: [], criteria: {} 
     if (u.startsWith(SHEET_URL)) {
       return jsonRes(sheet);
     }
-    if (u.includes('/v1/markets/history')) {
-      if (!historyOk) return jsonRes({}, 500);
+    if (u.includes('query1.finance.yahoo.com')) {
+      if (!historyOk) return jsonRes({}, 500); // for the total-failure test
       return jsonRes(flatHistory(historyPrice));
     }
-    if (u.includes('/v1/markets/options/chains')) {
+    if (u.includes('cdn.cboe.com/api/global/delayed_quotes/options/')) {
       chainCalls++;
       if (chainStatus !== 200) return jsonRes({}, chainStatus);
-      return jsonRes({ options: { option: chainOptions } });
-    }
-    if (u.includes('/v1/markets/quotes')) {
-      return jsonRes({ quotes: {} }); // no quote override → fetchQ falls back to last close
-    }
-    if (u.includes('query1.finance.yahoo.com')) {
-      return jsonRes({}, 500); // Yahoo fallback also down, for the total-failure test
+      const ticker = u.split('/options/')[1].replace('.json', '').replace(/^_/, '');
+      return jsonRes(cboeBody(ticker, chainOptions));
     }
     if (u.includes('api.telegram.org')) {
       telegramCalls++;
@@ -101,6 +114,7 @@ function stubFetch({ watchlistPages = [], sheet = { positions: [], criteria: {} 
 }
 
 const realFetch = globalThis.fetch;
+beforeEach(() => clearChainCache());
 afterEach(() => { globalThis.fetch = realFetch; });
 
 describe('runScan', () => {
@@ -361,16 +375,21 @@ describe('runScan — live option premium before close alerts', () => {
     expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(false);
   });
 
-  it('without TRADIER_TOKEN it prices nothing and sends no close alerts', async () => {
+  it('reads option chains from CBOE with no key configured', async () => {
+    let chainUrl = null;
     stubFetch({
-      sheet: { positions: [decayedPut({ curPrem: 0.5 })], criteria: {} },
+      sheet: { positions: [decayedPut()], criteria: {} },
       historyPrice: 260,
       chainOptions: [{ option_type: 'put', strike: 200, bid: 0.9, ask: 1.1 }],
     });
-    const { TRADIER_TOKEN, ...noToken } = ENV_BASE;
-    await runScan({ ...noToken, ALERTS_KV: fakeKV() }, OPEN_NOW);
+    const inner = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      if (String(url).includes('cdn.cboe.com')) chainUrl = String(url);
+      return inner(url, init);
+    };
+    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
 
-    expect(chainCalls).toBe(0);
-    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(false);
+    expect(chainUrl).toBe('https://cdn.cboe.com/api/global/delayed_quotes/options/TSLA.json');
+    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(true);
   });
 });

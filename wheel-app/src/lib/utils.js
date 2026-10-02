@@ -2,13 +2,11 @@ export const LS_URL_KEY      = 'wd_sheet_url';
 export const LS_SECRET_KEY   = 'wd_secret';
 export const LS_AUTH_KEY     = 'wd_authed';
 export const LS_SESSION_KEY  = 'wd_session';
-export const LS_TRADIER_KEY  = 'wd_tradier_key';
 
 export const WORKER_ORIGIN = 'https://wheel-tradier-proxy.esthercandy.workers.dev';
 
 export function getSheetUrl()    { return localStorage.getItem(LS_URL_KEY)    || ''; }
 export function getSecret()      { return localStorage.getItem(LS_SECRET_KEY) || ''; }
-export function getTradierKey()  { return localStorage.getItem(LS_TRADIER_KEY) || ''; }
 export function isConfigured()   { return !!getSheetUrl() && !!getSecret(); }
 
 // Base for Yahoo Finance calls. Both environments end up at the worker, which
@@ -25,7 +23,7 @@ export function yahooBase() {
 // worker gates the route on the same shared secret the sheet already uses.
 export function notionRequest(path) {
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  // On localhost the Vite proxy forwards /notion — same shape as the Tradier
+  // On localhost the Vite proxy forwards /notion — same shape as the Yahoo
   // route above, and it lets dev point at a stub worker via NOTION_PROXY_TARGET.
   const base = isLocal ? '' : WORKER_ORIGIN;
   return {
@@ -34,18 +32,12 @@ export function notionRequest(path) {
   };
 }
 
-// Returns { url, headers } for a Tradier API call.
-// On localhost: uses the Vite proxy (/tr/...) which injects Authorization server-side (no CORS).
-// In production: appends access_token as a query param — avoids the CORS preflight that the
-// Authorization header would trigger, since Tradier doesn't respond to OPTIONS pre-flights.
-export function tradierRequest(path) {
-  const key = getTradierKey();
-  if (!key) return null;
+// Base for CBOE delayed option-chain calls. cdn.cboe.com sends no CORS headers,
+// so the browser goes through the worker's /cboe route (dev: the Vite proxy
+// forwards /cboe to the worker as well).
+export function cboeBase() {
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (isLocal) {
-    return { url: `/tr${path}`, headers: { 'x-tradier-token': key, 'Accept': 'application/json' } };
-  }
-  return { url: `${WORKER_ORIGIN}${path}`, headers: { 'x-tradier-token': key, 'Accept': 'application/json' } };
+  return isLocal ? '/cboe' : `${WORKER_ORIGIN}/cboe`;
 }
 
 export function dte(expiry) {
