@@ -4,7 +4,8 @@
 //   /yf/*       → query1.finance.yahoo.com  (adds a browser User-Agent; Yahoo rejects
 //                 bare server requests, and browsers can't call Yahoo directly due to CORS)
 //   /notion/*   → api.notion.com            (holds NOTION_TOKEN server-side — the app is a
-//                 public static site, so the token can never reach the client)
+//                 public static site, so the token can never reach the client).
+//                 /notion/runs = Research tab history + Watch/Reject (stockRuns.js)
 //   /research/* → SEC EDGAR, FMP, Finnhub for the Research tab ("Run a stock").
 //                 Gated on x-app-secret like /notion; adds the SEC contact header
 //                 and the FMP/Finnhub keys; edge-cached. Pure relay: the app does
@@ -17,6 +18,7 @@
 // running at https://wheel-tradier-proxy.esthercandy.workers.dev
 
 import { readWatchlist, readEval, updatePage, UUID_RE } from './notion.js';
+import { saveRun, listRuns, setDecision } from './stockRuns.js';
 import { runScan } from './scan.js';
 import { sendTelegram } from './telegram.js';
 
@@ -41,7 +43,7 @@ const CORS_HEADERS = {
 function notionCors(origin) {
   return {
     'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
     'Access-Control-Allow-Headers': 'x-app-secret, accept, content-type',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
@@ -146,9 +148,25 @@ export default {
           return json({ ok: true }, 200, cors);
         }
 
+        // Stock Runs (Research tab history + decisions, P1.5)
+        if (url.pathname === '/notion/runs' && request.method === 'GET') {
+          const limit = Number(url.searchParams.get('limit')) || undefined;
+          return json({ runs: await listRuns(env, { ticker: url.searchParams.get('ticker') || '', limit }) }, 200, cors);
+        }
+        if (url.pathname === '/notion/runs' && request.method === 'POST') {
+          return json(await saveRun(env, await request.json()), 200, cors);
+        }
+        if (url.pathname === '/notion/runs/decision' && request.method === 'PATCH') {
+          const body = await request.json();
+          if (!body || !UUID_RE.test(String(body.pageId || ''))) {
+            return json({ error: 'pageId must be a Notion page UUID' }, 400, cors);
+          }
+          return json({ run: await setDecision(env, body) }, 200, cors);
+        }
+
         return json({ error: 'unknown notion route' }, 404, cors);
       } catch (e) {
-        return json({ error: String(e.message || e) }, 502, cors);
+        return json({ error: String(e.message || e) }, e.status || 502, cors);
       }
     }
 

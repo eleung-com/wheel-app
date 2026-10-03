@@ -419,5 +419,125 @@ console.log('\nResearch relay');
   check('preflight → 204 allowing x-app-secret', r.status === 204 && /x-app-secret/.test(r.headers.get('Access-Control-Allow-Headers')));
 }
 
+// ── Stock Runs (P1.5) ────────────────────────────────────────────────────────
+console.log('\nStock Runs /notion/runs');
+{
+  const auth = { 'x-app-secret': 's3cret' };
+  const RUNS_DB = '60a0a2a4-5833-487e-b8d4-80c509e5fcff';
+  const runPage = (id, runAt, extra = {}) => ({
+    id, parent: { type: 'database_id', database_id: RUNS_DB },
+    properties: {
+      Ticker: { title: [{ plain_text: 'UBER' }] },
+      'Run date': { date: { start: runAt } },
+      'Investment Score': { number: extra.score ?? 60 },
+      Verdict: { select: { name: extra.verdict || 'Maybe' } },
+      'Score type': { select: { name: 'Preliminary' } },
+      Status: { select: { name: 'Waiting on Claude' } },
+      'Scoring version': { rich_text: [{ plain_text: 'v2.6' }] },
+      Decision: { select: extra.decision ? { name: extra.decision } : null },
+      'Reject reason': { rich_text: extra.reason ? [{ plain_text: extra.reason }] : [] },
+      'Reject tags': { multi_select: (extra.tags || []).map((name) => ({ name })) },
+    },
+  });
+  const rec = {
+    ticker: 'UBER', runAt: '2026-10-04T01:00:00.000Z', // 9 PM NY on 10-03
+    price: 81.2, scoreType: 'Preliminary', version: 'v2.6', investmentScore: 72,
+    quality: 80, value: 60, upside: 50, verdict: 'Maybe', peersAuto: 'LYFT', targetSource: 'FMP', lines: ['a', 'b'],
+  };
+  const PID_OLD = '11111111-1111-1111-1111-111111111111';
+  const PID_SAME = '22222222-2222-2222-2222-222222222222';
+  const PID_NEW = '33333333-3333-3333-3333-333333333333';
+
+  // New day → create, with watchlist link + checks toggle
+  stubFetch((url, init) => {
+    if (url.endsWith(`/databases/${RUNS_DB}/query`)) return jsonRes({ results: [runPage(PID_OLD, '2026-09-20T15:00:00.000Z', { decision: 'Reject', reason: 'debt', score: 40 })] });
+    if (url.includes('/databases/') && url.endsWith('/query')) return jsonRes({ results: [{ id: 'wl-page' }] });
+    if (url.endsWith('/v1/pages') && init.method === 'POST') return jsonRes({ id: PID_NEW });
+    return jsonRes({}, 500);
+  });
+  let r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: rec }), ENV);
+  let body = await r.json();
+  check('POST new day → 200', r.status === 200, JSON.stringify(body));
+  const create = calls.find((c) => c.url.endsWith('/v1/pages'));
+  const cb = create && JSON.parse(create.init.body);
+  check('creates in Stock Runs DB', cb?.parent?.database_id === RUNS_DB);
+  check('links the watchlist row', cb?.properties?.['Watchlist link']?.relation?.[0]?.id === 'wl-page');
+  check('never writes Decision on save', cb && !('Decision' in cb.properties));
+  check('checks toggle with lines', cb?.children?.[0]?.type === 'toggle' && cb.children[0].toggle.children.length === 2);
+  check('toggle titled in NY time', /^Checks · Preliminary · v2\.6 · 10-03 9:00 PM NY$/.test(cb?.children?.[0]?.toggle?.rich_text?.[0]?.text?.content), cb?.children?.[0]?.toggle?.rich_text?.[0]?.text?.content);
+  check('history: new run first, old reject kept', body.history?.[0]?.pageId === PID_NEW && body.history?.[1]?.decision === 'Reject', JSON.stringify(body.history));
+  check('replaced=false', body.replaced === false);
+
+  // Same NY day → overwrite score fields, keep decision, swap checks toggle only
+  stubFetch((url, init) => {
+    if (url.endsWith(`/databases/${RUNS_DB}/query`)) return jsonRes({ results: [runPage(PID_SAME, '2026-10-03T14:00:00.000Z', { decision: 'Watch' })] });
+    if (url.endsWith(`/v1/pages/${PID_SAME}`) && init.method === 'PATCH') return jsonRes({ id: PID_SAME });
+    if (url.includes(`/v1/blocks/${PID_SAME}/children`) && (!init.method || init.method === 'GET')) {
+      return jsonRes({ results: [
+        { id: 'old-checks', type: 'toggle', toggle: { rich_text: [{ plain_text: 'Checks · Preliminary · v2.6 · 10-03 10:00 AM NY' }] } },
+        { id: 'claude-text', type: 'paragraph', paragraph: { rich_text: [{ plain_text: 'Claude write-up' }] } },
+      ] });
+    }
+    if (url.endsWith('/v1/blocks/old-checks') && init.method === 'DELETE') return jsonRes({});
+    if (url.endsWith(`/v1/blocks/${PID_SAME}/children`) && init.method === 'PATCH') return jsonRes({});
+    return jsonRes({}, 500);
+  });
+  r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: rec }), ENV);
+  body = await r.json();
+  check('same day → 200 replaced', r.status === 200 && body.replaced === true && body.pageId === PID_SAME, JSON.stringify(body));
+  check('same day → no new page', !calls.some((c) => c.url.endsWith('/v1/pages') && c.init.method === 'POST'));
+  const upd = calls.find((c) => c.url.endsWith(`/v1/pages/${PID_SAME}`));
+  check('overwrite leaves Decision alone', upd && !('Decision' in JSON.parse(upd.init.body).properties));
+  check('decision kept in history', body.history?.[0]?.decision === 'Watch');
+  check('deletes only the old checks toggle', calls.filter((c) => c.init.method === 'DELETE').map((c) => c.url.split('/').pop()).join() === 'old-checks');
+
+  // Validation
+  stubFetch(() => jsonRes({}));
+  r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: { ...rec, verdict: 'Buy' } }), ENV);
+  check('bad verdict → 400, Notion untouched', r.status === 400 && calls.length === 0, 'got ' + r.status);
+  r = await worker.fetch(req('/notion/runs', { method: 'POST', body: rec }), ENV);
+  check('no secret → 401', r.status === 401);
+
+  // GET history
+  stubFetch(() => jsonRes({ results: [runPage(PID_OLD, '2026-09-20T15:00:00.000Z')] }));
+  r = await worker.fetch(req('/notion/runs?ticker=uber&limit=5', { headers: auth }), ENV);
+  body = await r.json();
+  const q = JSON.parse(calls[0].init.body);
+  check('GET filters by ticker (uppercased), newest first', q.filter?.title?.equals === 'UBER' && q.sorts?.[0]?.direction === 'descending' && q.page_size === 5);
+  check('GET returns flat rows', body.runs?.[0]?.ticker === 'UBER' && body.runs[0].day === '2026-09-20', JSON.stringify(body));
+  r = await worker.fetch(req('/notion/runs?ticker=bad%20one', { headers: auth }), ENV);
+  check('GET bad ticker → 400', r.status === 400, 'got ' + r.status);
+
+  // Decision
+  stubFetch((url, init) => {
+    if (url.endsWith(`/v1/pages/${PID_SAME}`) && !init.method) return jsonRes(runPage(PID_SAME, '2026-10-03T14:00:00.000Z'));
+    if (url.endsWith(`/v1/pages/${PID_SAME}`) && init.method === 'PATCH') {
+      return jsonRes(runPage(PID_SAME, '2026-10-03T14:00:00.000Z', { decision: 'Reject', reason: 'too much debt', tags: ['Debt'] }));
+    }
+    return jsonRes({}, 500);
+  });
+  r = await worker.fetch(req('/notion/runs/decision', { method: 'PATCH', headers: auth, body: { pageId: PID_SAME, decision: 'Reject', reason: 'too much debt', tags: ['Debt', 'Nope'] } }), ENV);
+  body = await r.json();
+  const dp = JSON.parse(calls.find((c) => c.init.method === 'PATCH').init.body).properties;
+  check('Reject → 200 + row back', r.status === 200 && body.run?.decision === 'Reject', JSON.stringify(body));
+  check('Reject writes reason + only allowed tags', dp.Decision.select.name === 'Reject' && dp['Reject tags'].multi_select.map((t) => t.name).join() === 'Debt');
+
+  stubFetch(() => jsonRes({}));
+  r = await worker.fetch(req('/notion/runs/decision', { method: 'PATCH', headers: auth, body: { pageId: PID_SAME, decision: 'Reject', reason: '' } }), ENV);
+  check('Reject without reason → 400, Notion untouched', r.status === 400 && calls.length === 0, 'got ' + r.status);
+
+  stubFetch((url, init) => (init.method ? jsonRes({}) : jsonRes({ id: PID_SAME, parent: { database_id: '35c400a3-854e-80ff-9b36-fd7ddaa3a850' }, properties: {} })));
+  r = await worker.fetch(req('/notion/runs/decision', { method: 'PATCH', headers: auth, body: { pageId: PID_SAME, decision: 'Watch' } }), ENV);
+  check('page from another DB → 403, never patched', r.status === 403 && !calls.some((c) => c.init.method === 'PATCH'), 'got ' + r.status);
+
+  stubFetch((url, init) => (init.method === 'PATCH' ? jsonRes(runPage(PID_SAME, '2026-10-03T14:00:00.000Z')) : jsonRes(runPage(PID_SAME, '2026-10-03T14:00:00.000Z'))));
+  r = await worker.fetch(req('/notion/runs/decision', { method: 'PATCH', headers: auth, body: { pageId: PID_SAME, decision: null } }), ENV);
+  const clr = JSON.parse(calls.find((c) => c.init.method === 'PATCH').init.body).properties;
+  check('clear → Decision null, reason + tags emptied', r.status === 200 && clr.Decision.select === null && clr['Reject reason'].rich_text.length === 0 && clr['Reject tags'].multi_select.length === 0);
+
+  r = await worker.fetch(req('/notion/runs', { method: 'OPTIONS' }), ENV);
+  check('preflight allows POST', /POST/.test(r.headers.get('access-control-allow-methods') || ''));
+}
+
 console.log('\n' + (fail === 0 ? '✅' : '❌') + ` ${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
