@@ -23,6 +23,11 @@ export default defineConfig({
         target: process.env.YF_PROXY_TARGET || 'https://wheel-tradier-proxy.esthercandy.workers.dev',
         changeOrigin: true,
       },
+      // Research relay (SEC / FMP / Finnhub) — through the worker, which holds the keys.
+      '/research': {
+        target: process.env.RESEARCH_PROXY_TARGET || 'https://wheel-tradier-proxy.esthercandy.workers.dev',
+        changeOrigin: true,
+      },
       // CBOE delayed option chains — through the worker's /cboe pass-through,
       // same as production (cdn.cboe.com sends no CORS headers).
       '/cboe': {

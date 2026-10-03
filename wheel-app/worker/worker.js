@@ -5,6 +5,10 @@
 //                 bare server requests, and browsers can't call Yahoo directly due to CORS)
 //   /notion/*   → api.notion.com            (holds NOTION_TOKEN server-side — the app is a
 //                 public static site, so the token can never reach the client)
+//   /research/* → SEC EDGAR, FMP, Finnhub for the Research tab ("Run a stock").
+//                 Gated on x-app-secret like /notion; adds the SEC contact header
+//                 and the FMP/Finnhub keys; edge-cached. Pure relay: the app does
+//                 the parsing and scoring (decided 10-02, keeps every request tiny).
 //   /cboe/*     → cdn.cboe.com/api/global/delayed_quotes (free delayed option chains
 //                 with greeks; no CORS headers upstream, so the browser comes through here)
 //   anything else → 404 (the Tradier proxy that lived here was retired 10-02-2026)
@@ -61,6 +65,41 @@ function json(body, status, headers) {
   });
 }
 
+// ── Research relay targets ───────────────────────────────────────────────────
+// /research/sec/files/…   → www.sec.gov/files/…   (ticker → CIK list)
+// /research/sec/api/…     → data.sec.gov/api/…    (XBRL company concepts)
+// /research/fmp/…         → financialmodelingprep.com/… + apikey
+// /research/finnhub/…     → finnhub.io/… + token
+// Only these upstream hosts are reachable, and only by path under them.
+const SEC_UA = (email) => `wheel-desk research ${email}`;
+
+export function researchTarget(url, env) {
+  const rest = url.pathname.slice('/research/'.length);
+  const q = new URLSearchParams(url.search);
+  if (rest.startsWith('sec/')) {
+    if (!env.SEC_CONTACT_EMAIL) return { error: 'SEC_CONTACT_EMAIL secret is not set on the worker', status: 500 };
+    const p = rest.slice(4);
+    const host = p.startsWith('files/') ? 'https://www.sec.gov/' : p.startsWith('api/') ? 'https://data.sec.gov/' : null;
+    if (!host) return { error: 'unknown sec path', status: 404 };
+    return {
+      url: host + p,
+      headers: { 'User-Agent': SEC_UA(env.SEC_CONTACT_EMAIL), Accept: 'application/json' },
+      ttl: p.startsWith('files/') ? 86400 : 21600, // ticker list daily; filings every 6 h
+    };
+  }
+  if (rest.startsWith('fmp/')) {
+    if (!env.FMP_KEY) return { error: 'FMP_KEY secret is not set on the worker', status: 500 };
+    q.set('apikey', env.FMP_KEY);
+    return { url: `https://financialmodelingprep.com/${rest.slice(4)}?${q}`, headers: { Accept: 'application/json' }, ttl: 86400 };
+  }
+  if (rest.startsWith('finnhub/')) {
+    if (!env.FINNHUB_KEY) return { error: 'FINNHUB_KEY secret is not set on the worker', status: 500 };
+    q.set('token', env.FINNHUB_KEY);
+    return { url: `https://finnhub.io/${rest.slice(8)}?${q}`, headers: { Accept: 'application/json' }, ttl: 86400 };
+  }
+  return { error: 'unknown research route', status: 404 };
+}
+
 // ── Entry ────────────────────────────────────────────────────────────────────
 
 export default {
@@ -108,6 +147,30 @@ export default {
         }
 
         return json({ error: 'unknown notion route' }, 404, cors);
+      } catch (e) {
+        return json({ error: String(e.message || e) }, 502, cors);
+      }
+    }
+
+    // ── Research relay ───────────────────────────────────────────────────
+    if (url.pathname.startsWith('/research/')) {
+      const cors = notionCors(origin);
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      if (request.method !== 'GET') return json({ error: 'GET only' }, 405, cors);
+      if (!env.APP_SECRET) return json({ error: 'APP_SECRET secret is not set on the worker' }, 500, cors);
+      if (request.headers.get('x-app-secret') !== env.APP_SECRET) return json({ error: 'unauthorized' }, 401, cors);
+
+      const target = researchTarget(url, env);
+      if (target.error) return json({ error: target.error }, target.status, cors);
+      try {
+        const res = await fetch(target.url, {
+          headers: target.headers,
+          cf: { cacheTtl: target.ttl, cacheEverything: true },
+        });
+        return new Response(res.body, {
+          status: res.status,
+          headers: { 'content-type': res.headers.get('content-type') || 'application/json', ...cors },
+        });
       } catch (e) {
         return json({ error: String(e.message || e) }, 502, cors);
       }
