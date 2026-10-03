@@ -169,6 +169,22 @@ npx wrangler secret put ROUTINE_TOKEN    --name wheel-tradier-proxy   # the rout
 Without them runs still save; the row just shows "Claude routine not set up yet".
 Limits (Anthropic): 30 starts/hour per routine, 100/hour per account, plus a daily cap.
 
+### Cloudflare Pages (the app's new home, 10-03)
+
+The app is hosted on Cloudflare Pages at `https://wheel-desk.pages.dev`,
+behind Cloudflare Access (email one-time code, one allowed email). The
+Research tab's `/research` relay runs there as a Pages Function
+(`functions/research/[[path]].js`, shared code in `worker/research.js`), so it
+is protected by the same login. This Worker keeps the cron alerts, `/notify`,
+`/notion`, `/watchlist-feed`, `/yf`, `/cboe` (and `/research` until the old
+GitHub Pages site is switched off).
+
+Pages project settings: root directory `wheel-app`, build command
+`npm run build`, output `dist`, env `NODE_VERSION=20`. Secrets
+(Settings → Variables and secrets, or `npx wrangler pages secret put NAME
+--project-name wheel-desk`): `FMP_KEY`, `FINNHUB_KEY`, `SEC_CONTACT_EMAIL`,
+`APP_SECRET` (optional second lock).
+
 ### KV namespace (new)
 
 The de-dupe store. Create it once, then paste the id it prints into

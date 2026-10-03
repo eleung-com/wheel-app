@@ -20,6 +20,9 @@
 import { readWatchlist, readEval, updatePage, UUID_RE } from './notion.js';
 import { saveRun, listRuns, setDecision, getRun, redoClaude } from './stockRuns.js';
 import { runScan } from './scan.js';
+import { researchTarget, fetchResearch } from './research.js';
+
+export { researchTarget };
 import { sendTelegram } from './telegram.js';
 
 const YAHOO_ORIGIN   = 'https://query1.finance.yahoo.com';
@@ -29,9 +32,13 @@ const CBOE_ORIGIN    = 'https://cdn.cboe.com/api/global/delayed_quotes';
 // open to any origin. Browsers enforce this; the secret is what stops everything else.
 const ALLOWED_ORIGINS = [
   'https://eleung-com.github.io',
+  'https://wheel-desk.pages.dev',
   'http://localhost:5173',
   'https://localhost:5173',
 ];
+// Cloudflare Pages preview builds: <hash>.wheel-desk.pages.dev / <branch>.wheel-desk.pages.dev
+const PAGES_PREVIEW_RE = /^https:\/\/[a-z0-9-]+\.wheel-desk\.pages\.dev$/;
+const originAllowed = (o) => ALLOWED_ORIGINS.includes(o) || PAGES_PREVIEW_RE.test(o);
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -42,7 +49,7 @@ const CORS_HEADERS = {
 
 function notionCors(origin) {
   return {
-    'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Origin': originAllowed(origin) ? origin : ALLOWED_ORIGINS[0],
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
     'Access-Control-Allow-Headers': 'x-app-secret, accept, content-type',
     'Access-Control-Max-Age': '86400',
@@ -65,41 +72,6 @@ function json(body, status, headers) {
     status,
     headers: { 'content-type': 'application/json', ...headers },
   });
-}
-
-// ── Research relay targets ───────────────────────────────────────────────────
-// /research/sec/files/…   → www.sec.gov/files/…   (ticker → CIK list)
-// /research/sec/api/…     → data.sec.gov/api/…    (XBRL company concepts)
-// /research/fmp/…         → financialmodelingprep.com/… + apikey
-// /research/finnhub/…     → finnhub.io/… + token
-// Only these upstream hosts are reachable, and only by path under them.
-const SEC_UA = (email) => `wheel-desk research ${email}`;
-
-export function researchTarget(url, env) {
-  const rest = url.pathname.slice('/research/'.length);
-  const q = new URLSearchParams(url.search);
-  if (rest.startsWith('sec/')) {
-    if (!env.SEC_CONTACT_EMAIL) return { error: 'SEC_CONTACT_EMAIL secret is not set on the worker', status: 500 };
-    const p = rest.slice(4);
-    const host = p.startsWith('files/') ? 'https://www.sec.gov/' : p.startsWith('api/') ? 'https://data.sec.gov/' : null;
-    if (!host) return { error: 'unknown sec path', status: 404 };
-    return {
-      url: host + p,
-      headers: { 'User-Agent': SEC_UA(env.SEC_CONTACT_EMAIL), Accept: 'application/json' },
-      ttl: p.startsWith('files/') ? 86400 : 21600, // ticker list daily; filings every 6 h
-    };
-  }
-  if (rest.startsWith('fmp/')) {
-    if (!env.FMP_KEY) return { error: 'FMP_KEY secret is not set on the worker', status: 500 };
-    q.set('apikey', env.FMP_KEY);
-    return { url: `https://financialmodelingprep.com/${rest.slice(4)}?${q}`, headers: { Accept: 'application/json' }, ttl: 86400 };
-  }
-  if (rest.startsWith('finnhub/')) {
-    if (!env.FINNHUB_KEY) return { error: 'FINNHUB_KEY secret is not set on the worker', status: 500 };
-    q.set('token', env.FINNHUB_KEY);
-    return { url: `https://finnhub.io/${rest.slice(8)}?${q}`, headers: { Accept: 'application/json' }, ttl: 86400 };
-  }
-  return { error: 'unknown research route', status: 404 };
 }
 
 // ── Entry ────────────────────────────────────────────────────────────────────
@@ -192,20 +164,7 @@ export default {
       if (!env.APP_SECRET) return json({ error: 'APP_SECRET secret is not set on the worker' }, 500, cors);
       if (request.headers.get('x-app-secret') !== env.APP_SECRET) return json({ error: 'unauthorized' }, 401, cors);
 
-      const target = researchTarget(url, env);
-      if (target.error) return json({ error: target.error }, target.status, cors);
-      try {
-        const res = await fetch(target.url, {
-          headers: target.headers,
-          cf: { cacheTtl: target.ttl, cacheEverything: true },
-        });
-        return new Response(res.body, {
-          status: res.status,
-          headers: { 'content-type': res.headers.get('content-type') || 'application/json', ...cors },
-        });
-      } catch (e) {
-        return json({ error: String(e.message || e) }, 502, cors);
-      }
+      return fetchResearch(url, env, cors);
     }
 
     // ── Watchlist feed (read-only relay) ─────────────────────────────────────
