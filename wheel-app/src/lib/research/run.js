@@ -18,14 +18,17 @@ import { scoreStock } from './scoring.js';
  *   result is null when the company can't be scored (non-SEC filer, no price…);
  *   bundle.dataTags says why.
  */
-export async function runPreliminary(transport, ticker, { now = Date.now() } = {}) {
+export async function runPreliminary(transport, ticker, { now = Date.now(), onStep = () => {} } = {}) {
   const t = String(ticker || '').trim().toUpperCase();
   const ranAt = new Date(now).toISOString();
+  onStep('company');
   const bundle = await fetchCompanyBundle(transport, t, { now });
   if (!bundle.input) return { ticker: t, stage: 'preliminary', ranAt, bundle, peers: null, result: null };
 
+  onStep('peers');
   const candidates = await fetchAutoPeerTickers(transport, t);
   const peers = await buildPeerSet(transport, candidates, { source: 'auto', subjectCik: bundle.meta.cik, now });
+  onStep('scoring');
   const result = scoreStock({
     ...bundle.input,
     stage: 'preliminary',

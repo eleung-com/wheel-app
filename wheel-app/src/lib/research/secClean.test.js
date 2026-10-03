@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  flowSeries, instantSeries, debtAt, shareSeries, buildFinancials, quartersFromYears,
+  flowSeries, instantSeries, debtAt, debtSplitAt, shareSeries, buildFinancials, quartersFromYears,
   factsFromConcept, conceptList, US_GAAP, reportingUnit,
 } from './secClean.js';
 
@@ -92,6 +92,22 @@ describe('instants + debt', () => {
 
   it('reports debt but not on this date → null', () => {
     expect(debtAt({ ltdTotal: new Map([['2025-12-31', 100]]) }, '2026-06-30').value).toBeNull();
+  });
+});
+
+describe('debtSplitAt (debt chart)', () => {
+  const d = '2026-06-30';
+  it('long-term = noncurrent; short-term = current portion + short-term borrowings; cash alongside', () => {
+    const instants = { ltdNoncurrent: new Map([[d, 80]]), ltdCurrent: new Map([[d, 15]]), shortTermBorrowings: new Map([[d, 5]]), cash: new Map([[d, 40]]) };
+    expect(debtSplitAt(instants, d)).toEqual({ longTerm: 80, shortTerm: 20, cash: 40 });
+  });
+  it('total-only filers: long-term = total − current portion', () => {
+    expect(debtSplitAt({ ltdTotal: new Map([[d, 100]]), ltdCurrent: new Map([[d, 10]]) }, d)).toMatchObject({ longTerm: 90, shortTerm: 10 });
+    expect(debtSplitAt({ ltdTotal: new Map([[d, 100]]) }, d)).toMatchObject({ longTerm: 100, shortTerm: 0 });
+  });
+  it('no debt concepts → zeros (DUOL); nothing on that date → nulls', () => {
+    expect(debtSplitAt({ cash: new Map([[d, 7]]) }, d)).toEqual({ longTerm: 0, shortTerm: 0, cash: 7 });
+    expect(debtSplitAt({ ltdTotal: new Map([['2025-12-31', 1]]) }, d)).toEqual({ longTerm: null, shortTerm: null, cash: null });
   });
 });
 
