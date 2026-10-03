@@ -59,8 +59,24 @@ export function chainSideFor(type) {
 
 // ── Daily OHLC history + latest price (Yahoo) ───────────────────────────────
 
-async function historyFromYahoo(transport, ticker) {
-  const res = await transport.yahoo(`/v8/finance/chart/${ticker}?interval=1d&range=${HISTORY_YEARS}y`, T_HISTORY_YAHOO);
+// Yahoo lists indexes under caret symbols, not their option tickers. Each entry
+// is tried in order; `scale` converts a stand-in (XSP is exactly SPX ÷ 10, so
+// if Yahoo has no ^XSP series the S&P 500 index is used, divided by 10).
+const YAHOO_INDEX = {
+  XSP: [{ symbol: '^XSP', scale: 1 }, { symbol: '^GSPC', scale: 0.1 }],
+  SPX: [{ symbol: '^GSPC', scale: 1 }],
+  VIX: [{ symbol: '^VIX', scale: 1 }],
+  NDX: [{ symbol: '^NDX', scale: 1 }],
+  RUT: [{ symbol: '^RUT', scale: 1 }],
+  DJX: [{ symbol: '^DJI', scale: 0.01 }],
+};
+export function yahooCandidates(ticker) {
+  const t = String(ticker || '').toUpperCase();
+  return YAHOO_INDEX[t] || [{ symbol: t, scale: 1 }];
+}
+
+async function historyFromYahoo(transport, ticker, scale = 1) {
+  const res = await transport.yahoo(`/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=${HISTORY_YEARS}y`, T_HISTORY_YAHOO);
   if (!res || !res.ok) return null;
   const result = (await res.json())?.chart?.result?.[0];
   if (!result) return null;
@@ -79,7 +95,7 @@ async function historyFromYahoo(transport, ticker) {
     const adj = adjCloses[i], raw = rawCloses[i];
     if (adj == null || raw == null || raw === 0 || rawHighs[i] == null || rawLows[i] == null) continue;
     const ratio = adj / raw;
-    closes.push(adj); highs.push(rawHighs[i] * ratio); lows.push(rawLows[i] * ratio);
+    closes.push(adj * scale); highs.push(rawHighs[i] * ratio * scale); lows.push(rawLows[i] * ratio * scale);
     dates.push(new Date(timestamps[i] * 1000).toISOString().slice(0, 10));
   }
   if (closes.length < MIN_BARS) return null;
@@ -94,20 +110,22 @@ async function historyFromYahoo(transport, ticker) {
     let prevclose = null;
     for (let i = timestamps.length - 1; i >= 0; i--) {
       const day = new Date(timestamps[i] * 1000).toISOString().slice(0, 10);
-      if (rawCloses[i] != null && rawCloses[i] > 0 && (!liveDay || day < liveDay)) { prevclose = rawCloses[i]; break; }
+      if (rawCloses[i] != null && rawCloses[i] > 0 && (!liveDay || day < liveDay)) { prevclose = rawCloses[i] * scale; break; }
     }
-    live = { price: meta.regularMarketPrice, prevclose };
+    live = { price: meta.regularMarketPrice * scale, prevclose };
   }
   return { closes, highs, lows, dates, live };
 }
 
 /** `{closes, highs, lows, dates, live}` from Yahoo, else null. */
 export async function fetchHistory(transport, ticker) {
-  try {
-    return await historyFromYahoo(transport, ticker);
-  } catch (_) {
-    return null;
+  for (const { symbol, scale } of yahooCandidates(ticker)) {
+    try {
+      const h = await historyFromYahoo(transport, symbol, scale);
+      if (h) return h;
+    } catch (_) { /* try the next candidate */ }
   }
+  return null;
 }
 
 /** History + live quote → the derived-indicator bundle buildSignals reads. */
