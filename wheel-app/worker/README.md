@@ -154,6 +154,21 @@ start missing contracts for large tickers, check the Worker logs for
 `TRADIER_TOKEN` is no longer read anywhere and can be deleted:
 `npx wrangler secret delete TRADIER_TOKEN --name wheel-tradier-proxy`.
 
+### Claude research routine (Research tab, P1.6)
+
+After a run is saved, the Worker starts the "Stock Run Research" routine on
+claude.ai/code (API trigger) with just `ticker` + `run_page_id`. The routine
+writes its research into the Stock Runs row; the app re-scores to Final.
+Routine instructions: `routines/stock-run-research.md`.
+
+```bash
+npx wrangler secret put ROUTINE_FIRE_URL --name wheel-tradier-proxy   # the routine's API trigger URL (…/routines/<id>/fire)
+npx wrangler secret put ROUTINE_TOKEN    --name wheel-tradier-proxy   # the routine's token (sk-ant-oat01-…), shown once
+```
+
+Without them runs still save; the row just shows "Claude routine not set up yet".
+Limits (Anthropic): 30 starts/hour per routine, 100/hour per account, plus a daily cap.
+
 ### KV namespace (new)
 
 The de-dupe store. Create it once, then paste the id it prints into

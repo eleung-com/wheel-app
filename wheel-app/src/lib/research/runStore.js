@@ -21,9 +21,23 @@ async function call(path, { method = 'GET', body } = {}) {
   return data;
 }
 
-/** Save a run → { pageId, replaced, history }. */
-export function saveRun(run) {
-  return call('/runs', { method: 'POST', body: runToRecord(run) });
+/**
+ * Save a run → { pageId, replaced, history, claude }.
+ * pageId set = save onto that exact row (the Final re-score); otherwise the
+ * Worker picks today's row for the ticker or creates one, and starts Claude.
+ */
+export function saveRun(run, { pageId = null } = {}) {
+  return call('/runs', { method: 'POST', body: runToRecord(run, { pageId }) });
+}
+
+/** One run row + Claude's write-up blocks → { run, writeup }. */
+export function loadRun(pageId) {
+  return call(`/runs/one?${new URLSearchParams({ pageId })}`);
+}
+
+/** Start Claude again for a row → { run, claude }. */
+export function redoClaude(pageId) {
+  return call('/runs/claude', { method: 'POST', body: { pageId } });
 }
 
 /** History for one ticker, or the most recent runs when ticker is empty. */

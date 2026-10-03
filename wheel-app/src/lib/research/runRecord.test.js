@@ -87,3 +87,32 @@ describe('rejectedBefore', () => {
     expect(rejectedBefore([], 'z')).toBeNull();
   });
 });
+
+import { claudeState, claudeInputs } from './runRecord.js';
+
+describe('claudeState', () => {
+  const now = Date.parse('2026-10-03T18:30:00Z');
+  it('done / waiting / failed / none', () => {
+    expect(claudeState({ claudeWritten: '2026-10-03T18:20:00Z' }, now)).toBe('done');
+    expect(claudeState({ status: 'Waiting on Claude', claudeStarted: '2026-10-03T18:20:00Z' }, now)).toBe('waiting');
+    expect(claudeState({ status: 'Waiting on Claude', claudeStarted: '2026-10-03T18:00:00Z' }, now)).toBe('failed');
+    expect(claudeState({ status: 'Error', errorDetail: 'Claude busy' }, now)).toBe('failed');
+    expect(claudeState({ status: 'Scoring' }, now)).toBe('none');
+    expect(claudeState(null, now)).toBe('none');
+  });
+});
+
+describe('claudeInputs', () => {
+  it('parses peers, target, beat rate', () => {
+    const i = claudeInputs({ peersClaude: 'lyft, DASH  GRAB, bad ticker!!, ', analystTargetClaude: 95, targetSource: 'Zacks', claudeWritten: '2026-10-03T18:20:00Z', beats: 6, beatQuarters: 8, beatStale: false });
+    expect(i.peerTickers).toEqual(['LYFT', 'DASH', 'GRAB', 'BAD']);
+    expect(i.analystTarget).toEqual({ value: 95, source: 'Zacks', asOf: '2026-10-03' });
+    expect(i.beatRate).toEqual({ beats: 6, total: 8, stale: false });
+  });
+  it('missing pieces → null; stale with no counts stays stale', () => {
+    const i = claudeInputs({ peersClaude: '', beatStale: true });
+    expect(i.peerTickers).toEqual([]);
+    expect(i.analystTarget).toBeNull();
+    expect(i.beatRate).toEqual({ beats: null, total: null, stale: true });
+  });
+});

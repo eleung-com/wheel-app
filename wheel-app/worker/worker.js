@@ -5,7 +5,7 @@
 //                 bare server requests, and browsers can't call Yahoo directly due to CORS)
 //   /notion/*   → api.notion.com            (holds NOTION_TOKEN server-side — the app is a
 //                 public static site, so the token can never reach the client).
-//                 /notion/runs = Research tab history + Watch/Reject (stockRuns.js)
+//                 /notion/runs = Research tab history + Watch/Reject + Claude routine (stockRuns.js)
 //   /research/* → SEC EDGAR, FMP, Finnhub for the Research tab ("Run a stock").
 //                 Gated on x-app-secret like /notion; adds the SEC contact header
 //                 and the FMP/Finnhub keys; edge-cached. Pure relay: the app does
@@ -18,7 +18,7 @@
 // running at https://wheel-tradier-proxy.esthercandy.workers.dev
 
 import { readWatchlist, readEval, updatePage, UUID_RE } from './notion.js';
-import { saveRun, listRuns, setDecision } from './stockRuns.js';
+import { saveRun, listRuns, setDecision, getRun, redoClaude } from './stockRuns.js';
 import { runScan } from './scan.js';
 import { sendTelegram } from './telegram.js';
 
@@ -155,6 +155,20 @@ export default {
         }
         if (url.pathname === '/notion/runs' && request.method === 'POST') {
           return json(await saveRun(env, await request.json()), 200, cors);
+        }
+        // One run + Claude's write-up (the app polls this while Claude works, P1.6)
+        if (url.pathname === '/notion/runs/one' && request.method === 'GET') {
+          const pageId = url.searchParams.get('pageId') || '';
+          if (!UUID_RE.test(pageId)) return json({ error: 'pageId must be a Notion page UUID' }, 400, cors);
+          return json(await getRun(env, pageId), 200, cors);
+        }
+        // Start Claude again for a run ("Redo Claude research" / "Retry")
+        if (url.pathname === '/notion/runs/claude' && request.method === 'POST') {
+          const body = await request.json();
+          if (!body || !UUID_RE.test(String(body.pageId || ''))) {
+            return json({ error: 'pageId must be a Notion page UUID' }, 400, cors);
+          }
+          return json(await redoClaude(env, body.pageId), 200, cors);
         }
         if (url.pathname === '/notion/runs/decision' && request.method === 'PATCH') {
           const body = await request.json();

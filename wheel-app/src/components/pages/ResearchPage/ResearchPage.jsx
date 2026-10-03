@@ -1,24 +1,38 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { runPreliminary } from '../../../lib/research/run';
+import { runPreliminary, rescoreFinal } from '../../../lib/research/run';
 import { researchTransport } from '../../../lib/research/researchTransport';
-import { saveRun, loadRuns, saveDecision } from '../../../lib/research/runStore';
-import { runStamp } from '../../../lib/research/runRecord';
+import { saveRun, loadRuns, loadRun, saveDecision, redoClaude } from '../../../lib/research/runStore';
+import { runStamp, claudeState, claudeInputs } from '../../../lib/research/runRecord';
 import ResearchResult from './ResearchResult';
 
-// Research tab — "Run a stock" (PRD §6A-BUILD, P1.4 + P1.5).
+// Research tab — "Run a stock" (PRD §6A-BUILD, P1.4–P1.6).
 // Type a ticker → the app pulls SEC / Yahoo / FMP / Finnhub through the Worker
 // relay, scores it with auto-peers (Preliminary) and shows the result. Every
-// run is saved to Notion "Stock Runs" (same New York day = same row); history,
-// Watch / Reject and the rejected-before banner read from there.
-// Claude write-up + Final: P1.6.
+// run is saved to Notion "Stock Runs" (same New York day = same row); the
+// Worker then starts the Claude routine. While the result is open the app
+// checks the row every 20 s; once Claude has written, the app re-scores with
+// Claude's peers / target / beat rate and saves it as Final (P1.6).
 
 const TICKER_RE = /^[A-Z][A-Z0-9.-]{0,9}$/;
+const POLL_MS = 20000;
 const STEP_TEXT = {
   company: 'Reading SEC filings and prices…',
   peers: 'Checking peers…',
   scoring: 'Scoring…',
+  final: 'Re-scoring with Claude’s peers…',
 };
 const VERDICT_TONE = { 'Worth investing': 'g', Maybe: 'a', 'Not worth it': 'r' };
+
+/** Recent-runs label: decision first, then where Claude / the score stands. */
+function rowTag(h) {
+  if (h.decision === 'Watch') return 'Watch';
+  if (h.decision === 'Reject') return 'Rejected';
+  if (h.scoreType === 'Final') return 'Final';
+  const cs = claudeState(h);
+  if (cs === 'done') return 'Tap for Final';
+  if (cs === 'waiting') return 'Claude…';
+  return 'Prelim';
+}
 
 export default function ResearchPage({ showToast }) {
   const [ticker, setTicker] = useState('');
@@ -28,8 +42,12 @@ export default function ResearchPage({ showToast }) {
   const [elapsed, setElapsed] = useState(0);
   // save: { state: 'saving' | 'saved' | 'error', pageId, history, error }
   const [save, setSave] = useState(null);
+  // claude: { row, writeup } for the run on screen
+  const [claude, setClaude] = useState(null);
+  const [finalizing, setFinalizing] = useState(false);
   const [recent, setRecent] = useState({ rows: null, error: null });
   const runId = useRef(0);
+  const finalizedFor = useRef(null); // `${pageId}|${claudeWritten}` already re-scored
 
   const refreshRecent = useCallback(() => {
     loadRuns({ limit: 15 })
@@ -45,12 +63,19 @@ export default function ResearchPage({ showToast }) {
     return () => clearInterval(t);
   }, [status.running, status.startedAt]);
 
+  const mergeHistoryRow = useCallback((row) => {
+    setSave((s) => (s?.pageId === row.pageId
+      ? { ...s, history: (s.history || []).map((h) => (h.pageId === row.pageId ? { ...h, ...row } : h)) }
+      : s));
+  }, []);
+
   async function persist(res, id) {
     setSave({ state: 'saving' });
     try {
       const out = await saveRun(res);
       if (id !== runId.current) return;
       setSave({ state: 'saved', pageId: out.pageId, history: out.history });
+      setClaude({ row: out.history.find((h) => h.pageId === out.pageId) || null, writeup: [] });
       refreshRecent();
     } catch (e) {
       if (id !== runId.current) return;
@@ -58,13 +83,82 @@ export default function ResearchPage({ showToast }) {
     }
   }
 
-  async function start(raw) {
+  // ── Claude: poll while waiting; re-score to Final once it has written ──────
+  const cState = claudeState(claude?.row);
+  const pageId = save?.state === 'saved' ? save.pageId : null;
+
+  const finalize = useCallback(async (row, id) => {
+    const key = `${row.pageId}|${row.claudeWritten}`;
+    if (finalizedFor.current === key) return;
+    finalizedFor.current = key;
+    if (!run?.result) return; // no-score run: show the write-up, nothing to re-score
+    setFinalizing(true);
+    try {
+      const final = await rescoreFinal(researchTransport, run, claudeInputs(row));
+      if (id !== runId.current) return;
+      setRun(final);
+      const out = await saveRun(final, { pageId: row.pageId });
+      if (id !== runId.current) return;
+      setSave((s) => ({ ...s, history: out.history }));
+      setClaude((c) => ({ ...c, row: { ...c.row, status: 'Final', scoreType: 'Final' } }));
+      refreshRecent();
+      showToast?.(`${run.ticker}: Final score ${final.result.investmentScore ?? '—'} · ${final.result.verdict}`, '');
+    } catch (e) {
+      finalizedFor.current = null; // let the next poll try again
+      if (id === runId.current) showToast?.(`Final re-score failed: ${String(e.message || e).slice(0, 80)}`, 'err');
+    } finally {
+      if (id === runId.current) setFinalizing(false);
+    }
+  }, [run, refreshRecent, showToast]);
+
+  useEffect(() => {
+    if (!pageId || !run) return undefined;
+    if (cState !== 'waiting' && cState !== 'done') return undefined;
+    const id = runId.current;
+    let stop = false;
+    async function tick() {
+      try {
+        const { run: row, writeup } = await loadRun(pageId);
+        if (stop || id !== runId.current) return;
+        setClaude({ row, writeup });
+        mergeHistoryRow(row);
+        if (claudeState(row) === 'done' && row.status !== 'Final') finalize(row, id);
+      } catch { /* keep polling; a blip shouldn't end the wait */ }
+    }
+    // Done already (re-run reusing today's research): one read for the write-up.
+    if (cState === 'done') {
+      if (!claude?.writeup?.length || claude.row.status !== 'Final') tick();
+      return () => { stop = true; };
+    }
+    const t = setInterval(tick, POLL_MS);
+    return () => { stop = true; clearInterval(t); };
+    // claude.writeup intentionally not a dependency: it's the result of tick().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageId, cState, run?.ticker, finalize, mergeHistoryRow]);
+
+  async function redo() {
+    if (!pageId) return;
+    try {
+      const out = await redoClaude(pageId);
+      finalizedFor.current = null;
+      setClaude({ row: out.run, writeup: [] });
+      mergeHistoryRow(out.run);
+      showToast?.(out.claude.fired ? 'Claude started — usually 3–10 min' : `Claude didn’t start: ${out.claude.error}`, out.claude.fired ? '' : 'err');
+    } catch (e) {
+      showToast?.(`Couldn’t start Claude: ${String(e.message || e).slice(0, 80)}`, 'err');
+    }
+  }
+
+  // ── Runs ───────────────────────────────────────────────────────────────────
+  async function start(raw, { finishPageId = null } = {}) {
     const t = String(raw || '').trim().toUpperCase();
     if (!TICKER_RE.test(t)) { setError('Enter a US ticker, e.g. UBER'); return; }
     const id = ++runId.current;
+    finalizedFor.current = null;
     setError(null);
     setElapsed(0);
     setSave(null);
+    setClaude(null);
     setStatus({ running: true, step: 'company', startedAt: Date.now() });
     try {
       const res = await runPreliminary(researchTransport, t, {
@@ -73,7 +167,16 @@ export default function ResearchPage({ showToast }) {
       if (id !== runId.current) return; // a newer run started
       setRun(res);
       if (!res.result) showToast?.(`${t}: no score — see why below`, 'err');
-      persist(res, id);
+      if (finishPageId) {
+        // Finishing an earlier run whose Claude research is in: no new row, no
+        // new Claude run — the poll effect re-scores onto that row.
+        const history = await loadRuns({ ticker: t });
+        if (id !== runId.current) return;
+        setSave({ state: 'saved', pageId: finishPageId, history });
+        setClaude({ row: history.find((h) => h.pageId === finishPageId) || null, writeup: [] });
+      } else {
+        persist(res, id);
+      }
     } catch (e) {
       if (id !== runId.current) return;
       setError(`Run failed: ${String(e?.message || e).slice(0, 120)}`);
@@ -86,9 +189,7 @@ export default function ResearchPage({ showToast }) {
     if (!save?.pageId) return false;
     try {
       const row = await saveDecision(save.pageId, d);
-      setSave((s) => (s?.pageId === row.pageId
-        ? { ...s, history: (s.history || []).map((h) => (h.pageId === row.pageId ? { ...h, ...row } : h)) }
-        : s));
+      mergeHistoryRow(row);
       refreshRecent();
       if (d.decision === 'Watch') showToast?.(`Watching ${run.ticker} — add it in TradingView`, '');
       else if (d.decision === 'Reject') showToast?.(`${run.ticker} rejected — logged in Notion`, '');
@@ -106,9 +207,12 @@ export default function ResearchPage({ showToast }) {
         run={run}
         running={status.running}
         save={save}
+        claude={claude}
+        finalizing={finalizing}
+        onRedoClaude={redo}
         onRetrySave={() => persist(run, runId.current)}
         onDecide={decide}
-        onBack={() => { setRun(null); setSave(null); }}
+        onBack={() => { runId.current++; setRun(null); setSave(null); setClaude(null); }}
         onRerun={() => start(run.ticker)}
       />
     );
@@ -117,7 +221,7 @@ export default function ResearchPage({ showToast }) {
   return (
     <div>
       <div className="greet">Research</div>
-      <div className="greet-sub">Score any US stock. Claude adds the story in a later update.</div>
+      <div className="greet-sub">Score any US stock. Claude adds peers and the story in a few minutes.</div>
 
       <form className="rs-runbox" onSubmit={(e) => { e.preventDefault(); start(ticker); }}>
         <input
@@ -150,14 +254,19 @@ export default function ResearchPage({ showToast }) {
         {recent.rows === null && !recent.error && <div className="rs-muted rs-hist-empty">Loading…</div>}
         {recent.error && !recent.rows && <div className="rs-muted rs-hist-empty">Couldn’t load from Notion: {recent.error}</div>}
         {recent.rows?.length === 0 && <div className="rs-muted rs-hist-empty">No runs yet. Type a ticker above.</div>}
-        {(recent.rows || []).map((h) => (
-          <button type="button" key={h.pageId} className="rs-hrow" onClick={() => start(h.ticker)} disabled={status.running}>
-            <b>{h.ticker}</b>
-            <span className="rs-muted">{runStamp(h.runAt)}</span>
-            <span className={`rs-hv ${VERDICT_TONE[h.verdict] || 'n'}`}>{h.investmentScore ?? '—'} · {h.verdict || '—'}</span>
-            <span className="rs-hd">{h.decision === 'Watch' ? 'Watch' : h.decision === 'Reject' ? 'Rejected' : h.scoreType === 'Final' ? 'Final' : 'Prelim'}</span>
-          </button>
-        ))}
+        {(recent.rows || []).map((h) => {
+          const tag = rowTag(h);
+          const finish = tag === 'Tap for Final';
+          return (
+            <button type="button" key={h.pageId} className="rs-hrow" disabled={status.running}
+              onClick={() => start(h.ticker, finish ? { finishPageId: h.pageId } : {})}>
+              <b>{h.ticker}</b>
+              <span className="rs-muted">{runStamp(h.runAt)}</span>
+              <span className={`rs-hv ${VERDICT_TONE[h.verdict] || 'n'}`}>{h.investmentScore ?? '—'} · {h.verdict || '—'}</span>
+              <span className={`rs-hd${finish ? ' go' : ''}`}>{tag}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
