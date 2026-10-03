@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// P1.1 acceptance check: run the real Research data layer (companyData.js) and
-// scoring engine against live SEC / Yahoo / FMP / Finnhub data.
+// Acceptance check for P1.1 + P1.3: run a real Preliminary "Run a stock" (company
+// data + Finnhub auto-peers + scoring) against live SEC / Yahoo / FMP / Finnhub data.
 //
 // Run from wheel-app/:   node scripts/verify-research-data.mjs [TICKER,...]
 // Asks for the SEC contact email and the FMP + Finnhub keys (hidden, not saved).
@@ -11,8 +11,7 @@ import readline from 'node:readline';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fetchCompanyBundle } from '../src/lib/research/companyData.js';
-import { scoreStock } from '../src/lib/research/scoring.js';
+import { runPreliminary } from '../src/lib/research/run.js';
 import { ttm } from '../src/lib/research/fundamentals.js';
 
 const TICKERS = (process.argv[2] || 'VST,UBER,GOOGL,GEV,NVDA,DUOL,TSM,ASML').split(',').map((t) => t.trim().toUpperCase());
@@ -59,7 +58,8 @@ const results = [];
 
 for (const t of TICKERS) {
   const started = Date.now();
-  const b = await fetchCompanyBundle(transport, t);
+  const run = await runPreliminary(transport, t);
+  const b = run.bundle;
   const secs = ((Date.now() - started) / 1000).toFixed(1);
   if (!b.input) {
     console.log(`\n❌ ${t} — ${b.dataTags.map((x) => x.text).join(' · ')}`);
@@ -67,7 +67,7 @@ for (const t of TICKERS) {
     continue;
   }
   const q = b.input.quarters;
-  const r = scoreStock({ ...b.input, stage: 'preliminary', peers: { source: 'auto', list: [] }, beatRate: null });
+  const r = run.result;
   const row = {
     ticker: t,
     name: b.name,
@@ -96,7 +96,10 @@ for (const t of TICKERS) {
     checks: r.quality.checks.map((c) => `${c.label}: ${c.display} (${c.color})`),
     piotroski: r.quality.piotroski?.score,
     altmanZ: r.quality.altmanZ,
-    tags: [...b.dataTags, ...r.tags].map((x) => x.text),
+    tags: r.tags.map((x) => x.text),
+    peers: run.peers.used.map((p) => ({ ticker: p.ticker, opPe: p.opPe, debtToEquity: p.debtToEquity })),
+    peersSkipped: run.peers.skipped,
+    valueParts: r.value.parts.map((x) => `${x.label}: ${x.display} → ${x.points ?? 'n/a'}`),
     seconds: Number(secs),
   };
   results.push(row);
@@ -105,7 +108,10 @@ for (const t of TICKERS) {
   console.log(`   TTM revenue ${B(ttm(q, 'revenue'))} · op income ${B(ttm(q, 'operatingIncome'))} · net income ${B(ttm(q, 'netIncome'))}`);
   console.log(`   TTM op cash flow ${B(ttm(q, 'operatingCashFlow'))} · capex ${B(ttm(q, 'capex'))} · debt ${B(b.input.balance?.totalDebt)} · equity ${B(b.input.balance?.equity)}`);
   console.log(`   Operating P/E ${N(row.operatingPe)} · reported P/E ${N(row.reportedPe)} · history ${row.opPeHistory.map((h) => `${h.year}:${N(h.opPe)}`).join(' ')}`);
-  console.log(`   Score (preliminary, no peers yet) ${row.score.investment} → ${row.score.verdict} · Q ${row.score.quality} · V ${row.score.value} · U ${row.score.upside}`);
+  console.log(`   Auto-peers: ${row.peers.map((p) => `${p.ticker} (P/E ${N(p.opPe)}, D/E ${N(p.debtToEquity, 2)})`).join(' · ') || 'none usable'}`);
+  if (row.peersSkipped.length) console.log(`   Skipped: ${row.peersSkipped.map((x) => `${x.ticker} – ${x.reason}`).join(' · ')}`);
+  console.log(`   Value: ${row.valueParts.join(' · ')}`);
+  console.log(`   Score (Preliminary, auto-peers) ${row.score.investment} → ${row.score.verdict} · Q ${row.score.quality} · V ${row.score.value} · U ${row.score.upside}`);
   if (row.tags.length) console.log(`   Tags: ${row.tags.join(' · ')}`);
 }
 
