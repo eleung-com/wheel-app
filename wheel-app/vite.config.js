@@ -3,7 +3,11 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/wheel-app/',
+  // Cloudflare Pages (wheel-desk.pages.dev) serves the app at the root; the
+  // old GitHub Pages site serves it under /wheel-app/. Pages sets CF_PAGES=1
+  // during its build, so the same main branch builds right for both while
+  // the move is tested. Drop the GitHub branch once Pages is the only host.
+  base: process.env.CF_PAGES ? '/' : '/wheel-app/',
   server: {
     port: 5173,
     proxy: {

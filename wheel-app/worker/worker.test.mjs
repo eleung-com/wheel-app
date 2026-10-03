@@ -665,5 +665,45 @@ console.log('\nClaude routine');
   check('redo → fired + Claude written cleared', r.status === 200 && body.claude?.fired && rp?.['Claude written']?.date === null && body.run?.claudeWritten === null, JSON.stringify(body));
 }
 
+// ── Cloudflare Pages move ───────────────────────────────────────────────────
+console.log('\nCloudflare Pages');
+{
+  stubFetch(() => jsonRes({}));
+  for (const [o, want] of [
+    ['https://wheel-desk.pages.dev', true],
+    ['https://abc123.wheel-desk.pages.dev', true],
+    ['https://evil.pages.dev', false],
+    ['https://wheel-desk.pages.dev.evil.com', false],
+  ]) {
+    const r = await worker.fetch(new Request('https://w.dev/notion/runs', { method: 'OPTIONS', headers: { Origin: o } }), ENV);
+    const got = r.headers.get('access-control-allow-origin') === o;
+    check(`notion CORS ${want ? 'allows' : 'refuses'} ${o}`, got === want, 'got ' + r.headers.get('access-control-allow-origin'));
+  }
+
+  const { onRequest } = await import('../functions/research/[[path]].js');
+  const PENV = { FMP_KEY: 'fmpk', FINNHUB_KEY: 'fhk', SEC_CONTACT_EMAIL: 'x@y.z', APP_SECRET: 's3cret' };
+  const preq = (path, headers = {}, method = 'GET') => ({ request: new Request('https://wheel-desk.pages.dev' + path, { method, headers }), env: PENV });
+
+  stubFetch(() => jsonRes({ ok: 1 }));
+  let r = await onRequest(preq('/research/sec/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json', { 'x-app-secret': 's3cret' }));
+  check('pages fn: sec → 200 via data.sec.gov', r.status === 200 && calls[0].url.startsWith('https://data.sec.gov/api/'), calls[0]?.url);
+  check('pages fn: SEC contact UA', /x@y\.z/.test(calls[0].init.headers['User-Agent']));
+  check('pages fn: no browser caching', r.headers.get('cache-control') === 'private, no-store');
+
+  stubFetch(() => jsonRes({}));
+  r = await onRequest(preq('/research/finnhub/api/v1/stock/peers?symbol=MU', { 'x-app-secret': 's3cret' }));
+  check('pages fn: finnhub adds token', calls[0].url === 'https://finnhub.io/api/v1/stock/peers?symbol=MU&token=fhk', calls[0].url);
+
+  stubFetch(() => jsonRes({}));
+  r = await onRequest(preq('/research/fmp/x', { 'x-app-secret': 'wrong' }));
+  check('pages fn: wrong secret → 401, no upstream call', r.status === 401 && calls.length === 0);
+  r = await onRequest(preq('/research/fmp/x', { 'x-app-secret': 's3cret' }, 'POST'));
+  check('pages fn: POST → 405', r.status === 405);
+  r = await onRequest(preq('/research/other/x', { 'x-app-secret': 's3cret' }));
+  check('pages fn: unknown host → 404, no call', r.status === 404 && calls.length === 0);
+  r = await onRequest({ request: new Request('https://wheel-desk.pages.dev/research/fmp/x'), env: { FMP_KEY: 'k' } });
+  check('pages fn: no APP_SECRET set → Access is the lock, request allowed', r.status === 200);
+}
+
 console.log('\n' + (fail === 0 ? '✅' : '❌') + ` ${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

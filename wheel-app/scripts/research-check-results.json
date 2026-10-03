@@ -1,0 +1,921 @@
+{
+  "ranAt": "2026-10-03T02:05:20.422Z",
+  "results": [
+    {
+      "ticker": "VST",
+      "name": "Vistra Corp.",
+      "taxonomy": "us-gaap",
+      "currency": "USD",
+      "latestPeriod": "2026-06-30",
+      "quarters": 20,
+      "yearlyOnly": false,
+      "price": 140.02,
+      "sharesB": 0.335635195,
+      "marketCapB": 46.9956400039,
+      "ttm": {
+        "revenueB": 19.212,
+        "operatingIncomeB": 3.563,
+        "netIncomeB": 2.219,
+        "operatingCashFlowB": 5.121,
+        "capexB": 2.866
+      },
+      "debtB": 19.595,
+      "equityB": 5.482,
+      "operatingPe": 13.189907382514734,
+      "reportedPe": 21.178747185173503,
+      "opPeHistory": [
+        {
+          "year": 2021,
+          "opPe": null
+        },
+        {
+          "year": 2022,
+          "opPe": null
+        },
+        {
+          "year": 2023,
+          "opPe": 5.03590176491889
+        },
+        {
+          "year": 2024,
+          "opPe": 11.4513392961147
+        },
+        {
+          "year": 2025,
+          "opPe": 28.520897553757436
+        }
+      ],
+      "target": null,
+      "score": {
+        "investment": 46,
+        "verdict": "Not worth it",
+        "quality": 43,
+        "value": 50,
+        "upside": null
+      },
+      "checks": [
+        "Revenue growth: +3.8% (yellow)",
+        "Operating income growth: -0.5% (red)",
+        "Operating margin trend: -0.8 pts (yellow)",
+        "Debt-to-equity: 3.57 (red)",
+        "Free cash flow: op cash +21.2% (green)",
+        "Beat rate: pending (na)"
+      ],
+      "piotroski": 4.5,
+      "altmanZ": 1.2755840603727058,
+      "tags": [
+        "No FMP analyst target — waiting on Claude",
+        "Altman Z 1.3 — below 1.8 (financial-distress zone)",
+        "Left out as P/E outliers (>3× this stock's): TLN",
+        "Only 1 sensible auto-peer(s) — peer comparison waits for Claude's peers",
+        "No analyst target yet — upside left out"
+      ],
+      "peers": [
+        {
+          "ticker": "TLN",
+          "opPe": 174.65291885715908,
+          "debtToEquity": 5.923267326732673
+        },
+        {
+          "ticker": "HNRG",
+          "opPe": 37.54435834051597,
+          "debtToEquity": 0.2255532438055608
+        },
+        {
+          "ticker": "FISN",
+          "opPe": null,
+          "debtToEquity": 0
+        }
+      ],
+      "peersSkipped": [
+        {
+          "ticker": "AES",
+          "reason": "No quarterly US-GAAP operating income"
+        },
+        {
+          "ticker": "MTEI",
+          "reason": "No US SEC filings"
+        }
+      ],
+      "valueParts": [
+        "Operating P/E vs own 5-yr median: 13.2 vs 11.5 → 50",
+        "Operating P/E vs peer median: n/a → n/a",
+        "PEG (operating): 1.08 → 50"
+      ],
+      "seconds": 10.7
+    },
+    {
+      "ticker": "UBER",
+      "name": "Uber Technologies, Inc",
+      "taxonomy": "us-gaap",
+      "currency": "USD",
+      "latestPeriod": "2026-06-30",
+      "quarters": 20,
+      "yearlyOnly": false,
+      "price": 68.11,
+      "sharesB": 2.042560121,
+      "marketCapB": 139.11876984130998,
+      "ttm": {
+        "revenueB": 55.227,
+        "operatingIncomeB": 6.7,
+        "netIncomeB": 9.579,
+        "operatingCashFlowB": 10.424,
+        "capexB": 0.308
+      },
+      "debtB": 14.72,
+      "equityB": 27.316,
+      "operatingPe": 20.763995498702986,
+      "reportedPe": 14.523308261959494,
+      "opPeHistory": [
+        {
+          "year": 2021,
+          "opPe": null
+        },
+        {
+          "year": 2022,
+          "opPe": null
+        },
+        {
+          "year": 2023,
+          "opPe": 115.18012998585881
+        },
+        {
+          "year": 2024,
+          "opPe": 45.01929764175959
+        },
+        {
+          "year": 2025,
+          "opPe": 30.218985640012317
+        }
+      ],
+      "target": 104.56,
+      "score": {
+        "investment": 97,
+        "verdict": "Worth investing",
+        "quality": 93,
+        "value": 100,
+        "upside": 100
+      },
+      "checks": [
+        "Revenue growth: +16.7% (green)",
+        "Operating income growth: +48.6% (green)",
+        "Operating margin trend: +2.6 pts (green)",
+        "Debt-to-equity: 0.54 (green)",
+        "Free cash flow: op cash +18.6% (green)",
+        "Beat rate: pending (na)"
+      ],
+      "piotroski": 6.75,
+      "altmanZ": 3.4060471554462035,
+      "tags": [
+        "Only 0 sensible auto-peer(s) — peer comparison waits for Claude's peers"
+      ],
+      "peers": [
+        {
+          "ticker": "LYFT",
+          "opPe": null,
+          "debtToEquity": 0.34524147337353644
+        }
+      ],
+      "peersSkipped": [
+        {
+          "ticker": "CAR",
+          "reason": "Data error (((intermediate value) || []).filter is not a function)"
+        },
+        {
+          "ticker": "LIME",
+          "reason": "No quarterly US-GAAP operating income"
+        },
+        {
+          "ticker": "HTZ",
+          "reason": "No quarterly US-GAAP operating income"
+        },
+        {
+          "ticker": "MRT",
+          "reason": "No quarterly US-GAAP operating income"
+        },
+        {
+          "ticker": "WETO",
+          "reason": "No quarterly US-GAAP operating income"
+        },
+        {
+          "ticker": "DWAY",
+          "reason": "No usable numbers (operating loss and no debt-to-equity)"
+        },
+        {
+          "ticker": "YAYO",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "AACS",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "GETR",
+          "reason": "No US SEC filings"
+        }
+      ],
+      "valueParts": [
+        "Operating P/E vs own 5-yr median: 20.8 vs 45.0 → 100",
+        "Operating P/E vs peer median: n/a → n/a",
+        "PEG (operating): n/a → n/a"
+      ],
+      "seconds": 15.8
+    },
+    {
+      "ticker": "GOOGL",
+      "name": "Alphabet Inc.",
+      "taxonomy": "us-gaap",
+      "currency": "USD",
+      "latestPeriod": "2026-06-30",
+      "quarters": 20,
+      "yearlyOnly": false,
+      "price": 343.5,
+      "sharesB": 12.309,
+      "marketCapB": 4228.1415,
+      "ttm": {
+        "revenueB": 445.867,
+        "operatingIncomeB": 147.628,
+        "netIncomeB": 244.205,
+        "operatingCashFlowB": 185.675,
+        "capexB": 132.402
+      },
+      "debtB": 100.164,
+      "equityB": 640.48,
+      "operatingPe": 28.640511962500337,
+      "reportedPe": 17.3139022542536,
+      "opPeHistory": [
+        {
+          "year": 2021,
+          "opPe": 23.54392550286443
+        },
+        {
+          "year": 2022,
+          "opPe": 15.082636259701884
+        },
+        {
+          "year": 2023,
+          "opPe": 20.733176189534525
+        },
+        {
+          "year": 2024,
+          "opPe": 20.964651107618376
+        },
+        {
+          "year": 2025,
+          "opPe": 29.665372484287698
+        }
+      ],
+      "target": 431.57,
+      "score": {
+        "investment": 72,
+        "verdict": "Maybe",
+        "quality": 82,
+        "value": 50,
+        "upside": 85
+      },
+      "checks": [
+        "Revenue growth: +20.1% (green)",
+        "Operating income growth: +21.6% (green)",
+        "Operating margin trend: +0.4 pts (yellow)",
+        "Debt-to-equity: 0.16 (green)",
+        "Free cash flow: op cash +38.9% (green)",
+        "Beat rate: pending (na)"
+      ],
+      "piotroski": 5.625,
+      "altmanZ": 16.45495479071243,
+      "tags": [],
+      "peers": [
+        {
+          "ticker": "META",
+          "opPe": 21.49220932506586,
+          "debtToEquity": 0.32028052874768875
+        },
+        {
+          "ticker": "RDDT",
+          "opPe": 38.053746056754285,
+          "debtToEquity": 0
+        },
+        {
+          "ticker": "PINS",
+          "opPe": 48.35728983050848,
+          "debtToEquity": 0
+        },
+        {
+          "ticker": "SNAP",
+          "opPe": null,
+          "debtToEquity": 1.9136469118172081
+        },
+        {
+          "ticker": "MTCH",
+          "opPe": 9.36903910005355,
+          "debtToEquity": null
+        },
+        {
+          "ticker": "RUM",
+          "opPe": null,
+          "debtToEquity": 0
+        }
+      ],
+      "peersSkipped": [
+        {
+          "ticker": "PPLI",
+          "reason": "Not checked (enough peers)"
+        },
+        {
+          "ticker": "CARG",
+          "reason": "Not checked (enough peers)"
+        },
+        {
+          "ticker": "DJT",
+          "reason": "Not checked (enough peers)"
+        },
+        {
+          "ticker": "GRND",
+          "reason": "Not checked (enough peers)"
+        }
+      ],
+      "valueParts": [
+        "Operating P/E vs own 5-yr median: 28.6 vs 21.0 → 0",
+        "Operating P/E vs peer median: 28.6 vs 29.8 → 100",
+        "PEG (operating): 1.12 → 50"
+      ],
+      "seconds": 14.7
+    },
+    {
+      "ticker": "GEV",
+      "name": "GE Vernova Inc.",
+      "taxonomy": "us-gaap",
+      "currency": "USD",
+      "latestPeriod": "2026-06-30",
+      "quarters": 14,
+      "yearlyOnly": false,
+      "price": 988.7,
+      "sharesB": 0.266333581,
+      "marketCapB": 263.3240115347,
+      "ttm": {
+        "revenueB": 41.368,
+        "operatingIncomeB": 1.799,
+        "netIncomeB": 9.529,
+        "operatingCashFlowB": 14.139,
+        "capexB": 1.701
+      },
+      "debtB": 2.849,
+      "equityB": 11.957,
+      "operatingPe": 146.3724355390217,
+      "reportedPe": 27.633960702560607,
+      "opPeHistory": [
+        {
+          "year": 2022,
+          "opPe": null
+        },
+        {
+          "year": 2023,
+          "opPe": null
+        },
+        {
+          "year": 2024,
+          "opPe": 192.67947556786098
+        },
+        {
+          "year": 2025,
+          "opPe": 126.91381394853944
+        }
+      ],
+      "target": null,
+      "score": {
+        "investment": 95,
+        "verdict": "Worth investing",
+        "quality": 90,
+        "value": 100,
+        "upside": null
+      },
+      "checks": [
+        "Revenue growth: +13% (green)",
+        "Operating income growth: +174.7% (green)",
+        "Operating margin trend: +2.6 pts (green)",
+        "Debt-to-equity: 0.24 (green)",
+        "Free cash flow: op cash +295.4% (green)",
+        "Beat rate: pending (na)"
+      ],
+      "piotroski": 6,
+      "altmanZ": 3.914143018996175,
+      "tags": [
+        "No FMP analyst target — waiting on Claude",
+        "Only 2 sensible auto-peer(s) — peer comparison waits for Claude's peers",
+        "No analyst target yet — upside left out"
+      ],
+      "peers": [
+        {
+          "ticker": "SMR",
+          "opPe": null,
+          "debtToEquity": 0
+        },
+        {
+          "ticker": "PSIX",
+          "opPe": 11.767417416478029,
+          "debtToEquity": 0.028478145251836822
+        },
+        {
+          "ticker": "BW",
+          "opPe": 37.75795429562434,
+          "debtToEquity": 3.157628684481166
+        },
+        {
+          "ticker": "NRGV",
+          "opPe": null,
+          "debtToEquity": 38.530115210733555
+        },
+        {
+          "ticker": "NPWR",
+          "opPe": null,
+          "debtToEquity": 0
+        }
+      ],
+      "peersSkipped": [
+        {
+          "ticker": "BE",
+          "reason": "Data error (((intermediate value) || []).filter is not a function)"
+        },
+        {
+          "ticker": "FPS",
+          "reason": "Operating income data out of date"
+        },
+        {
+          "ticker": "XE",
+          "reason": "Operating income data out of date"
+        },
+        {
+          "ticker": "EROC",
+          "reason": "No quarterly US-GAAP operating income"
+        },
+        {
+          "ticker": "NNE",
+          "reason": "No quarterly US-GAAP operating income"
+        }
+      ],
+      "valueParts": [
+        "Operating P/E vs own 5-yr median: 146.4 vs 159.8 → 100",
+        "Operating P/E vs peer median: n/a → n/a",
+        "PEG (operating): n/a → n/a"
+      ],
+      "seconds": 21.5
+    },
+    {
+      "ticker": "NVDA",
+      "name": "NVIDIA CORP",
+      "taxonomy": "us-gaap",
+      "currency": "USD",
+      "latestPeriod": "2026-07-26",
+      "quarters": 20,
+      "yearlyOnly": false,
+      "price": 233.95,
+      "sharesB": 24.1,
+      "marketCapB": 5638.195,
+      "ttm": {
+        "revenueB": 302.969,
+        "operatingIncomeB": 197.579,
+        "netIncomeB": 192.879,
+        "operatingCashFlowB": 134.36,
+        "capexB": 7.354
+      },
+      "debtB": 33.366,
+      "equityB": 228.984,
+      "operatingPe": 28.53640822152152,
+      "reportedPe": 29.231772250996737,
+      "opPeHistory": [
+        {
+          "year": 2022,
+          "opPe": 61.20890364824046
+        },
+        {
+          "year": 2023,
+          "opPe": 114.2433513746117
+        },
+        {
+          "year": 2024,
+          "opPe": 46.650946581376694
+        },
+        {
+          "year": 2025,
+          "opPe": 35.968079660094915
+        },
+        {
+          "year": 2026,
+          "opPe": 35.62056891141252
+        }
+      ],
+      "target": 338.96,
+      "score": {
+        "investment": 93,
+        "verdict": "Worth investing",
+        "quality": 83,
+        "value": 100,
+        "upside": 100
+      },
+      "checks": [
+        "Revenue growth: +83.4% (green)",
+        "Operating income growth: +105.9% (green)",
+        "Operating margin trend: +7.1 pts (green)",
+        "Debt-to-equity: 0.15 (green)",
+        "Free cash flow: op cash +74.4% (green)",
+        "Beat rate: pending (na)"
+      ],
+      "piotroski": 4,
+      "altmanZ": 72.98991581578812,
+      "tags": [
+        "Left out as P/E outliers (>3× this stock's): AMD, MRVL"
+      ],
+      "peers": [
+        {
+          "ticker": "AVGO",
+          "opPe": 39.59702224169897,
+          "debtToEquity": 0.5960377169224597
+        },
+        {
+          "ticker": "MU",
+          "opPe": 20.49142352815337,
+          "debtToEquity": 0.05680870497597395
+        },
+        {
+          "ticker": "AMD",
+          "opPe": 159.50096391402897,
+          "debtToEquity": 0.047988813518981314
+        },
+        {
+          "ticker": "INTC",
+          "opPe": null,
+          "debtToEquity": 0.5772886157501542
+        },
+        {
+          "ticker": "TXN",
+          "opPe": 36.98816792759857,
+          "debtToEquity": 0.7803631920919643
+        },
+        {
+          "ticker": "MRVL",
+          "opPe": 152.9309556139115,
+          "debtToEquity": 0.2678074208379201
+        }
+      ],
+      "peersSkipped": [
+        {
+          "ticker": "ADI",
+          "reason": "Not checked (enough peers)"
+        },
+        {
+          "ticker": "QCOM",
+          "reason": "Not checked (enough peers)"
+        },
+        {
+          "ticker": "MPWR",
+          "reason": "Not checked (enough peers)"
+        },
+        {
+          "ticker": "ALAB",
+          "reason": "Not checked (enough peers)"
+        }
+      ],
+      "valueParts": [
+        "Operating P/E vs own 5-yr median: 28.5 vs 46.7 → 100",
+        "Operating P/E vs peer median: 28.5 vs 37.0 → 100",
+        "PEG (operating): 0.17 → 100"
+      ],
+      "seconds": 14
+    },
+    {
+      "ticker": "DUOL",
+      "name": "Duolingo, Inc.",
+      "taxonomy": "us-gaap",
+      "currency": "USD",
+      "latestPeriod": "2026-06-30",
+      "quarters": 20,
+      "yearlyOnly": false,
+      "price": 144.27,
+      "sharesB": 0.050031,
+      "marketCapB": 7.217972370000001,
+      "ttm": {
+        "revenueB": 1.145002,
+        "operatingIncomeB": 0.157085,
+        "netIncomeB": 0.410767,
+        "operatingCashFlowB": 0.430548,
+        "capexB": 0.022617
+      },
+      "debtB": 0,
+      "equityB": 1.409742,
+      "operatingPe": 45.94946920457078,
+      "reportedPe": 17.571938276443827,
+      "opPeHistory": [
+        {
+          "year": 2021,
+          "opPe": null
+        },
+        {
+          "year": 2022,
+          "opPe": null
+        },
+        {
+          "year": 2023,
+          "opPe": null
+        },
+        {
+          "year": 2024,
+          "opPe": 243.97408335277643
+        },
+        {
+          "year": 2025,
+          "opPe": 62.53635760123921
+        }
+      ],
+      "target": null,
+      "score": {
+        "investment": 66,
+        "verdict": "Maybe",
+        "quality": 80,
+        "value": 50,
+        "upside": null
+      },
+      "checks": [
+        "Revenue growth: +29.4% (green)",
+        "Operating income growth: +86.1% (green)",
+        "Operating margin trend: +4.2 pts (green)",
+        "Debt-to-equity: 0.00 (green)",
+        "Free cash flow: op cash +28.2% (green)",
+        "Beat rate: pending (na)"
+      ],
+      "piotroski": 3,
+      "altmanZ": 8.19386407039815,
+      "tags": [
+        "No FMP analyst target — waiting on Claude",
+        "No debt reported in SEC filings — treated as zero",
+        "No analyst target yet — upside left out"
+      ],
+      "peers": [
+        {
+          "ticker": "LAUR",
+          "opPe": 11.905266594905237,
+          "debtToEquity": 0.19455800073945445
+        },
+        {
+          "ticker": "CVSA",
+          "opPe": 11.14099769834314,
+          "debtToEquity": 0.4583438495074973
+        },
+        {
+          "ticker": "LOPE",
+          "opPe": 14.51738442260047,
+          "debtToEquity": 0.16097468443292023
+        },
+        {
+          "ticker": "LRN",
+          "opPe": 7.273505318823251,
+          "debtToEquity": 0.2560727647428919
+        },
+        {
+          "ticker": "BFAM",
+          "opPe": 10.045755201779453,
+          "debtToEquity": 1.1461698174599557
+        },
+        {
+          "ticker": "MH",
+          "opPe": 8.337889274073472,
+          "debtToEquity": 3.24873476325169
+        }
+      ],
+      "peersSkipped": [
+        {
+          "ticker": "GHC",
+          "reason": "Operating income data out of date"
+        },
+        {
+          "ticker": "PRDO",
+          "reason": "Enough peers already"
+        },
+        {
+          "ticker": "STRA",
+          "reason": "Not checked (enough peers)"
+        },
+        {
+          "ticker": "COUR",
+          "reason": "Not checked (enough peers)"
+        }
+      ],
+      "valueParts": [
+        "Operating P/E vs own 5-yr median: 45.9 vs 153.3 → 100",
+        "Operating P/E vs peer median: 45.9 vs 10.6 → 0",
+        "PEG (operating): n/a → n/a"
+      ],
+      "seconds": 17.6
+    },
+    {
+      "ticker": "TSM",
+      "name": "TAIWAN SEMICONDUCTOR MANUFACTURING CO LTD",
+      "taxonomy": "ifrs-full",
+      "currency": "TWD",
+      "latestPeriod": "2024-12-31",
+      "quarters": 20,
+      "yearlyOnly": true,
+      "price": 472.78,
+      "sharesB": 4.336779825930716,
+      "marketCapB": 2050.342766103524,
+      "ttm": {
+        "revenueB": 91.17069255,
+        "operatingIncomeB": 41.6446695,
+        "netIncomeB": 36.46200285,
+        "operatingCashFlowB": 57.52457865,
+        "capexB": 30.11420475
+      },
+      "debtB": 1.0024686,
+      "equityB": 134.7970554,
+      "operatingPe": 49.23421870603448,
+      "reportedPe": 56.232313253289206,
+      "opPeHistory": [
+        {
+          "year": 2020,
+          "opPe": 26.486545222220546
+        },
+        {
+          "year": 2021,
+          "opPe": 25.483433571560017
+        },
+        {
+          "year": 2022,
+          "opPe": 9.146209232684406
+        },
+        {
+          "year": 2023,
+          "opPe": 15.538569430126138
+        },
+        {
+          "year": 2024,
+          "opPe": 20.56615365012562
+        }
+      ],
+      "target": 578.43,
+      "score": {
+        "investment": 66,
+        "verdict": "Maybe",
+        "quality": 97,
+        "value": 25,
+        "upside": 74
+      },
+      "checks": [
+        "Revenue growth: +33.9% (green)",
+        "Operating income growth: +43.5% (green)",
+        "Operating margin trend: +3.1 pts (green)",
+        "Debt-to-equity: 0.01 (green)",
+        "Free cash flow: op cash +47% (green)",
+        "Beat rate: pending (na)"
+      ],
+      "piotroski": 8,
+      "altmanZ": 18.402191594285778,
+      "tags": [
+        "Financials converted from TWD at today's rate (0.0315)",
+        "Share count inferred from Finnhub market cap (ADR basis)",
+        "P/E history assumes today's share count",
+        "Yearly data only (foreign filer) — 12-month checks compare full years",
+        "Newest SEC financials are from 2024-12-31 (21 months old)",
+        "Only 0 sensible auto-peer(s) — peer comparison waits for Claude's peers"
+      ],
+      "peers": [],
+      "peersSkipped": [
+        {
+          "ticker": "2330.TW",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "2454.TW",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "3711.TW",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "2303.TW",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "2408.TW",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "3443.TW",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "3653.TW",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "2344.TW",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "5274.TWO",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "8299.TWO",
+          "reason": "No US SEC filings"
+        }
+      ],
+      "valueParts": [
+        "Operating P/E vs own 5-yr median: 49.2 vs 20.6 → 0",
+        "Operating P/E vs peer median: n/a → n/a",
+        "PEG (operating): 1.84 → 50"
+      ],
+      "seconds": 7.7
+    },
+    {
+      "ticker": "ASML",
+      "name": "ASML HOLDING NV",
+      "taxonomy": "us-gaap",
+      "currency": "EUR",
+      "latestPeriod": "2025-12-31",
+      "quarters": 20,
+      "yearlyOnly": true,
+      "price": 1867.31,
+      "sharesB": 0.385417665,
+      "marketCapB": 719.6942600311501,
+      "ttm": {
+        "revenueB": 36.77357961,
+        "operatingIncomeB": 12.72198598,
+        "netIncomeB": 10.81730158,
+        "operatingCashFlowB": 14.249673449999998,
+        "capexB": 1.7714015199999997
+      },
+      "debtB": 4.94283613,
+      "equityB": 22.07745354,
+      "operatingPe": 56.57090497997468,
+      "reportedPe": 66.53177363213997,
+      "opPeHistory": [
+        {
+          "year": 2021,
+          "opPe": 42.182478140645365
+        },
+        {
+          "year": 2022,
+          "opPe": 29.462754449956137
+        },
+        {
+          "year": 2023,
+          "opPe": 29.25544624420311
+        },
+        {
+          "year": 2024,
+          "opPe": 26.837062420852178
+        },
+        {
+          "year": 2025,
+          "opPe": 32.41183712034977
+        }
+      ],
+      "target": null,
+      "score": {
+        "investment": 52,
+        "verdict": "Not worth it",
+        "quality": 97,
+        "value": 0,
+        "upside": null
+      },
+      "checks": [
+        "Revenue growth: +15.6% (green)",
+        "Operating income growth: +25.3% (green)",
+        "Operating margin trend: +2.7 pts (green)",
+        "Debt-to-equity: 0.22 (green)",
+        "Free cash flow: op cash +13.4% (green)",
+        "Beat rate: pending (na)"
+      ],
+      "piotroski": 8,
+      "altmanZ": 14.413597049411848,
+      "tags": [
+        "No FMP analyst target — waiting on Claude",
+        "Financials converted from EUR at today's rate (1.1257)",
+        "Yearly data only (foreign filer) — 12-month checks compare full years",
+        "Only 0 sensible auto-peer(s) — peer comparison waits for Claude's peers",
+        "No analyst target yet — upside left out"
+      ],
+      "peers": [],
+      "peersSkipped": [
+        {
+          "ticker": "ASML.AS",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "ASM.AS",
+          "reason": "No US SEC filings"
+        },
+        {
+          "ticker": "BESI.AS",
+          "reason": "No US SEC filings"
+        }
+      ],
+      "valueParts": [
+        "Operating P/E vs own 5-yr median: 56.6 vs 29.5 → 0",
+        "Operating P/E vs peer median: n/a → n/a",
+        "PEG (operating): 2.79 → 0"
+      ],
+      "seconds": 4.2
+    }
+  ]
+}
