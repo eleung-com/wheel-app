@@ -5,11 +5,11 @@ const NOTION_ORIGIN  = 'https://api.notion.com';
 const NOTION_VERSION = '2022-06-28';
 
 // Stock Scan Results
-const NOTION_DB_ID = '35c400a3-854e-80ff-9b36-fd7ddaa3a850';
+export const NOTION_DB_ID = '35c400a3-854e-80ff-9b36-fd7ddaa3a850';
 
 export const UUID_RE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 
-function notionFetch(env, path, init) {
+export function notionFetch(env, path, init) {
   return fetch(NOTION_ORIGIN + path, {
     ...init,
     headers: {
@@ -21,7 +21,7 @@ function notionFetch(env, path, init) {
   });
 }
 
-function plain(rich) {
+export function plain(rich) {
   return (rich || []).map((t) => t.plain_text).join('');
 }
 

@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import MiniBarChart from './MiniBarChart';
+import RejectModal from './RejectModal';
 import { plainLines, chartSeries, money } from '../../../lib/research/explain';
+import { rejectedBefore, runStamp } from '../../../lib/research/runRecord';
 
 // Result screen for one "Run a stock" (layout from the approved mockup,
-// PRD §6A-BUILD §4). Watch / Reject / history are wired in P1.5; the Claude
-// write-up arrives in P1.6.
+// PRD §6A-BUILD §4). Save status, rejected-before banner, history and
+// Watch / Reject come from Notion Stock Runs (P1.5); the Claude write-up
+// arrives in P1.6.
 
 const VERDICT_TONE = { 'Worth investing': 'g', Maybe: 'a', 'Not worth it': 'r' };
 const TONE_VAR = { g: 'var(--g)', a: 'var(--a)', r: 'var(--r)', n: 'var(--mu)' };
@@ -26,12 +29,105 @@ function CheckRow({ tone, name, value, pts, children, open }) {
   );
 }
 
-export default function ResearchResult({ run, onBack, onRerun, running }) {
+const fmtDate = (iso) => runStamp(iso);
+
+function SaveStatus({ save, onRetry }) {
+  if (!save) return null;
+  if (save.state === 'saving') return <div className="rs-save">Saving to Notion…</div>;
+  if (save.state === 'saved') return <div className="rs-save ok">Saved to Notion</div>;
+  return (
+    <div className="rs-save err" role="alert">
+      Not saved to Notion — {save.error}{' '}
+      <button type="button" className="rs-link" onClick={onRetry}>Retry</button>
+    </div>
+  );
+}
+
+function RejectedBanner({ row }) {
+  if (!row) return null;
+  return (
+    <div className="rs-banner" role="note">
+      <b>Rejected {fmtDate(row.runAt).split(' ')[0]}:</b> {row.rejectReason || 'no reason given'}
+      {row.investmentScore != null ? ` (score then: ${row.investmentScore})` : ''}
+      {row.rejectTags?.length ? <div className="rs-banner-tags">{row.rejectTags.join(' · ')}</div> : null}
+    </div>
+  );
+}
+
+function History({ save }) {
+  const rows = save?.history || [];
+  return (
+    <>
+      <div className="slabel">History</div>
+      <div className="rs-hist">
+        {save?.state === 'saving' && <div className="rs-muted rs-hist-empty">Loading…</div>}
+        {save?.state === 'error' && <div className="rs-muted rs-hist-empty">Unavailable until this run is saved.</div>}
+        {save?.state === 'saved' && rows.map((h) => (
+          <div key={h.pageId} className={`rs-hrow static${h.pageId === save.pageId ? ' cur' : ''}`}>
+            <b>{fmtDate(h.runAt)}</b>
+            <span className="rs-muted">{h.version || ''}</span>
+            <span className={`rs-hv ${VERDICT_TONE[h.verdict] || 'n'}`}>{h.investmentScore ?? '—'} · {h.verdict || '—'}</span>
+            <span className="rs-hd">{h.decision === 'Watch' ? 'Watch' : h.decision === 'Reject' ? 'Rejected' : h.pageId === save.pageId ? 'This run' : ''}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function Actions({ ticker, save, current, onDecide, onRerun, running }) {
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ready = save?.state === 'saved' && !!save.pageId;
+  const decision = current?.decision || null;
+  const why = ready ? undefined : 'Available once the run is saved to Notion';
+
+  async function watch() {
+    setBusy(true);
+    await onDecide({ decision: decision === 'Watch' ? null : 'Watch' });
+    setBusy(false);
+  }
+
+  return (
+    <>
+      {decision === 'Watch' && (
+        <div className="rs-decided g">Watching. Add {ticker} to your TradingView watchlist (manual). Tap Watch again to undo.</div>
+      )}
+      {decision === 'Reject' && (
+        <div className="rs-decided r">Rejected: {current.rejectReason}{current.rejectTags?.length ? ` · ${current.rejectTags.join(', ')}` : ''}. Tap Reject to edit or clear.</div>
+      )}
+      <div className="rs-actions">
+        <button type="button" className={`btn-p${decision === 'Watch' ? ' rs-on' : ''}`} disabled={!ready || busy} title={why}
+          aria-pressed={decision === 'Watch'} onClick={watch}>
+          {busy ? <span className="spinner" /> : decision === 'Watch' ? '✓ Watching' : 'Watch'}
+        </button>
+        <button type="button" className={`btn-s rs-reject${decision === 'Reject' ? ' rs-on' : ''}`} disabled={!ready || busy} title={why}
+          aria-pressed={decision === 'Reject'} onClick={() => setRejectOpen(true)}>
+          {decision === 'Reject' ? '✕ Rejected' : 'Reject'}
+        </button>
+        <button type="button" className="btn-s rs-rerun" onClick={onRerun} disabled={running}>↻ Re-run</button>
+      </div>
+      <RejectModal
+        open={rejectOpen}
+        ticker={ticker}
+        current={current}
+        onSave={onDecide}
+        onClear={() => onDecide({ decision: null })}
+        onClose={() => setRejectOpen(false)}
+      />
+    </>
+  );
+}
+
+export default function ResearchResult({ run, onBack, onRerun, running, save, onRetrySave, onDecide }) {
   const r = run.result;
   const b = run.bundle;
   const name = b?.name || run.ticker;
   const price = b?.input?.price;
   const tagsShown = r ? r.tags : b?.dataTags || [];
+  const current = save?.history?.find((h) => h.pageId === save.pageId) || null;
+  const prevReject = save?.state === 'saved' ? rejectedBefore(save.history, save.pageId) : null;
+  const actions = <Actions ticker={run.ticker} save={save} current={current} onDecide={onDecide} onRerun={onRerun} running={running} />;
 
   if (!r) {
     return (
@@ -42,10 +138,13 @@ export default function ResearchResult({ run, onBack, onRerun, running }) {
           <div className="rs-name">{name}</div>
           <div className="rs-verdict" style={{ color: 'var(--mu2)', marginTop: 12 }}>No score</div>
           <div className="rs-sub">This company can’t be scored from SEC data.</div>
+          <SaveStatus save={save} onRetry={onRetrySave} />
         </div>
+        <RejectedBanner row={prevReject} />
         <div className="slabel">Why</div>
         <div className="rs-pills">{tagsShown.map((t) => <span key={t.code} className="cpill warn">{t.text}</span>)}</div>
-        <div className="rs-actions"><button type="button" className="btn-s" onClick={onRerun} disabled={running}>↻ Re-run</button></div>
+        <History save={save} />
+        {actions}
       </div>
     );
   }
@@ -102,7 +201,9 @@ export default function ResearchResult({ run, onBack, onRerun, running }) {
           {latestQ && <span>· SEC data to {latestQ}</span>}
         </div>
         <div className="rs-sub">{r.verdictReason}</div>
+        <SaveStatus save={save} onRetry={onRetrySave} />
       </div>
+      <RejectedBanner row={prevReject} />
 
       <div className="rs-chips">
         {chip('Quality', r.quality.score, r.weightsUsed.quality)}
@@ -214,14 +315,8 @@ export default function ResearchResult({ run, onBack, onRerun, running }) {
         </>
       )}
 
-      <div className="slabel">History</div>
-      <div className="rs-claude rs-muted">Past runs, Watch and Reject arrive in the next update.</div>
-
-      <div className="rs-actions">
-        <button type="button" className="btn-p" disabled title="Arrives in the next update">Watch</button>
-        <button type="button" className="btn-s rs-reject" disabled title="Arrives in the next update">Reject</button>
-        <button type="button" className="btn-s rs-rerun" onClick={onRerun} disabled={running}>↻ Re-run</button>
-      </div>
+      <History save={save} />
+      {actions}
       <div className="rs-note">Market cap {money(r.metrics.marketCap)} · operating P/E {r.metrics.operatingPe?.toFixed(1) ?? '—'} · reported P/E {r.metrics.reportedPe?.toFixed(1) ?? '—'}</div>
     </div>
   );
