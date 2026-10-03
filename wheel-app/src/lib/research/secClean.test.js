@@ -135,6 +135,14 @@ describe('factsFromConcept', () => {
     expect(flowSeries(lists).quarters.get('2026-06-30')).toBe(4017);
   });
 
+  it('odd SEC bodies read as no data instead of crashing', () => {
+    for (const body of [null, 'oops', [], { units: 'x' }, { units: [] }, { units: { USD: {} } }, { units: { USD: 'x' } }, { units: { USD: [null, 5] } }]) {
+      expect(factsFromConcept(body, 'USD').facts).toEqual([]);
+      expect(factsFromConcept(body).facts).toEqual([]);
+    }
+    expect(reportingUnit([{ units: { USD: {} } }, null])).toBeNull();
+  });
+
   it('conceptList flattens every label', () => {
     const list = conceptList(US_GAAP);
     expect(list.find((c) => c.label === 'Revenues').item).toBe('revenue');

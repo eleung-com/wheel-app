@@ -166,9 +166,37 @@ describe('fix #7: peer rules', () => {
     expect(part(r, 'pe_peers').display).toBe('20.0 vs 22.0');
   });
   it('fewer than 3 usable peers → weak comparison tag, still scored', () => {
-    const r = scoreStock(company({ peers: { source: 'auto', list: [{ ticker: 'A', opPe: 18 }, { ticker: 'B', opPe: 30 }] } }));
+    const r = scoreStock(company({ peers: { source: 'claude', list: [{ ticker: 'A', opPe: 18 }, { ticker: 'B', opPe: 30 }] } }));
     expect(hasTag(r, 'weak_comparison')).toBe(true);
     expect(part(r, 'pe_peers').points).not.toBeNull();
+  });
+});
+
+describe('v2.6: auto-peer outlier rule (Preliminary only)', () => {
+  const autoPeers = (pes) => ({ source: 'auto', list: pes.map((opPe, i) => ({ ticker: `P${i}`, opPe, debtToEquity: 0.5 })) });
+
+  it('drops auto-peers with P/E above 3× the stock’s (NVDA: AMD 159, MRVL 153 vs 28.5)', () => {
+    const r = scoreStock(company({ opPe: 28.5, peers: autoPeers([39.6, 20.5, 159.5, 37.0, 152.9]) }));
+    expect(part(r, 'pe_peers').display).toBe('28.5 vs 37.0');
+    expect(r.tags.find((t) => t.code === 'peer_outliers').text).toMatch(/P2, P4/);
+  });
+
+  it('fewer than 3 sensible auto-peers → peer comparison skipped, not trusted (VST: TLN 175 + one peer)', () => {
+    const r = scoreStock(company({ opPe: 13.2, peers: autoPeers([174.7, 37.5]) }));
+    expect(part(r, 'pe_peers').points).toBeNull();
+    expect(hasTag(r, 'auto_peers_insufficient')).toBe(true);
+  });
+
+  it('Claude’s peers are not filtered this way (real competitors can be pricier)', () => {
+    const r = scoreStock(company({ opPe: 20, peers: { source: 'claude', list: [{ ticker: 'A', opPe: 70 }, { ticker: 'B', opPe: 25 }, { ticker: 'C', opPe: 30 }] } }));
+    expect(part(r, 'pe_peers').display).toBe('20.0 vs 30.0');
+    expect(hasTag(r, 'peer_outliers')).toBe(false);
+  });
+
+  it('outliers still count in the debt average', () => {
+    const r = scoreStock(company({ opPe: 10, balance: { totalDebt: 150, equity: 100 },
+      peers: { source: 'auto', list: [{ ticker: 'X', opPe: 90, debtToEquity: 3 }, { ticker: 'Y', opPe: 12, debtToEquity: 1 }] } }));
+    expect(check(r, 'debt_to_equity').note).toMatch(/Peer average 2.00/);
   });
 });
 

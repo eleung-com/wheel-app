@@ -161,7 +161,7 @@ export function operatingPe(input) {
 
 const peBandPoints = (pe, ref) => (pe <= ref ? 100 : pe <= ref * R.PE_BANDS.halfPointsUpTo ? 50 : 0);
 
-function scoreValue(input, opPe, peerList, tags) {
+function scoreValue(input, opPe, peerList, tags, peerSource) {
   const parts = [];
   const nameOwn = 'Operating P/E vs own 5-yr median';
   const namePeer = 'Operating P/E vs peer median';
@@ -186,8 +186,22 @@ function scoreValue(input, opPe, peerList, tags) {
   }
 
   // Peers (fix #7): negative/zero op P/E excluded, median used.
-  const peerPes = peerList.map((p) => p.opPe).filter((v) => isNum(v) && v > 0);
-  if (peerPes.length) {
+  let peerPes = peerList.map((p) => p.opPe).filter((v) => isNum(v) && v > 0);
+  if (peerSource === 'auto') {
+    // Auto-peer outlier rule (v2.6): P/E > 3× the stock's own is left out.
+    const cap = opPe * R.AUTO_PEERS.outlierMultiple;
+    const outliers = peerList.filter((p) => isNum(p.opPe) && p.opPe > cap).map((p) => p.ticker);
+    peerPes = peerPes.filter((v) => v <= cap);
+    if (outliers.length) tags.push({ code: 'peer_outliers', text: `Left out as P/E outliers (>3× this stock's): ${outliers.join(', ')}` });
+    if (peerPes.length < R.AUTO_PEERS.minSensible) {
+      tags.push({ code: 'auto_peers_insufficient', text: `${peerPes.length ? `Only ${peerPes.length}` : 'No'} sensible auto-peer${peerPes.length === 1 ? '' : 's'} — peer comparison waits for Claude's peers` });
+      parts.push({ id: 'pe_peers', label: namePeer, points: null, display: 'n/a', rule: ruleBands, note: 'Fewer than 3 sensible auto-peers' });
+      peerPes = null;
+    }
+  }
+  if (peerPes === null) {
+    // handled above (auto-peers too thin)
+  } else if (peerPes.length) {
     const med = median(peerPes);
     if (peerPes.length < R.MIN_PEERS) tags.push({ code: 'weak_comparison', text: `Only ${peerPes.length} usable peer(s) — weak comparison` });
     parts.push({ id: 'pe_peers', label: namePeer, points: peBandPoints(opPe, med), display: `${opPe.toFixed(1)} vs ${med.toFixed(1)}`, rule: ruleBands, note: `${peerPes.length} peers` });
@@ -280,7 +294,7 @@ export function scoreStock(input) {
 
   const quality = scoreQuality(input, peerList, tags);
   const opPe = operatingPe(input);
-  const value = scoreValue(input, opPe, peerList, tags);
+  const value = scoreValue(input, opPe, peerList, tags, input.peers?.source || null);
   const upside = scoreUpside(input, tags);
 
   // Reported (net-income) P/E — shown only, never scored (fix #9).

@@ -6,7 +6,7 @@
 // Source of every number: PRD "Stock Research & Trade Ranker" v2.6, §6A and
 // §6A-BUILD, plus the stock-watchlist-evaluator thresholds it builds on.
 
-export const SCORING_VERSION = 'v2.5';
+export const SCORING_VERSION = 'v2.6'; // v2.6 (10-03): auto-peer outlier rule
 
 // ── Investment Score ─────────────────────────────────────────────────────────
 // Quality 40% + Value 35% + Target upside 25%. A piece that is n/a (no P/E, no
@@ -70,6 +70,13 @@ export const PE_BANDS = { halfPointsUpTo: 1.25 };
 export const OWN_PE_MIN_YEARS = 2;
 // Fix #7: fewer than this many usable peers → "weak comparison" tag.
 export const MIN_PEERS = 3;
+// Auto-peers only (Finnhub's rough list, Preliminary scores) — decided 10-03:
+//   • a peer whose operating P/E is more than 3× the stock's own is an outlier
+//     and is left out of the P/E median (it stays in the debt average);
+//   • fewer than 3 sensible auto-peers left → the peer comparison is skipped
+//     (n/a + tag) rather than trusting junk. Claude's peers (Final) keep the
+//     PRD rule: use what's there + "weak comparison" tag.
+export const AUTO_PEERS = { outlierMultiple: 3, minSensible: 3 };
 // PEG = operating P/E ÷ op-income growth % (3-yr, decided 10-02 as P1-4).
 // <1 = 100 · 1–2 = 50 · >2 = 0.
 export const PEG = { full: 1, half: 2, years: 3 };

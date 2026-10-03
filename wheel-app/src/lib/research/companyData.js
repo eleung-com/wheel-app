@@ -86,7 +86,7 @@ async function fetchTaxonomy(transport, cik, taxonomy, set) {
   return { raw, unit, found: bodies.some(Boolean) };
 }
 
-async function fetchShares(transport, cik) {
+export async function fetchShares(transport, cik) {
   const dei = await getJson(transport.sec, `/api/xbrl/companyconcept/CIK${cik}/dei/EntityCommonStockSharesOutstanding.json`);
   let series = shareSeries(shareFactsFromConcept(dei));
   let source = 'dei:EntityCommonStockSharesOutstanding';
@@ -94,8 +94,10 @@ async function fetchShares(transport, cik) {
     // Multi-class companies sometimes tag cover-page shares only by class, which
     // the API omits. Diluted weighted-average shares is the next best total.
     const wa = await getJson(transport.sec, `/api/xbrl/companyconcept/CIK${cik}/us-gaap/WeightedAverageNumberOfDilutedSharesOutstanding.json`);
-    series = (wa?.units?.shares || [])
-      .filter((f) => f.start && typeof f.val === 'number')
+    // Guarded: some filers' bodies don't have a list here (CAR, BE) — treat as no data.
+    const waFacts = Array.isArray(wa?.units?.shares) ? wa.units.shares : [];
+    series = waFacts
+      .filter((f) => f && f.start && typeof f.val === 'number' && f.end && f.filed)
       .map((f) => ({ end: f.end, filed: f.filed, val: f.val }))
       .sort((a, b) => a.filed.localeCompare(b.filed) || a.end.localeCompare(b.end));
     source = 'us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding';

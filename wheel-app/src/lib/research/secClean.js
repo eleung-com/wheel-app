@@ -96,7 +96,9 @@ export function conceptList(set) {
 
 // ── Reading a companyconcept body ────────────────────────────────────────────
 
-const usable = (f) => FORMS.has(f.form) && typeof f.val === 'number' && f.end;
+const usable = (f) => f && FORMS.has(f.form) && typeof f.val === 'number' && f.end;
+const asList = (x) => (Array.isArray(x) ? x : []);
+const unitsOf = (body) => (body && typeof body.units === 'object' && !Array.isArray(body.units) ? body.units : {});
 
 /**
  * The company's reporting currency, judged from its revenue concepts: the money
@@ -107,9 +109,9 @@ const usable = (f) => FORMS.has(f.form) && typeof f.val === 'number' && f.end;
 export function reportingUnit(bodies) {
   const stats = new Map(); // unit → { latest, count }
   for (const body of bodies) {
-    for (const [unit, facts] of Object.entries(body?.units || {})) {
+    for (const [unit, facts] of Object.entries(unitsOf(body))) {
       if (/shares/i.test(unit)) continue;
-      const ok = facts.filter(usable);
+      const ok = asList(facts).filter(usable);
       if (!ok.length) continue;
       const cur = stats.get(unit) || { latest: '', count: 0 };
       for (const f of ok) if (f.end > cur.latest) cur.latest = f.end;
@@ -131,15 +133,16 @@ export function reportingUnit(bodies) {
  * @returns {{ unit: string|null, facts: object[] }}
  */
 export function factsFromConcept(body, unit = null) {
-  const units = body?.units || {};
+  // Defensive: an unexpected SEC body (error page, odd shape) must read as "no data", never throw.
+  const units = unitsOf(body);
   const u = unit || (units.USD ? 'USD' : Object.keys(units).find((k) => !/shares/i.test(k)) || null);
-  const facts = (u && units[u] ? units[u] : []).filter(usable);
+  const facts = asList(u ? units[u] : null).filter(usable);
   return { unit: facts.length ? u : null, facts };
 }
 
 /** Same, for share counts (dei:EntityCommonStockSharesOutstanding). */
 export function shareFactsFromConcept(body) {
-  return (body?.units?.shares || []).filter((f) => typeof f.val === 'number' && f.end);
+  return asList(unitsOf(body).shares).filter((f) => f && typeof f.val === 'number' && f.end);
 }
 
 // Latest filing wins; on a tie the earlier label in priority order wins.
