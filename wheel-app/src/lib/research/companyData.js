@@ -170,7 +170,8 @@ async function fetchFinnhubMarketCap(transport, ticker) {
 // ── The bundle ──────────────────────────────────────────────────────────────
 
 const MONEY_FIELDS = ['revenue', 'grossProfit', 'operatingIncome', 'netIncome', 'operatingCashFlow', 'capex',
-  'totalAssets', 'totalLiabilities', 'currentAssets', 'currentLiabilities', 'longTermDebt', 'retainedEarnings', 'equity'];
+  'totalAssets', 'totalLiabilities', 'currentAssets', 'currentLiabilities', 'longTermDebt', 'retainedEarnings', 'equity',
+  'debtLongTerm', 'debtShortTerm', 'cash'];
 
 function scaleMoney(row, k) {
   const out = { ...row };

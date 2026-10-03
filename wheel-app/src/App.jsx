@@ -20,6 +20,7 @@ import Toast       from './components/Toast/Toast';
 
 import HomePage      from './components/pages/HomePage/HomePage';
 import SignalsPage   from './components/pages/SignalsPage/SignalsPage';
+import ResearchPage  from './components/pages/ResearchPage/ResearchPage';
 import PositionsPage from './components/pages/PositionsPage/PositionsPage';
 import WatchlistPage from './components/pages/WatchlistPage/WatchlistPage';
 import SettingsPage  from './components/pages/SettingsPage/SettingsPage';
@@ -423,6 +424,10 @@ export default function App() {
           evalsLoading={evalsLoading}
           onShowDetail={id => { setDetailSignalId(id); setOpenModal('signal-detail'); }}
         />
+      </div>
+
+      <div className={`page${activePage === 'pg-research' ? ' active' : ''}`} id="pg-research">
+        <ResearchPage showToast={showToast} />
       </div>
 
       <div className={`page${activePage === 'pg-positions' ? ' active' : ''}`} id="pg-positions">

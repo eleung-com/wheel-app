@@ -56,6 +56,7 @@ export const US_GAAP = {
     ltdNoncurrent: ['LongTermDebtNoncurrent', 'LongTermDebtAndCapitalLeaseObligations'],
     ltdCurrent: ['LongTermDebtCurrent', 'LongTermDebtAndCapitalLeaseObligationsCurrent', 'DebtCurrent'],
     shortTermBorrowings: ['ShortTermBorrowings', 'CommercialPaper'],
+    cash: ['CashAndCashEquivalentsAtCarryingValue', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'],
   },
 };
 
@@ -80,6 +81,7 @@ export const IFRS = {
     ltdNoncurrent: ['NoncurrentPortionOfNoncurrentBorrowings', 'NoncurrentBorrowings', 'LongtermBorrowings'],
     ltdCurrent: ['CurrentPortionOfNoncurrentBorrowings', 'CurrentBorrowings'],
     shortTermBorrowings: ['ShorttermBorrowings'],
+    cash: ['CashAndCashEquivalents'],
   },
 };
 
@@ -235,6 +237,25 @@ export function debtAt(instants, end) {
   return { value: null, noDebtReported: false };
 }
 
+/**
+ * Debt split for the chart (P1-5, decided 10-03: long-term vs short-term + cash).
+ * Long-term = noncurrent portion (or total minus current portion);
+ * short-term = current portion of long-term debt + short-term borrowings.
+ * Null when the company tags nothing usable on that date.
+ */
+export function debtSplitAt(instants, end) {
+  const has = (k) => instants[k] && instants[k].size > 0;
+  const at = (k) => (instants[k]?.has(end) ? instants[k].get(end) : null);
+  const cash = at('cash');
+  if (!DEBT_PIECES.some(has)) return { longTerm: 0, shortTerm: 0, cash };
+  const cur = at('ltdCurrent');
+  const stb = at('shortTermBorrowings');
+  let longTerm = at('ltdNoncurrent');
+  if (longTerm === null && at('ltdTotal') !== null) longTerm = at('ltdTotal') - (cur ?? 0);
+  const shortTerm = cur === null && stb === null ? (longTerm === null ? null : 0) : (cur ?? 0) + (stb ?? 0);
+  return { longTerm, shortTerm, cash };
+}
+
 /** Most recent date ≤ `end` that has a value in `series`. */
 function latestOnOrBefore(series, end) {
   let best = null;
@@ -266,6 +287,11 @@ export function shareSeries(facts) {
 
 // ── Putting it together ──────────────────────────────────────────────────────
 
+function debtChartFields(instants, end) {
+  const s = debtSplitAt(instants, end);
+  return { debtLongTerm: s.longTerm, debtShortTerm: s.shortTerm, cash: s.cash };
+}
+
 /**
  * @param {object} raw
  * @param {Object<string, object[][]>} raw.flows     item → [facts per label]
@@ -292,6 +318,7 @@ export function buildFinancials(raw, { maxQuarters = 20 } = {}) {
     netIncome: qVal('netIncome', end),
     operatingCashFlow: qVal('operatingCashFlow', end),
     capex: qVal('capex', end),
+    ...debtChartFields(instants, end),
   }));
 
   // ── Years: fiscal years with revenue.
@@ -321,6 +348,7 @@ export function buildFinancials(raw, { maxQuarters = 20 } = {}) {
       longTermDebt: debt.value,
       retainedEarnings: iVal('retainedEarnings', end),
       equity,
+      ...debtChartFields(instants, end),
       sharesOutstanding: null, // filled by companyData from the cover-page share series
     };
   });
