@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import MiniBarChart from './MiniBarChart';
 import RejectModal from './RejectModal';
 import { plainLines, chartSeries, money } from '../../../lib/research/explain';
-import { rejectedBefore, runStamp } from '../../../lib/research/runRecord';
+import { rejectedBefore, runStamp, claudeState, CLAUDE_TIMEOUT_MIN } from '../../../lib/research/runRecord';
 
 // Result screen for one "Run a stock" (layout from the approved mockup,
 // PRD §6A-BUILD §4). Save status, rejected-before banner, history and
@@ -119,7 +119,71 @@ function Actions({ ticker, save, current, onDecide, onRerun, running }) {
   );
 }
 
-export default function ResearchResult({ run, onBack, onRerun, running, save, onRetrySave, onDecide }) {
+const minsAgo = (iso) => Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+
+/** "Claude's read": researching / failed / the write-up (P1.6). */
+function ClaudeSection({ claude, save, finalizing, onRedo }) {
+  const row = claude?.row;
+  const state = claudeState(row);
+  const [busy, setBusy] = useState(false);
+  const redo = async () => { setBusy(true); await onRedo(); setBusy(false); };
+
+  let body;
+  if (save?.state !== 'saved') {
+    body = <div className="rs-muted">Starts once the run is saved to Notion.</div>;
+  } else if (state === 'waiting') {
+    body = (
+      <div className="rs-cl-wait" role="status">
+        <span className="spinner a" /> Claude is researching peers, moat and the story… started {minsAgo(row.claudeStarted)} min ago · usually 3–10 min
+        {row.claudeSession && <> · <a href={row.claudeSession} target="_blank" rel="noreferrer">watch it work</a></>}
+        <div className="rs-muted">You can leave this screen. The Final score appears the next time you open this stock.</div>
+      </div>
+    );
+  } else if (state === 'failed' || state === 'none') {
+    const why = row?.errorDetail || (state === 'failed' ? `no answer after ${CLAUDE_TIMEOUT_MIN} min` : 'not started');
+    body = (
+      <div className="rs-cl-fail" role="alert">
+        Claude step failed — {why}. Score stays Preliminary.{' '}
+        <button type="button" className="rs-link" onClick={redo} disabled={busy}>{busy ? 'Starting…' : 'Retry'}</button>
+      </div>
+    );
+  } else {
+    const beat = row.beatQuarters ? `${row.beats ?? '?'} of ${row.beatQuarters}${row.beatStale ? ' (stale)' : ''}` : row.beatStale ? 'stale' : '—';
+    body = (
+      <>
+        {finalizing && <div className="rs-cl-wait" role="status"><span className="spinner a" /> Re-scoring with Claude’s peers…</div>}
+        <div className="rs-cl-facts">
+          <div><span>Moat</span><b>{row.moatType || '—'}{row.moatStrength ? ` · ${row.moatStrength}` : ''}</b></div>
+          <div><span>Peers</span><b>{row.peersClaude || '—'}</b></div>
+          <div><span>Beat rate</span><b>{beat}</b></div>
+          <div><span>One-time items</span><b>{row.oneTimeItems ? 'Yes — see below' : 'None flagged'}</b></div>
+        </div>
+        {row.peerReasons && <div className="rs-cl-reasons">{row.peerReasons}</div>}
+        <div className="rs-cl-body">
+          {(claude.writeup || []).map((b, i) => (
+            b.type === 'heading' ? <div key={i} className="rs-cl-h">{b.text}</div>
+              : b.type === 'bullet' ? <div key={i} className="rs-cl-li">• {b.text}</div>
+                : <p key={i}>{b.text}</p>
+          ))}
+          {!claude.writeup?.length && <div className="rs-muted">Loading the write-up…</div>}
+        </div>
+        <div className="rs-cl-foot">
+          Written {runStamp(row.claudeWritten)}
+          {row.claudeSession && <> · <a href={row.claudeSession} target="_blank" rel="noreferrer">session</a></>}
+          {' · '}<button type="button" className="rs-link" onClick={redo} disabled={busy}>{busy ? 'Starting…' : 'Redo Claude research'}</button>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="slabel">Claude’s read</div>
+      <div className="rs-claude">{body}</div>
+    </>
+  );
+}
+
+export default function ResearchResult({ run, onBack, onRerun, running, save, onRetrySave, onDecide, claude, finalizing, onRedoClaude }) {
   const r = run.result;
   const b = run.bundle;
   const name = b?.name || run.ticker;
@@ -143,6 +207,7 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
         <RejectedBanner row={prevReject} />
         <div className="slabel">Why</div>
         <div className="rs-pills">{tagsShown.map((t) => <span key={t.code} className="cpill warn">{t.text}</span>)}</div>
+        <ClaudeSection claude={claude} save={save} finalizing={false} onRedo={onRedoClaude} />
         <History save={save} />
         {actions}
       </div>
@@ -284,10 +349,7 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
         )}
       </div>
 
-      <div className="slabel">Claude’s read</div>
-      <div className="rs-claude rs-muted">
-        What they do, moat, competitors, user growth and real peers arrive here once the Claude step is connected (next updates).
-      </div>
+      <ClaudeSection claude={claude} save={save} finalizing={finalizing} onRedo={onRedoClaude} />
 
       {series && (
         <>

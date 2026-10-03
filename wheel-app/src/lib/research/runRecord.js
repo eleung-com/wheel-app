@@ -8,6 +8,8 @@
 //   cleanRecord(body)      Worker: validate + trim what the app sent.
 //   cleanDecision(body)    Worker: validate a Watch / Reject / clear request.
 //   rejectedBefore(rows)   app: the newest earlier Reject for the banner.
+//   claudeState(row, now)  P1.6: none / waiting / done / failed for a saved run.
+//   claudeInputs(row)      P1.6: Claude's peers, target and beat rate → rescoreFinal().
 
 import { plainLines } from './explain.js';
 
@@ -21,6 +23,9 @@ export const TICKER_RE = /^[A-Z][A-Z0-9.-]{0,9}$/;
 const MAX_LINE = 300;
 const MAX_LINES = 60;
 const MAX_REASON = 1000;
+export const UUID_RE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+/** Claude routine not done this long after it was started → "Claude step failed — Retry" (PRD §6). */
+export const CLAUDE_TIMEOUT_MIN = 20;
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const num = (v) => (isNum(v) ? v : null);
@@ -62,7 +67,7 @@ function bodyLines(run) {
  * The record the app sends to the Worker for one run.
  * @param {object} run  runPreliminary()/rescoreFinal() result
  */
-export function runToRecord(run) {
+export function runToRecord(run, { pageId = null } = {}) {
   const r = run.result;
   const peers = (run.peers?.used || []).map((p) => p.ticker).join(', ');
   return {
@@ -79,6 +84,7 @@ export function runToRecord(run) {
     peersAuto: run.peers?.source === 'claude' ? '' : peers,
     targetSource: r?.upside?.target?.source || '',
     lines: bodyLines(run),
+    ...(pageId ? { pageId } : {}),
   };
 }
 
@@ -110,6 +116,7 @@ export function cleanRecord(body) {
       peersAuto: str(body.peersAuto, 200),
       targetSource: str(body.targetSource, 200),
       lines: (Array.isArray(body.lines) ? body.lines : []).slice(0, MAX_LINES).map((l) => str(l, MAX_LINE)).filter(Boolean),
+      pageId: UUID_RE.test(String(body.pageId || '')) ? String(body.pageId) : null,
     },
   };
 }
@@ -133,4 +140,33 @@ export function cleanDecision(body) {
 /** Newest Reject among the rows that isn't the run on screen (rows newest first). */
 export function rejectedBefore(rows, currentPageId) {
   return (rows || []).find((r) => r.decision === 'Reject' && r.pageId !== currentPageId) || null;
+}
+
+/**
+ * Where the Claude step stands for a saved run row.
+ *   done     Claude wrote its research (Claude written is set)
+ *   failed   routine couldn't start, reported an error, or ran past the timeout
+ *   waiting  started, still inside the timeout
+ *   none     never started (e.g. no routine configured yet)
+ */
+export function claudeState(row, now = Date.now()) {
+  if (!row) return 'none';
+  if (row.claudeWritten) return 'done';
+  if (row.status === 'Error') return 'failed';
+  if (!row.claudeStarted) return 'none';
+  const age = now - Date.parse(row.claudeStarted);
+  return age > CLAUDE_TIMEOUT_MIN * 60000 ? 'failed' : 'waiting';
+}
+
+/** Claude's findings on a row → the arguments rescoreFinal() takes. */
+export function claudeInputs(row) {
+  const peerTickers = String(row?.peersClaude || '')
+    .split(/[,\s]+/).map((t) => t.trim().toUpperCase()).filter((t) => TICKER_RE.test(t)).slice(0, 6);
+  const target = isNum(row?.analystTargetClaude) && row.analystTargetClaude > 0
+    ? { value: row.analystTargetClaude, source: row.targetSource || 'Claude', asOf: row.claudeWritten ? dayKey(row.claudeWritten) : null }
+    : null;
+  const beatRate = isNum(row?.beatQuarters) && row.beatQuarters > 0 && isNum(row?.beats)
+    ? { beats: row.beats, total: row.beatQuarters, stale: !!row.beatStale }
+    : (row?.beatStale ? { beats: null, total: null, stale: true } : null);
+  return { peerTickers, analystTarget: target, beatRate };
 }

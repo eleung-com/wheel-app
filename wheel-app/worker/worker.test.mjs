@@ -453,6 +453,7 @@ console.log('\nStock Runs /notion/runs');
     if (url.endsWith(`/databases/${RUNS_DB}/query`)) return jsonRes({ results: [runPage(PID_OLD, '2026-09-20T15:00:00.000Z', { decision: 'Reject', reason: 'debt', score: 40 })] });
     if (url.includes('/databases/') && url.endsWith('/query')) return jsonRes({ results: [{ id: 'wl-page' }] });
     if (url.endsWith('/v1/pages') && init.method === 'POST') return jsonRes({ id: PID_NEW });
+    if (url.endsWith(`/v1/pages/${PID_NEW}`) && init.method === 'PATCH') return jsonRes({});
     return jsonRes({}, 500);
   });
   let r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: rec }), ENV);
@@ -537,6 +538,131 @@ console.log('\nStock Runs /notion/runs');
 
   r = await worker.fetch(req('/notion/runs', { method: 'OPTIONS' }), ENV);
   check('preflight allows POST', /POST/.test(r.headers.get('access-control-allow-methods') || ''));
+}
+
+// ── Claude routine (P1.6) ───────────────────────────────────────────────────
+console.log('\nClaude routine');
+{
+  const auth = { 'x-app-secret': 's3cret' };
+  const RUNS_DB = '60a0a2a4-5833-487e-b8d4-80c509e5fcff';
+  const CENV = { ...ENV, ROUTINE_FIRE_URL: 'https://api.anthropic.com/v1/claude_code/routines/r1/fire', ROUTINE_TOKEN: 'sk-ant-oat01-x' };
+  const P = '44444444-4444-4444-4444-444444444444';
+  const rowPage = (id, props = {}) => ({
+    id, parent: { type: 'database_id', database_id: RUNS_DB },
+    properties: {
+      Ticker: { title: [{ plain_text: 'UBER' }] },
+      'Run date': { date: { start: '2026-10-03T14:00:00.000Z' } },
+      Status: { select: { name: props.status || 'Waiting on Claude' } },
+      'Claude started': { date: props.started ? { start: props.started } : null },
+      'Claude written': { date: props.written ? { start: props.written } : null },
+      'Peers (Claude)': { rich_text: props.peers ? [{ plain_text: props.peers }] : [] },
+      'Analyst target (Claude)': { number: props.target ?? null },
+      Beats: { number: 6 }, 'Beat quarters': { number: 8 }, 'Beat stale': { checkbox: false },
+      'Moat type': { select: { name: 'Scale' } },
+    },
+  });
+  const rec = {
+    ticker: 'UBER', runAt: '2026-10-03T18:00:00.000Z', price: 81, scoreType: 'Preliminary', version: 'v2.6',
+    investmentScore: 70, quality: 80, value: 60, upside: 50, verdict: 'Maybe', peersAuto: 'LYFT', targetSource: '', lines: ['a'],
+  };
+  const base = (rows, extra) => (url, init) => {
+    if (url.endsWith(`/databases/${RUNS_DB}/query`)) return jsonRes({ results: rows });
+    if (url.includes('/databases/') && url.endsWith('/query')) return jsonRes({ results: [] });
+    if (url.endsWith('/v1/pages') && init.method === 'POST') return jsonRes({ id: P });
+    if (url.includes('/routines/')) return extra.fire ? extra.fire(url, init) : jsonRes({ type: 'routine_fire', claude_code_session_url: 'https://claude.ai/code/session_1' });
+    if (url.includes(`/v1/blocks/${P}/children`) && !init.method) return jsonRes({ results: [] });
+    if (url.endsWith(`/v1/pages/${P}`) && !init.method) return jsonRes(extra.page || rowPage(P));
+    return jsonRes({});
+  };
+  const firstFire = () => calls.find((c) => c.url.includes('/routines/'));
+  const markPatch = () => calls.filter((c) => c.url.endsWith(`/v1/pages/${P}`) && c.init.method === 'PATCH').map((c) => JSON.parse(c.init.body).properties).find((p) => p['Claude started'] || p['Error detail']);
+
+  // New row → fire with ticker + id only, record session
+  stubFetch(base([], {}));
+  let r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: rec }), CENV);
+  let body = await r.json();
+  const f = firstFire();
+  check('new row → routine fired', r.status === 200 && !!f && body.claude?.fired === true, JSON.stringify(body));
+  check('fire: bearer + anthropic-version', f?.init.headers.Authorization === 'Bearer sk-ant-oat01-x' && f?.init.headers['anthropic-version'] === '2023-06-01');
+  check('fire text = ticker + page id only', JSON.parse(f?.init.body || '{}').text === `ticker: UBER\nrun_page_id: ${P}`);
+  const m = markPatch();
+  check('row marked Waiting + Claude started + session', m?.Status?.select?.name === 'Waiting on Claude' && !!m['Claude started']?.date?.start && m['Claude session']?.url === 'https://claude.ai/code/session_1', JSON.stringify(m));
+  check('history row carries Claude state', body.history?.[0]?.claudeSession === 'https://claude.ai/code/session_1' && body.history[0].status === 'Waiting on Claude');
+
+  // Same day, research already written → reuse (no fire, Status untouched)
+  stubFetch(base([rowPage(P, { written: '2026-10-03T14:10:00.000Z', status: 'Final' })], {}));
+  r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: rec }), CENV);
+  body = await r.json();
+  const upd = calls.find((c) => c.url.endsWith(`/v1/pages/${P}`) && c.init.method === 'PATCH');
+  check('same day + Claude written → no fire', !firstFire() && body.claude?.fired === false, JSON.stringify(body.claude));
+  check('same day re-save leaves Status alone', upd && !('Status' in JSON.parse(upd.init.body).properties));
+  check('blank target source not written', upd && !('Target source' in JSON.parse(upd.init.body).properties));
+
+  // Same day, Claude mid-run (<20 min) → no second fire
+  const recent = new Date(Date.now() - 5 * 60000).toISOString();
+  // Row dated now so it is the same New York day as the re-run.
+  stubFetch(base([{ ...rowPage(P, { started: recent }), properties: { ...rowPage(P, { started: recent }).properties, 'Run date': { date: { start: recent } } } }], {}));
+  await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: { ...rec, runAt: new Date().toISOString() } }), CENV);
+  check('same day + Claude still running → no second fire', !firstFire());
+
+  // Same day, earlier start timed out → fire again
+  const old = new Date(Date.now() - 45 * 60000).toISOString();
+  stubFetch(base([{ ...rowPage(P, { started: old }), properties: { ...rowPage(P, { started: old }).properties, 'Run date': { date: { start: old } } } }], {}));
+  await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: { ...rec, runAt: new Date().toISOString() } }), CENV);
+  check('same day + timed-out Claude → fired again', !!firstFire());
+
+  // Rate limited → saved, row marked Error
+  stubFetch(base([], { fire: () => jsonRes({ type: 'error' }, 429) }));
+  r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: rec }), CENV);
+  body = await r.json();
+  check('429 → save still 200, Claude busy', r.status === 200 && body.claude?.fired === false && /busy/.test(body.claude?.error), JSON.stringify(body.claude));
+  check('429 → row Status Error + detail', markPatch()?.Status?.select?.name === 'Error' && /busy/.test(markPatch()['Error detail'].rich_text[0].text.content));
+
+  // No routine secrets → runs still save
+  stubFetch(base([], {}));
+  r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: rec }), ENV);
+  body = await r.json();
+  check('no routine secrets → saved, not set up', r.status === 200 && /not set up/.test(body.claude?.error || ''), JSON.stringify(body.claude));
+
+  // Final save onto an exact row: no fire, Status Final, keeps run date
+  stubFetch(base([rowPage(P, { written: '2026-10-03T14:10:00.000Z' })], {}));
+  r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: { ...rec, pageId: P, scoreType: 'Final', peersAuto: '', runAt: '2026-10-05T15:00:00.000Z' } }), CENV);
+  body = await r.json();
+  const fin = calls.find((c) => c.url.endsWith(`/v1/pages/${P}`) && c.init.method === 'PATCH');
+  const fp = fin && JSON.parse(fin.init.body).properties;
+  check('Final by pageId → 200, no fire, no new page', r.status === 200 && !firstFire() && !calls.some((c) => c.url.endsWith('/v1/pages') && c.init.method === 'POST'));
+  check('Final sets Status + Score type Final', fp?.Status?.select?.name === 'Final' && fp?.['Score type']?.select?.name === 'Final');
+  check('Final keeps original run date', fp?.['Run date']?.date?.start === '2026-10-03T14:00:00.000Z');
+  check('Final does not blank auto peers', fp && !('Peers (auto)' in fp));
+
+  stubFetch(base([], { page: { id: P, parent: { database_id: '35c400a3-854e-80ff-9b36-fd7ddaa3a850' }, properties: {} } }));
+  r = await worker.fetch(req('/notion/runs', { method: 'POST', headers: auth, body: { ...rec, pageId: P, scoreType: 'Final' } }), CENV);
+  check('Final onto a non-Stock-Runs page → 403', r.status === 403, 'got ' + r.status);
+
+  // GET one → row + write-up without the checks toggle
+  stubFetch((url, init) => {
+    if (url.endsWith(`/v1/pages/${P}`)) return jsonRes(rowPage(P, { written: '2026-10-03T14:10:00.000Z', peers: 'LYFT, DASH' }));
+    if (url.includes(`/v1/blocks/${P}/children`)) return jsonRes({ results: [
+      { type: 'toggle', toggle: { rich_text: [{ plain_text: 'Checks · Preliminary' }] } },
+      { type: 'heading_3', heading_3: { rich_text: [{ plain_text: 'What they do' }] } },
+      { type: 'paragraph', paragraph: { rich_text: [{ plain_text: 'Ride-hailing and delivery.' }] } },
+      { type: 'bulleted_list_item', bulleted_list_item: { rich_text: [{ plain_text: 'Q2: 180M MAPCs' }] } },
+    ] });
+    return jsonRes({}, 500);
+  });
+  r = await worker.fetch(req(`/notion/runs/one?pageId=${P}`, { headers: auth }), CENV);
+  body = await r.json();
+  check('GET one → Claude fields', r.status === 200 && body.run?.peersClaude === 'LYFT, DASH' && body.run.beats === 6 && body.run.moatType === 'Scale', JSON.stringify(body.run));
+  check('GET one → write-up minus checks toggle', body.writeup?.map((b) => b.type).join() === 'heading,text,bullet', JSON.stringify(body.writeup));
+  r = await worker.fetch(req('/notion/runs/one?pageId=nope', { headers: auth }), CENV);
+  check('GET one bad id → 400', r.status === 400);
+
+  // Redo → clears Claude written, fires
+  stubFetch(base([], { page: rowPage(P, { written: '2026-10-03T14:10:00.000Z' }) }));
+  r = await worker.fetch(req('/notion/runs/claude', { method: 'POST', headers: auth, body: { pageId: P } }), CENV);
+  body = await r.json();
+  const rp = markPatch();
+  check('redo → fired + Claude written cleared', r.status === 200 && body.claude?.fired && rp?.['Claude written']?.date === null && body.run?.claudeWritten === null, JSON.stringify(body));
 }
 
 console.log('\n' + (fail === 0 ? '✅' : '❌') + ` ${pass} passed, ${fail} failed\n`);
