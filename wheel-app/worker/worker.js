@@ -32,12 +32,12 @@ const CBOE_ORIGIN    = 'https://cdn.cboe.com/api/global/delayed_quotes';
 // open to any origin. Browsers enforce this; the secret is what stops everything else.
 const ALLOWED_ORIGINS = [
   'https://eleung-com.github.io',
-  'https://wheel-desk.pages.dev',
+  'https://wheel-app-67w.pages.dev',
   'http://localhost:5173',
   'https://localhost:5173',
 ];
-// Cloudflare Pages preview builds: <hash>.wheel-desk.pages.dev / <branch>.wheel-desk.pages.dev
-const PAGES_PREVIEW_RE = /^https:\/\/[a-z0-9-]+\.wheel-desk\.pages\.dev$/;
+// Cloudflare Pages preview builds: <hash>.wheel-app-67w.pages.dev / <branch>.wheel-app-67w.pages.dev
+const PAGES_PREVIEW_RE = /^https:\/\/[a-z0-9-]+\.wheel-app-67w\.pages\.dev$/;
 const originAllowed = (o) => ALLOWED_ORIGINS.includes(o) || PAGES_PREVIEW_RE.test(o);
 
 const CORS_HEADERS = {

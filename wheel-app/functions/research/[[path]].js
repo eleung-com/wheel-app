@@ -1,5 +1,5 @@
 // Cloudflare Pages Function: /research/* on the app's own address
-// (wheel-desk.pages.dev). Same relay as the Worker's /research route, but
+// (wheel-app-67w.pages.dev). Same relay as the Worker's /research route, but
 // behind Cloudflare Access with the rest of the site, so no cross-site cookie
 // problem on Safari (decided 10-03).
 //

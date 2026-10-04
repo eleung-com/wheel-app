@@ -171,7 +171,7 @@ Limits (Anthropic): 30 starts/hour per routine, 100/hour per account, plus a dai
 
 ### Cloudflare Pages (the app's new home, 10-03)
 
-The app is hosted on Cloudflare Pages at `https://wheel-desk.pages.dev`,
+The app is hosted on Cloudflare Pages at `https://wheel-app-67w.pages.dev`,
 behind Cloudflare Access (email one-time code, one allowed email). The
 Research tab's `/research` relay runs there as a Pages Function
 (`functions/research/[[path]].js`, shared code in `worker/research.js`), so it
@@ -182,7 +182,7 @@ GitHub Pages site is switched off).
 Pages project settings: root directory `wheel-app`, build command
 `npm run build`, output `dist`, env `NODE_VERSION=20`. Secrets
 (Settings → Variables and secrets, or `npx wrangler pages secret put NAME
---project-name wheel-desk`): `FMP_KEY`, `FINNHUB_KEY`, `SEC_CONTACT_EMAIL`,
+--project-name <your Pages project name>`): `FMP_KEY`, `FINNHUB_KEY`, `SEC_CONTACT_EMAIL`,
 `APP_SECRET` (optional second lock).
 
 ### KV namespace (new)
