@@ -2,7 +2,7 @@ import React from 'react';
 import SummaryBar from './SummaryBar';
 import SignalCard from './SignalCard';
 
-export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoading, onShowDetail }) {
+export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoading, onShowDetail, onScoreReview, reviewBusyId }) {
   const card = s => (
     <SignalCard
       key={s.id}
@@ -10,6 +10,8 @@ export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoa
       evaluation={evals[s.ticker] || null}
       loading={evalsLoading}
       onClick={onShowDetail}
+      onScoreReview={onScoreReview}
+      reviewBusy={reviewBusyId === s.id}
     />
   );
 
@@ -17,9 +19,9 @@ export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoa
   // as bad as it can get. Within the group, fewest days left first — breached at
   // 3 DTE and breached at 40 are different decisions and the sooner one is the
   // one to look at.
-  const ACT_ORDER = { maxloss: 0, roll: 1, close: 2 };
+  const ACT_ORDER = { maxloss: 0, roll: 1, close: 2, score_review: 3 };
   const act = signals
-    .filter(s => s.type === 'roll' || s.type === 'close' || s.type === 'maxloss')
+    .filter(s => s.type === 'roll' || s.type === 'close' || s.type === 'maxloss' || s.type === 'score_review')
     .sort((a, b) => (ACT_ORDER[a.type] - ACT_ORDER[b.type]) || ((a.days ?? 99) - (b.days ?? 99)));
   const cc  = signals.filter(s => s.type === 'cc');
   // Biggest move relative to the stock's own daily range leads — a 5% drop

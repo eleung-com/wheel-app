@@ -4,6 +4,18 @@ import { fetchQ, fetchOptionPrice, fetchBestStrike } from '../lib/marketData';
 import { browserTransport as tx } from '../lib/browserTransport';
 import { buildSignals, cspEntryOk, ccEntryOk, PRIORITY } from '../lib/signalEngine';
 import { isOpenPosition, isPriceableOption } from '../lib/utils';
+import { loadRuns } from '../lib/research/runStore';
+import { scoreMap } from '../lib/research/runRecord';
+
+// Part 2B: latest Investment Score per ticker, refreshed each screen. Kept
+// module-level so the cached first paint can reuse the last good map. null =
+// couldn't read Notion → cards still show, tagged "Score unavailable".
+let lastScores = null;
+async function fetchScores() {
+  try { lastScores = scoreMap(await loadRuns({ limit: 50 })); }
+  catch (_) { /* keep the last good map */ }
+  return lastScores;
+}
 
 // ── Market-close cache ────────────────────────────────────────────────────────
 // When markets are closed we cache the last fetched qmap in localStorage so the
@@ -81,6 +93,9 @@ export function useScreener(showToast) {
 
     try {
       const currentState = seed ? { ...stateRef.current, ...seed } : stateRef.current;
+      // Started now, awaited just before the fresh signal pass, so the Notion
+      // read overlaps the price fetches instead of adding to them.
+      const scoresP = fetchScores();
       // Closed rows carry a ticker but nothing here needs their price — a name
       // you traded once and exited should stop costing a history fetch forever.
       const tickers = [...new Set([
@@ -112,7 +127,7 @@ export function useScreener(showToast) {
         paintPrices(map);
         dispatch({
           type: 'SET_SIGNALS',
-          payload: buildSignals(currentState.watchlist, currentState.positions, currentState.criteria, map),
+          payload: buildSignals(currentState.watchlist, currentState.positions, currentState.criteria, map, {}, lastScores),
         });
       };
 
@@ -226,7 +241,8 @@ export function useScreener(showToast) {
       // blanking the tab — the "no market data" toast above already said why,
       // and the price columns keep their last-known values for the same reason.
       if (gotAny || !cached) {
-        const sigs = buildSignals(currentState.watchlist, mergedPositions, cr, qmap, strikeMap);
+        const scores = await scoresP;
+        const sigs = buildSignals(currentState.watchlist, mergedPositions, cr, qmap, strikeMap, scores);
         dispatch({ type: 'SET_SIGNALS', payload: sigs });
       }
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import MiniBarChart from './MiniBarChart';
 import RejectModal from './RejectModal';
 import { plainLines, chartSeries, money } from '../../../lib/research/explain';
-import { rejectedBefore, runStamp, claudeState, CLAUDE_TIMEOUT_MIN } from '../../../lib/research/runRecord';
+import { rejectedBefore, runStamp, claudeState, CLAUDE_TIMEOUT_MIN, scoreAllowsPriority } from '../../../lib/research/runRecord';
 
 // Result screen for one "Run a stock" (layout from the approved mockup,
 // PRD §6A-BUILD §4). Save status, rejected-before banner, history and
@@ -67,7 +67,7 @@ function History({ save }) {
             <b>{fmtDate(h.runAt)}</b>
             <span className="rs-muted">{h.version || ''}</span>
             <span className={`rs-hv ${VERDICT_TONE[h.verdict] || 'n'}`}>{h.investmentScore ?? '—'} · {h.verdict || '—'}</span>
-            <span className="rs-hd">{h.decision === 'Watch' ? 'Watch' : h.decision === 'Reject' ? 'Rejected' : h.pageId === save.pageId ? 'This run' : ''}</span>
+            <span className="rs-hd">{h.decision === 'Priority' ? 'Priority' : h.decision === 'Watch' ? 'Watch' : h.decision === 'Reject' ? 'Skipped' : h.pageId === save.pageId ? 'This run' : ''}</span>
           </div>
         ))}
       </div>
@@ -75,35 +75,50 @@ function History({ save }) {
   );
 }
 
-function Actions({ ticker, save, current, onDecide, onRerun, running }) {
+// Part 2B: Priority / Watch / Skip write the ONE field — Dive-In on the
+// watchlist. Skip is the old Reject (reason required, kept in the reject log).
+// Priority only when the score is Worth investing or Maybe.
+function Actions({ ticker, save, current, verdict, onDecide, onRerun, running }) {
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(null);
   const ready = save?.state === 'saved' && !!save.pageId;
   const decision = current?.decision || null;
   const why = ready ? undefined : 'Available once the run is saved to Notion';
+  const canPriority = scoreAllowsPriority(verdict);
+  const pending = current?.diveIn?.pending;
 
-  async function watch() {
-    setBusy(true);
-    await onDecide({ decision: decision === 'Watch' ? null : 'Watch' });
-    setBusy(false);
+  async function choose(d) {
+    setBusy(d);
+    await onDecide({ decision: decision === d ? null : d });
+    setBusy(null);
   }
 
   return (
     <>
+      {decision === 'Priority' && (
+        <div className="rs-decided g">🔥 Priority{pending ? ` — saved. Add ${ticker} to TradingView; Dive-In updates after the next sync.` : ' — Dive-In set. Its CSP signals can now show.'} Tap again to undo.</div>
+      )}
       {decision === 'Watch' && (
-        <div className="rs-decided g">Watching. Add {ticker} to your TradingView watchlist (manual). Tap Watch again to undo.</div>
+        <div className="rs-decided g">👀 Watch{pending ? ` — saved. Add ${ticker} to TradingView; Dive-In updates after the next sync.` : ' — Dive-In set.'} Tap again to undo.</div>
       )}
       {decision === 'Reject' && (
-        <div className="rs-decided r">Rejected: {current.rejectReason}{current.rejectTags?.length ? ` · ${current.rejectTags.join(', ')}` : ''}. Tap Reject to edit or clear.</div>
+        <div className="rs-decided r">Skipped: {current.rejectReason}{current.rejectTags?.length ? ` · ${current.rejectTags.join(', ')}` : ''}. Tap Skip to edit or clear.</div>
+      )}
+      {!canPriority && verdict && (
+        <div className="rs-decided" style={{ color: 'var(--mu2)' }}>Priority needs a score of Maybe or better (this run: {verdict}).</div>
       )}
       <div className="rs-actions">
-        <button type="button" className={`btn-p${decision === 'Watch' ? ' rs-on' : ''}`} disabled={!ready || busy} title={why}
-          aria-pressed={decision === 'Watch'} onClick={watch}>
-          {busy ? <span className="spinner" /> : decision === 'Watch' ? '✓ Watching' : 'Watch'}
+        <button type="button" className={`btn-p${decision === 'Priority' ? ' rs-on' : ''}`} disabled={!ready || !!busy || !canPriority} title={why}
+          aria-pressed={decision === 'Priority'} onClick={() => choose('Priority')}>
+          {busy === 'Priority' ? <span className="spinner" /> : decision === 'Priority' ? '✓ 🔥 Priority' : '🔥 Priority'}
         </button>
-        <button type="button" className={`btn-s rs-reject${decision === 'Reject' ? ' rs-on' : ''}`} disabled={!ready || busy} title={why}
+        <button type="button" className={`btn-s${decision === 'Watch' ? ' rs-on' : ''}`} disabled={!ready || !!busy} title={why}
+          aria-pressed={decision === 'Watch'} onClick={() => choose('Watch')}>
+          {busy === 'Watch' ? <span className="spinner" /> : decision === 'Watch' ? '✓ 👀 Watch' : '👀 Watch'}
+        </button>
+        <button type="button" className={`btn-s rs-reject${decision === 'Reject' ? ' rs-on' : ''}`} disabled={!ready || !!busy} title={why}
           aria-pressed={decision === 'Reject'} onClick={() => setRejectOpen(true)}>
-          {decision === 'Reject' ? '✕ Rejected' : 'Reject'}
+          {decision === 'Reject' ? '✕ Skipped' : 'Skip'}
         </button>
         <button type="button" className="btn-s rs-rerun" onClick={onRerun} disabled={running}>↻ Re-run</button>
       </div>
@@ -191,7 +206,7 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
   const tagsShown = r ? r.tags : b?.dataTags || [];
   const current = save?.history?.find((h) => h.pageId === save.pageId) || null;
   const prevReject = save?.state === 'saved' ? rejectedBefore(save.history, save.pageId) : null;
-  const actions = <Actions ticker={run.ticker} save={save} current={current} onDecide={onDecide} onRerun={onRerun} running={running} />;
+  const actions = <Actions ticker={run.ticker} save={save} current={current} verdict={current?.verdict ?? r?.verdict ?? 'No score'} onDecide={onDecide} onRerun={onRerun} running={running} />;
 
   if (!r) {
     return (

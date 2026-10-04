@@ -501,7 +501,9 @@ console.log('\nStock Runs /notion/runs');
   check('GET bad ticker → 400', r.status === 400, 'got ' + r.status);
 
   // Decision
+  const WL_DB = '35c400a3-854e-80ff-9b36-fd7ddaa3a850';
   stubFetch((url, init) => {
+    if (url.endsWith(`/databases/${WL_DB}/query`)) return jsonRes({ results: [] }); // not on the watchlist yet
     if (url.endsWith(`/v1/pages/${PID_SAME}`) && !init.method) return jsonRes(runPage(PID_SAME, '2026-10-03T14:00:00.000Z'));
     if (url.endsWith(`/v1/pages/${PID_SAME}`) && init.method === 'PATCH') {
       return jsonRes(runPage(PID_SAME, '2026-10-03T14:00:00.000Z', { decision: 'Reject', reason: 'too much debt', tags: ['Debt'] }));
@@ -513,6 +515,28 @@ console.log('\nStock Runs /notion/runs');
   const dp = JSON.parse(calls.find((c) => c.init.method === 'PATCH').init.body).properties;
   check('Reject → 200 + row back', r.status === 200 && body.run?.decision === 'Reject', JSON.stringify(body));
   check('Reject writes reason + only allowed tags', dp.Decision.select.name === 'Reject' && dp['Reject tags'].multi_select.map((t) => t.name).join() === 'Debt');
+  check('not on watchlist yet → Dive-In pending, applied flag false', body.run?.diveIn?.pending === true && dp['Dive-In applied'].checkbox === false, JSON.stringify(body.run?.diveIn));
+
+  // Part 2B: Priority guard + Dive-In write
+  const WL_PAGE = '55555555-5555-5555-5555-555555555555';
+  stubFetch((url, init) => (init.method ? jsonRes({}) : jsonRes(runPage(PID_SAME, '2026-10-03T14:00:00.000Z', { verdict: 'Not worth it', score: 40 }))));
+  r = await worker.fetch(req('/notion/runs/decision', { method: 'PATCH', headers: auth, body: { pageId: PID_SAME, decision: 'Priority' } }), ENV);
+  check('Priority on a Not-worth-it run → 400, nothing patched', r.status === 400 && !calls.some((c) => c.init.method === 'PATCH'), 'got ' + r.status);
+
+  stubFetch((url, init) => {
+    if (url.endsWith(`/databases/${WL_DB}/query`)) return jsonRes({ results: [{ id: WL_PAGE }] });
+    if (url.endsWith(`/v1/pages/${WL_PAGE}`)) return jsonRes({});
+    if (url.endsWith(`/v1/pages/${PID_SAME}`) && init.method === 'PATCH') return jsonRes(runPage(PID_SAME, '2026-10-03T14:00:00.000Z', { verdict: 'Not worth it', decision: 'Priority' }));
+    return jsonRes(runPage(PID_SAME, '2026-10-03T14:00:00.000Z', { verdict: 'Not worth it', score: 40 }));
+  });
+  r = await worker.fetch(req('/notion/runs/decision', { method: 'PATCH', headers: auth, body: { pageId: PID_SAME, decision: 'Priority', override: true } }), ENV);
+  body = await r.json();
+  const wlPatch = calls.find((c) => c.url.endsWith(`/v1/pages/${WL_PAGE}`));
+  const runPatch = JSON.parse(calls.find((c) => c.url.endsWith(`/v1/pages/${PID_SAME}`) && c.init.method === 'PATCH').init.body).properties;
+  check('Keep Priority (override) → Dive-In 🔥 Priority on the watchlist row', r.status === 200 && JSON.parse(wlPatch.init.body).properties['Dive-In'].select.name === '🔥 Priority', 'got ' + r.status);
+  check('…and the run records Dive-In applied', runPatch['Dive-In applied'].checkbox === true && body.run?.diveIn?.applied === true);
+  const wlKeys = Object.keys(JSON.parse(wlPatch.init.body).properties);
+  check('watchlist write touches Dive-In only', wlKeys.length === 1 && wlKeys[0] === 'Dive-In', wlKeys.join());
 
   stubFetch(() => jsonRes({}));
   r = await worker.fetch(req('/notion/runs/decision', { method: 'PATCH', headers: auth, body: { pageId: PID_SAME, decision: 'Reject', reason: '' } }), ENV);

@@ -10,7 +10,12 @@
 //   listRuns(env, {ticker})     history for one ticker, or the most recent runs.
 //   getRun(env, pageId)         one row + Claude's write-up from the page body.
 //   redoClaude(env, pageId)     start Claude again ("Redo" / "Retry").
-//   setDecision(env, body)      Watch / Reject (reason required) / clear.
+//   setDecision(env, body)      Priority / Watch / Reject (reason required) / clear.
+//                               Part 2B: also sets Dive-In on the watchlist row
+//                               (the one field) — or leaves it pending until the
+//                               row exists (applyPendingDecisions).
+//   applyPendingDecisions(env)  daily, from the scan: copy a pending decision to
+//                               Dive-In once TradingView has synced the row.
 //
 // Every write that names a page checks the page is a Stock Runs row first.
 // The page body gets one toggle, "Checks · …", with the checks in words. A
@@ -18,7 +23,7 @@
 // write-up) alone.
 
 import { notionFetch, plain, NOTION_DB_ID } from './notion.js';
-import { cleanRecord, cleanDecision, dayKey, runStamp, TICKER_RE, CLAUDE_TIMEOUT_MIN } from '../src/lib/research/runRecord.js';
+import { cleanRecord, cleanDecision, dayKey, runStamp, TICKER_RE, CLAUDE_TIMEOUT_MIN, DIVE_IN, scoreAllowsPriority } from '../src/lib/research/runRecord.js';
 
 export const STOCK_RUNS_DB = '60a0a2a4-5833-487e-b8d4-80c509e5fcff';
 const STOCK_RUNS_DS = 'cca96b9f-921e-4439-bc01-df52119197cf';
@@ -61,6 +66,7 @@ export function parseRunPage(page) {
     decision: sel('Decision'),
     rejectReason: t('Reject reason'),
     rejectTags: (p['Reject tags'] && p['Reject tags'].multi_select || []).map((x) => x.name),
+    diveInApplied: !!(p['Dive-In applied'] && p['Dive-In applied'].checkbox),
     // Claude routine (P1.6)
     claudeStarted: d('Claude started'),
     claudeWritten: d('Claude written'),
@@ -344,9 +350,22 @@ export async function setDecision(env, body) {
   if (!c.ok) throw httpError(c.error, 400);
 
   // Only Stock Runs rows: the app secret must not become a general Notion writer.
-  await readRunPage(env, pageId);
+  const row = parseRunPage(await readRunPage(env, pageId));
 
-  const { decision, reason, tags } = c.d;
+  const { decision, reason, tags, override } = c.d;
+  // Part 2B guard: a weak score can't be made Priority from Research. The
+  // Score review card's "Keep Priority" passes override (El's explicit call).
+  if (decision === 'Priority' && !override && !scoreAllowsPriority(row.verdict)) {
+    throw httpError(`score ${row.investmentScore ?? '—'} (${row.verdict || 'no score'}) can't be Priority`, 400);
+  }
+
+  // Dive-In first, so the run row records whether it landed.
+  let applied = false;
+  if (decision) {
+    const wlId = await watchlistPageId(env, row.ticker);
+    if (wlId) { await setDiveIn(env, wlId, decision); applied = true; }
+  }
+
   const updated = await ok(await notionFetch(env, `/v1/pages/${pageId}`, {
     method: 'PATCH',
     body: JSON.stringify({
@@ -354,8 +373,52 @@ export async function setDecision(env, body) {
         Decision: { select: decision ? { name: decision } : null },
         'Reject reason': { rich_text: text(reason) },
         'Reject tags': { multi_select: tags.map((name) => ({ name })) },
+        'Dive-In applied': { checkbox: applied },
       },
     }),
   }), 'decision update');
-  return parseRunPage(updated);
+  return { ...parseRunPage(updated), diveIn: { applied, pending: !!decision && !applied } };
+}
+
+/** Write the one field. Nothing else on the watchlist row is touched. */
+async function setDiveIn(env, watchlistId, decision) {
+  const name = DIVE_IN[decision];
+  if (!name) return;
+  await ok(await notionFetch(env, `/v1/pages/${watchlistId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ properties: { 'Dive-In': { select: { name } } } }),
+  }), 'dive-in update');
+}
+
+/**
+ * Decisions made in Research before the stock was on the watchlist. For each
+ * ticker only its NEWEST decided run counts: if that one is already applied,
+ * nothing happens (an older pending choice must never override a newer one).
+ * @returns [{ ticker, decision }] applied this call.
+ */
+export async function applyPendingDecisions(env) {
+  const data = await ok(await notionFetch(env, `/v1/databases/${STOCK_RUNS_DB}/query`, {
+    method: 'POST',
+    body: JSON.stringify({
+      page_size: 50,
+      filter: { property: 'Decision', select: { is_not_empty: true } },
+      sorts: [{ property: 'Run date', direction: 'descending' }],
+    }),
+  }), 'pending decisions');
+  const seen = new Set();
+  const done = [];
+  for (const row of (data.results || []).map(parseRunPage)) {
+    if (!row.ticker || seen.has(row.ticker)) continue;
+    seen.add(row.ticker);
+    if (row.diveInApplied || !row.decision) continue;
+    const wlId = await watchlistPageId(env, row.ticker);
+    if (!wlId) continue; // still not synced — try again tomorrow
+    await setDiveIn(env, wlId, row.decision);
+    await ok(await notionFetch(env, `/v1/pages/${row.pageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ properties: { 'Dive-In applied': { checkbox: true } } }),
+    }), 'applied flag');
+    done.push({ ticker: row.ticker, decision: row.decision });
+  }
+  return done;
 }

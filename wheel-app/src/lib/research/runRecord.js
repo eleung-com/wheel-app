@@ -16,7 +16,38 @@ import { plainLines } from './explain.js';
 export const RUN_TZ = 'America/New_York';
 export const VERDICTS = ['Worth investing', 'Maybe', 'Not worth it', 'No score'];
 export const SCORE_TYPES = ['Preliminary', 'Final'];
-export const DECISIONS = ['Watch', 'Reject'];
+// Part 2B (decided 10-04): Dive-In on the watchlist is the ONE field for
+// "trade this stock or not". A run's Decision is the record of what El chose
+// on that run; setting it also sets Dive-In (now, or when the watchlist row
+// appears after a TradingView sync). Reject is shown as "Skip" in the app.
+export const DECISIONS = ['Priority', 'Watch', 'Reject'];
+export const DIVE_IN = { Priority: '🔥 Priority', Watch: '👀 Watch', Reject: '— Skip' };
+/** Only these verdicts may be made Priority (unless El overrides from a Score review). */
+export const PRIORITY_VERDICTS = ['Worth investing', 'Maybe'];
+/** A score older than this is tagged stale on the signal card (still counts). */
+export const SCORE_STALE_DAYS = 90;
+
+export function scoreAllowsPriority(verdict) {
+  return PRIORITY_VERDICTS.includes(verdict);
+}
+
+/**
+ * Stock Runs rows (newest first) → { TICKER: latest row's score bits }.
+ * Shared by the app's screener and the Worker scan so both gate on the same
+ * score. A ticker with no row is "unscored".
+ */
+export function scoreMap(rows) {
+  const out = {};
+  for (const r of rows || []) {
+    const t = String(r && r.ticker || '').toUpperCase();
+    if (!t || out[t]) continue;
+    out[t] = {
+      pageId: r.pageId, verdict: r.verdict || null, score: r.investmentScore ?? null,
+      scoreType: r.scoreType || null, runAt: r.runAt || null, decision: r.decision || null,
+    };
+  }
+  return out;
+}
 export const REJECT_TAGS = ['Revenue', 'Debt', 'FCF', 'Moat', 'Valuation', 'Competition', 'Other'];
 export const TICKER_RE = /^[A-Z][A-Z0-9.-]{0,9}$/;
 
@@ -128,13 +159,13 @@ export function cleanRecord(body) {
 export function cleanDecision(body) {
   if (!body || typeof body !== 'object') return { ok: false, error: 'body must be a JSON object' };
   const decision = body.decision == null || body.decision === '' ? null : body.decision;
-  if (decision !== null && !DECISIONS.includes(decision)) return { ok: false, error: 'decision must be Watch, Reject or null' };
+  if (decision !== null && !DECISIONS.includes(decision)) return { ok: false, error: 'decision must be Priority, Watch, Reject or null' };
   const reason = decision === 'Reject' ? String(body.reason ?? '').trim().slice(0, MAX_REASON) : '';
   if (decision === 'Reject' && !reason) return { ok: false, error: 'a reason is required to reject' };
   const tags = decision === 'Reject'
     ? [...new Set((Array.isArray(body.tags) ? body.tags : []).filter((t) => REJECT_TAGS.includes(t)))]
     : [];
-  return { ok: true, d: { decision, reason, tags } };
+  return { ok: true, d: { decision, reason, tags, override: body.override === true } };
 }
 
 /** Newest Reject among the rows that isn't the run on screen (rows newest first). */

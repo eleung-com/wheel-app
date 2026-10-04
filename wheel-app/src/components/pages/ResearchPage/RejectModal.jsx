@@ -31,7 +31,7 @@ function Body({ ticker, current, onSave, onClear, onClose }) {
 
   return (
     <form onSubmit={submit}>
-      <div className="mtitle">Reject {ticker}</div>
+      <div className="mtitle">Skip {ticker}</div>
       <div className="mlbl">Why? (required)</div>
       <textarea
         className="rs-reason"
@@ -50,7 +50,7 @@ function Body({ ticker, current, onSave, onClear, onClose }) {
         ))}
       </div>
       <button type="submit" className="btn-p rs-reject-save" disabled={!reason.trim() || busy} style={{ marginTop: 14 }}>
-        {busy ? <span className="spinner" /> : isRejected ? 'Update reject' : 'Reject'}
+        {busy ? <span className="spinner" /> : isRejected ? 'Update skip' : 'Skip'}
       </button>
       {isRejected && (
         <button type="button" className="btn-s" onClick={clear} disabled={busy}>Clear decision</button>

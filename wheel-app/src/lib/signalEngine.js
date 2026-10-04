@@ -277,7 +277,27 @@ export function ccEntryOk(q, cr) {
     && rollingOverFrom(q.stochK, q.stochKPrev, cr.ccStochAbove);
 }
 
-export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {}) {
+// ── Investment Score gate (Part 2B) ─────────────────────────────────────────
+// `scores` = scoreMap() of the latest Stock Runs row per ticker, or null when
+// it couldn't be read (cards then still fire, tagged "Score unavailable" —
+// a Notion outage must not silence every CSP).
+const SCORE_STALE_MS = 90 * 86400000;
+
+/** Pills describing the score on a CSP card. */
+function scorePills(s, scores, now) {
+  if (!scores) return [{ l: 'Score unavailable', ok: false, warn: true }];
+  if (!s || s.score == null || s.verdict === 'No score') return [{ l: 'Unscored – run it', ok: false, warn: true }];
+  const short = s.verdict === 'Worth investing' ? 'Worth' : s.verdict;
+  const pills = [{ l: `Score ${Math.round(s.score)} · ${short}${s.scoreType === 'Preliminary' ? ' · Prelim' : ''}`, ok: true }];
+  const at = s.runAt ? Date.parse(s.runAt) : NaN;
+  if (Number.isFinite(at) && now - at > SCORE_STALE_MS) {
+    const d = new Date(at);
+    pills.push({ l: `Score from ${d.getMonth() + 1}/${d.getDate()} · stale`, ok: false, warn: true });
+  }
+  return pills;
+}
+
+export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {}, scores = null) {
   const cr   = criteria;
   const sigs = [];
 
@@ -302,8 +322,32 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
   // The row must be flagged Priority in Notion, then RSI and Stochastic decide.
   // The drop from the 5-day high and the ATR multiple are no longer conditions —
   // they ride along on the card as context for sizing the move.
+  const now = Date.now();
   for (const w of watchlist) {
     if (w.diveIn !== PRIORITY) continue;
+
+    // Score gate: Priority but the latest run says Not worth it → no trade
+    // card, a Score review card instead (until El moves it or keeps it).
+    const sc = scores ? scores[w.ticker] : undefined;
+    if (sc && sc.verdict === 'Not worth it') {
+      // Shown until El decides on that run (any decision hides it — Watch
+      // flips Dive-In, Priority = "keep it", Reject = skip). The gate itself
+      // stays: no trade cards while the latest score is Not worth it.
+      if (!sc.decision) {
+        const qq = qmap[w.ticker];
+        sigs.push({
+          id: `review-${w.ticker}`, type: 'score_review', ticker: w.ticker,
+          price: qq?.price ?? null, chg: qq?.chg1d ?? null,
+          score: sc.score, verdict: sc.verdict, scoreType: sc.scoreType, scoreAt: sc.runAt,
+          runPageId: sc.pageId,
+          ...notionOf(w.ticker),
+          chks: [{ l: `Score ${sc.score != null ? Math.round(sc.score) : '—'} · Not worth it`, ok: false }],
+          suggestion: 'No trade cards while it scores below 55. Move to Watch, or keep Priority.',
+          ts: now,
+        });
+      }
+      continue;
+    }
 
     const q = qmap[w.ticker];
     if (!q) continue;
@@ -336,6 +380,7 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       { l: stochLabel(q), ok: stochOk, tgt: `up from <${cr.stochBelow}` },
       { l: `Wkly RSI ${q.rsiWeekly.toFixed(0)}`, ok: true, tgt: `≥${floor}` },
       ...(earnPill ? [earnPill] : []),
+      ...scorePills(sc, scores, now),
     ];
 
     const suggParts = [];
@@ -358,6 +403,8 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       rsi: q.rsi, rsiWeekly: q.rsiWeekly, stochK: q.stochK, stochD: q.stochD, chks,
       earnWarn: earnNote,
       waitReason: blockedBy,
+      score: sc?.score ?? null, verdict: sc?.verdict ?? null, scoreType: sc?.scoreType ?? null,
+      scoreAt: sc?.runAt ?? null, unscored: !!scores && (!sc || sc.score == null || sc.verdict === 'No score'),
       suggestion: blockedBy ? `Waiting: ${blockedBy}` : suggParts.join(' · '),
       ts: Date.now(),
     });

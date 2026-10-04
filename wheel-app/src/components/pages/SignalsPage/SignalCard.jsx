@@ -1,13 +1,13 @@
 import React from 'react';
 import EvalBody from './EvalBody';
 
-export default function SignalCard({ signal: s, onClick, evaluation, loading }) {
+export default function SignalCard({ signal: s, onClick, evaluation, loading, onScoreReview, reviewBusy }) {
   // Only entry signals carry a Notion evaluation — roll and close cards are
   // about a position already open, where the thesis is no longer the question.
   // Those that do take the full grid row: the evaluation contains tables, and a
   // three-column table is unreadable in a half-width card.
   const showEval = s.type === 'csp' || s.type === 'cc';
-  const lbl = { csp: 'CSP', csp_wait: 'Waiting', cc: 'Cov. Call', roll: 'Roll', close: 'Close', maxloss: 'Max Loss' }[s.type];
+  const lbl = { csp: 'CSP', csp_wait: 'Waiting', score_review: 'Score review', cc: 'Cov. Call', roll: 'Roll', close: 'Close', maxloss: 'Max Loss' }[s.type];
   const chgC   = s.chg > 0 ? 'g' : s.chg < 0 ? 'r' : 'mu2';
   const chgStr = (s.chg !== null && s.chg !== undefined)
     ? <span style={{ color: `var(--${chgC})` }}>{s.chg > 0 ? '+' : ''}{s.chg.toFixed(1)}%</span>
@@ -18,7 +18,7 @@ export default function SignalCard({ signal: s, onClick, evaluation, loading }) 
   // Strike and DTE need the CBOE option chain to resolve and are already spelled out in
   // the suggestion line, so the grid leads with the figures that always exist:
   // how far the stock fell, and how big that is against its own daily range.
-  if (s.type === 'csp_wait')
+  if (s.type === 'csp_wait' || s.type === 'score_review')
     mets = null; // the reason line below is the whole story
   else if (s.type === 'csp')
     mets = (
@@ -73,6 +73,19 @@ export default function SignalCard({ signal: s, onClick, evaluation, loading }) 
       </div>
       {mets}
       <div className="sugg" style={{ fontSize: 10, padding: '6px 8px', lineHeight: 1.45 }}>{s.suggestion}</div>
+
+      {s.type === 'score_review' && onScoreReview && (
+        // Part 2B: El decides. Both buttons record a decision on the latest
+        // run; Move to Watch also sets Dive-In to 👀 Watch.
+        <div className="srv-btns" onClick={e => e.stopPropagation()}>
+          <button type="button" className="srv-btn go" disabled={reviewBusy} onClick={() => onScoreReview(s, 'Watch')}>
+            {reviewBusy ? <span className="spinner" /> : 'Move to 👀 Watch'}
+          </button>
+          <button type="button" className="srv-btn" disabled={reviewBusy} onClick={() => onScoreReview(s, 'Priority')}>
+            Keep Priority
+          </button>
+        </div>
+      )}
 
       {showEval && (
         // Scrolls inside the card so a long evaluation doesn't stretch the grid

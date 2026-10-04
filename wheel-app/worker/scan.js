@@ -11,6 +11,8 @@ import { fetchQ, fetchOptionPrice, fetchBestStrike } from '../src/lib/marketData
 import { sendTelegram, formatAlert, formatDteAlert } from './telegram.js';
 import { isMarketOpen, etDateString } from './marketHours.js';
 import { refreshEarnings } from './earnings.js';
+import { listRuns, applyPendingDecisions } from './stockRuns.js';
+import { scoreMap } from '../src/lib/research/runRecord.js';
 
 const CBOE_ORIGIN    = 'https://cdn.cboe.com/api/global/delayed_quotes';
 const YAHOO_ORIGIN   = 'https://query1.finance.yahoo.com';
@@ -186,6 +188,29 @@ export async function runScan(env, now = new Date()) {
       console.error('[scan] earnings refresh failed:', e?.message || e);
     }
 
+    // Part 2B: Research decisions made before TradingView synced the row →
+    // copy them into Dive-In, once a day. Updates this scan's rows too.
+    try {
+      const dayKey = `decisions|day|${etDateString(now)}`;
+      if (!env.ALERTS_KV || !(await env.ALERTS_KV.get(dayKey))) {
+        const applied = await applyPendingDecisions(env);
+        for (const a of applied) {
+          const w = watchlist.find(x => x.ticker === a.ticker);
+          if (w) w.diveIn = { Priority: PRIORITY, Watch: '👀 Watch', Reject: '— Skip' }[a.decision] || w.diveIn;
+        }
+        if (applied.length) console.log('[scan] dive-in applied:', JSON.stringify(applied));
+        if (env.ALERTS_KV) await env.ALERTS_KV.put(dayKey, '1', { expirationTtl: 3 * 86400 });
+      }
+    } catch (e) {
+      console.error('[scan] pending decisions failed:', e?.message || e);
+    }
+
+    // Part 2B: latest Investment Score per ticker gates CSP cards. null on a
+    // Notion failure → cards still go out, tagged "Score unavailable".
+    let scores = null;
+    try { scores = scoreMap(await listRuns(env, { limit: 50 })); }
+    catch (e) { console.error('[scan] score read failed:', e?.message || e); }
+
     if (!tickers.length) return; // nothing flagged and nothing held → clean no-op
 
     const qmap = {};
@@ -243,7 +268,7 @@ export async function runScan(env, now = new Date()) {
       unpricedIds = new Set(positions.filter(isPriceableOption).map(p => p.id));
     }
 
-    const sigs = buildSignals(watchlist, pricedPositions, criteria, qmap, strikeMap)
+    const sigs = buildSignals(watchlist, pricedPositions, criteria, qmap, strikeMap, scores)
       // A close alert says "buy it back at this price". Sending one computed off
       // a stale Sheet value is worse than staying quiet — the roll and max-loss
       // alerts for the same position are unaffected, since those read the stock.
@@ -253,6 +278,8 @@ export async function runScan(env, now = new Date()) {
       // Part 2A: a CSP blocked by earnings is shown in the app as "waiting",
       // never alerted — the alert would be a trade you shouldn't take.
       if (sig.type === 'csp_wait') continue;
+      // Score reviews are an in-app decision, not a market event (Part 2B).
+      if (sig.type === 'score_review') continue;
       const key = `${sig.ticker}|${sig.type}|${etDateString(now)}`;
       if (env.ALERTS_KV && await env.ALERTS_KV.get(key)) continue; // already alerted today
 

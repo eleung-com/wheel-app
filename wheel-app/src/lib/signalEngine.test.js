@@ -175,7 +175,8 @@ describe('buildSignals — CSP', () => {
     expect(labels[1]).toMatch(/^%K /);
     expect(labels[2]).toMatch(/^Wkly RSI /);
     expect(labels[3]).toMatch(/^Earnings /);
-    expect(labels).toHaveLength(4);
+    expect(labels[4]).toBe('Score unavailable'); // no score map passed (Part 2B)
+    expect(labels).toHaveLength(5);
   });
 
   it('does not fire when a short put/call is already open on the ticker', () => {
@@ -488,5 +489,71 @@ describe('CSP weekly RSI floor', () => {
   it('shows the weekly RSI as a passing pill', () => {
     const [s] = buildSignals(watchlist, [], CRITERIA, { AAPL: { ...q, rsiWeekly: 46.2 } });
     expect(s.chks.some(c => c.ok && c.l === 'Wkly RSI 46')).toBe(true);
+  });
+});
+
+// ── Part 2B: Investment Score gate ──────────────────────────────────────────
+
+describe('CSP score gate', () => {
+  const watchlist = [{ ticker: 'AAPL', diveIn: PRIORITY, pageId: 'p1', earnings: FAR_EARNINGS }];
+  const q = { price: 190, chg1d: -1, rsi: 35, rsiWeekly: 55, stochK: 18, stochKPrev: 12 };
+  const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
+  const run = (extra) => ({ AAPL: { pageId: 'run1', verdict: 'Worth investing', score: 84, scoreType: 'Final', runAt: daysAgo(3), decision: null, ...extra } });
+  const build = (scores) => buildSignals(watchlist, [], CRITERIA, { AAPL: q }, {}, scores);
+
+  it('Worth investing → CSP card with a score pill', () => {
+    const [s] = build(run());
+    expect(s.type).toBe('csp');
+    expect(s.score).toBe(84);
+    expect(s.chks.some(c => c.ok && c.l === 'Score 84 · Worth')).toBe(true);
+  });
+
+  it('Maybe (Preliminary) still fires, marked Prelim', () => {
+    const [s] = build(run({ verdict: 'Maybe', score: 62, scoreType: 'Preliminary' }));
+    expect(s.type).toBe('csp');
+    expect(s.chks.some(c => c.l === 'Score 62 · Maybe · Prelim')).toBe(true);
+  });
+
+  it('Not worth it → no CSP, a Score review card instead — even with no oscillator setup', () => {
+    const sigs = buildSignals(watchlist, [], CRITERIA, { AAPL: { ...q, rsi: 70 } }, {}, run({ verdict: 'Not worth it', score: 48 }));
+    expect(sigs).toHaveLength(1);
+    expect(sigs[0]).toMatchObject({ type: 'score_review', ticker: 'AAPL', runPageId: 'run1', score: 48 });
+  });
+
+  it('once El decides on that run, the review card goes — the gate stays', () => {
+    for (const decision of ['Priority', 'Watch', 'Reject']) {
+      expect(build(run({ verdict: 'Not worth it', score: 48, decision })), decision).toHaveLength(0);
+    }
+  });
+
+  it('never run → card fires, tagged Unscored', () => {
+    const [s] = build({});
+    expect(s.type).toBe('csp');
+    expect(s.unscored).toBe(true);
+    expect(s.chks.some(c => c.warn && c.l === 'Unscored – run it')).toBe(true);
+  });
+
+  it('No score verdict (foreign filer) counts as unscored', () => {
+    const [s] = build(run({ verdict: 'No score', score: null }));
+    expect(s.unscored).toBe(true);
+  });
+
+  it('a score older than 90 days is tagged stale but still counts', () => {
+    const [s] = build(run({ runAt: daysAgo(120) }));
+    expect(s.type).toBe('csp');
+    expect(s.chks.some(c => c.warn && /^Score from \d+\/\d+ · stale$/.test(c.l))).toBe(true);
+  });
+
+  it('scores unavailable (null) → cards still fire, tagged', () => {
+    const [s] = build(null);
+    expect(s.type).toBe('csp');
+    expect(s.chks.some(c => c.l === 'Score unavailable')).toBe(true);
+  });
+
+  it('covered calls are not score-gated', () => {
+    const positions = [{ id: 10, ticker: 'AAPL', type: 'shares', qty: 100 }];
+    const cc = { price: 420, chg1d: 1, rsi: 62, stochK: 82, stochKPrev: 88 };
+    const sigs = buildSignals(watchlist, positions, CRITERIA, { AAPL: cc }, {}, run({ verdict: 'Not worth it', score: 40, decision: 'Watch' }));
+    expect(sigs.map(s => s.type)).toEqual(['cc']);
   });
 });
