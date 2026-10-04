@@ -159,14 +159,17 @@ export function operatingPe(input) {
   return isNum(mc) && isNum(oi) && oi > 0 ? mc / oi : null;
 }
 
-const peBandPoints = (pe, ref) => (pe <= ref ? 100 : pe <= ref * R.PE_BANDS.halfPointsUpTo ? 50 : 0);
+/** Straight line: value at `fullAt` (or better) → 100, at `zeroAt` (or worse) → 0. */
+const lerpPoints = (v, fullAt, zeroAt) => Math.round(Math.max(0, Math.min(100, ((zeroAt - v) / (zeroAt - fullAt)) * 100)));
+/** v2.7: P/E vs a reference P/E, smooth (see rules.js PE_SCALE). */
+const peBandPoints = (pe, ref) => lerpPoints(pe / ref, R.PE_SCALE.fullAt, R.PE_SCALE.zeroAt);
 
 function scoreValue(input, opPe, peerList, tags, peerSource) {
   const parts = [];
   const nameOwn = 'Operating P/E vs own 5-yr median';
   const namePeer = 'Operating P/E vs peer median';
   const namePeg = 'PEG (operating)';
-  const ruleBands = 'At/below = 100 · up to 25% above = 50 · more = 0';
+  const ruleBands = '25%+ cheaper = 100 · equal = 50 · 25%+ dearer = 0 · straight line between';
 
   if (opPe === null) {
     tags.push({ code: 'no_operating_profit', text: 'No operating profit — no P/E, can’t rank on value' });
@@ -201,10 +204,13 @@ function scoreValue(input, opPe, peerList, tags, peerSource) {
   }
   if (peerPes === null) {
     // handled above (auto-peers too thin)
-  } else if (peerPes.length) {
+  } else if (peerPes.length >= R.MIN_PEERS) {
     const med = median(peerPes);
-    if (peerPes.length < R.MIN_PEERS) tags.push({ code: 'weak_comparison', text: `Only ${peerPes.length} usable peer(s) — weak comparison` });
     parts.push({ id: 'pe_peers', label: namePeer, points: peBandPoints(opPe, med), display: `${opPe.toFixed(1)} vs ${med.toFixed(1)}`, rule: ruleBands, note: `${peerPes.length} peers` });
+  } else if (peerPes.length) {
+    // v2.7: too few to trust a median — left out rather than scored.
+    tags.push({ code: 'weak_comparison', text: `Only ${peerPes.length} usable peer(s) — peer comparison left out` });
+    parts.push({ id: 'pe_peers', label: namePeer, points: null, display: 'n/a', rule: ruleBands, note: `Only ${peerPes.length} peer(s) with a positive operating P/E (need ${R.MIN_PEERS})` });
   } else {
     tags.push({ code: 'weak_comparison', text: 'No usable peers — peer comparison left out' });
     parts.push({ id: 'pe_peers', label: namePeer, points: null, display: 'n/a', rule: ruleBands, note: 'No peers with a positive operating P/E' });
@@ -212,14 +218,14 @@ function scoreValue(input, opPe, peerList, tags, peerSource) {
 
   // PEG on 3-yr compound op-income growth (P1-4: trailing, pure math).
   const g = pegGrowth(input);
-  const pegRule = 'Operating P/E ÷ 3-yr yearly op-income growth %: <1 = 100 · 1–2 = 50 · >2 = 0';
+  const pegRule = 'Operating P/E ÷ 3-yr yearly op-income growth %: ≤0.5 = 100 · ≥2 = 0 · straight line between';
   if (g === null) {
     parts.push({ id: 'peg', label: namePeg, points: null, display: 'n/a', rule: pegRule, note: 'Needs 3 years of operating income, starting positive' });
   } else if (g <= 0) {
     parts.push({ id: 'peg', label: namePeg, points: 0, display: 'no growth', rule: pegRule, note: `Op income growth ${round1(g)}%/yr` });
   } else {
     const peg = opPe / g;
-    const points = peg < R.PEG.full ? 100 : peg <= R.PEG.half ? 50 : 0;
+    const points = lerpPoints(peg, R.PEG.fullAt, R.PEG.zeroAt);
     parts.push({ id: 'peg', label: namePeg, points, display: peg.toFixed(2), rule: pegRule, note: `Op P/E ${opPe.toFixed(1)} ÷ ${round1(g)}%/yr` });
   }
 
