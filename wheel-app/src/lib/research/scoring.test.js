@@ -30,7 +30,7 @@ const goodYears = [
 ];
 
 /** Build an input; `opPe` sets the price so the current operating P/E equals it. */
-function company({ q = quarters(healthyQ), opPe = 20, upsidePct = 30, ...rest } = {}) {
+function company({ q = quarters(healthyQ), opPe = 20, upsidePct = 50, ...rest } = {}) {
   const oi = ttm(q, 'operatingIncome');
   const price = oi > 0 ? (opPe * oi) / SHARES : 50;
   return {
@@ -41,8 +41,9 @@ function company({ q = quarters(healthyQ), opPe = 20, upsidePct = 30, ...rest } 
     quarters: q,
     balance: { totalDebt: 50, equity: 100 },
     annual: goodYears,
-    opPeHistory: [25, 25, 25, 25, 25].map((opPe, k) => ({ year: 2021 + k, opPe })),
-    peers: { source: 'claude', list: [{ ticker: 'A', opPe: 25, debtToEquity: 0.5 }, { ticker: 'B', opPe: 26, debtToEquity: 0.6 }, { ticker: 'C', opPe: 30, debtToEquity: 0.4 }] },
+    // v2.7: baseline sits ≥25% below both references so it still earns full value points.
+    opPeHistory: [30, 30, 30, 30, 30].map((opPe, k) => ({ year: 2021 + k, opPe })),
+    peers: { source: 'claude', list: [{ ticker: 'A', opPe: 28, debtToEquity: 0.5 }, { ticker: 'B', opPe: 30, debtToEquity: 0.6 }, { ticker: 'C', opPe: 32, debtToEquity: 0.4 }] },
     analystTarget: { value: price * (1 + upsidePct / 100), source: 'FMP', asOf: '2026-10-01' },
     beatRate: { beats: 8, total: 8, stale: false },
     ...rest,
@@ -59,9 +60,10 @@ describe('baseline healthy company', () => {
   const r = scoreStock(company());
   it('scores 100 across the board and says Worth investing', () => {
     expect(r.quality.score).toBe(100);
-    expect(r.value.score).toBe(100);
+    // v2.7: value is a straight line now, so "near-perfect" rather than a flat 100
+    expect(r.value.score).toBeGreaterThanOrEqual(99);
     expect(r.upside.score).toBe(100);
-    expect(r.investmentScore).toBe(100);
+    expect(r.investmentScore).toBeGreaterThanOrEqual(99);
     expect(r.verdict).toBe('Worth investing');
   });
   it('stamps the rules version and score type', () => {
@@ -165,10 +167,12 @@ describe('fix #7: peer rules', () => {
     expect(part(r, 'pe_peers').note).toBe('3 peers');
     expect(part(r, 'pe_peers').display).toBe('20.0 vs 22.0');
   });
-  it('fewer than 3 usable peers → weak comparison tag, still scored', () => {
-    const r = scoreStock(company({ peers: { source: 'claude', list: [{ ticker: 'A', opPe: 18 }, { ticker: 'B', opPe: 30 }] } }));
+  it('v2.7: fewer than 3 usable peers (Claude\'s too) → peer comparison left out, tagged', () => {
+    // The NFLX case: DIS + a barely-profitable peer with a huge P/E.
+    const r = scoreStock(company({ peers: { source: 'claude', list: [{ ticker: 'DIS', opPe: 15 }, { ticker: 'ROKU', opPe: 80 }, { ticker: 'WBD', opPe: -5 }] } }));
     expect(hasTag(r, 'weak_comparison')).toBe(true);
-    expect(part(r, 'pe_peers').points).not.toBeNull();
+    expect(part(r, 'pe_peers').points).toBeNull();
+    expect(part(r, 'pe_peers').note).toMatch(/need 3/);
   });
 });
 
@@ -244,7 +248,7 @@ describe('GEV dry run: fix #9 operating P/E', () => {
   it('scores on operating P/E; the reported P/E is shown but much lower', () => {
     expect(r.metrics.operatingPe).toBeCloseTo(20);
     expect(r.metrics.reportedPe).toBeLessThan(r.metrics.operatingPe / 2);
-    expect(part(r, 'pe_own').display).toBe('20.0 vs 25.0');
+    expect(part(r, 'pe_own').display).toBe('20.0 vs 30.0');
   });
 });
 
@@ -282,8 +286,8 @@ describe('verdict cutoffs (decided 10-02)', () => {
 });
 
 describe('target upside scale', () => {
-  it.each([[-5, 0], [0, 0], [15, 50], [30, 100], [60, 100]])('%i%% upside → %i points', (pct, pts) => {
-    expect(scoreStock(company({ upsidePct: pct })).upside.score).toBe(pts);
+  it.each([[-5, 0], [0, 0], [25, 50], [30, 60], [50, 100], [80, 100]])('v2.7: %i%% upside → %i points (full at +50%)', (pct, pts) => {
+    expect(scoreStock(company({ upsidePct: pct })).upside.score).toBeCloseTo(pts, 6);
   });
   it('no target → upside left out and weights rescaled (quality 53% / value 47%)', () => {
     const r = scoreStock(company({ analystTarget: null }));
@@ -296,16 +300,24 @@ describe('target upside scale', () => {
 });
 
 describe('value scale', () => {
-  it('P/E up to 25% above the reference = 50, beyond = 0', () => {
-    expect(part(scoreStock(company({ opPe: 31 })), 'pe_own').points).toBe(50); // 31 ≤ 25×1.25
-    expect(part(scoreStock(company({ opPe: 32 })), 'pe_own').points).toBe(0);
+  it('v2.7: P/E vs reference is a straight line — 25%+ cheaper 100 · equal 50 · 25%+ dearer 0', () => {
+    // own 5-yr median is 30
+    const pts = (opPe) => part(scoreStock(company({ opPe })), 'pe_own').points;
+    expect(pts(20)).toBe(100);   // 0.67× → capped at 100
+    expect(pts(22.5)).toBe(100); // exactly 0.75×
+    expect(pts(27)).toBe(70);    // 10% cheaper
+    expect(pts(29.7)).toBe(52);  // 1% cheaper — no longer a full 100
+    expect(pts(30)).toBe(50);    // equal
+    expect(pts(33)).toBe(30);    // 10% dearer
+    expect(pts(37.5)).toBe(0);   // 1.25×
+    expect(pts(45)).toBe(0);
   });
-  it('PEG bands: <1 = 100 · 1–2 = 50 · >2 = 0; no growth = 0', () => {
+  it('v2.7: PEG straight line — ≤0.5 = 100 · ≥2 = 0; no growth = 0', () => {
     // Flat op income for 16 quarters then a jump → modest 3-yr growth.
     const slowQ = (g) => quarters((i) => ({ ...healthyQ(i), revenue: 1000, operatingIncome: i < 8 ? 100 : 100 * (1 + g) ** 3 }));
     const pegPts = (g, opPe) => part(scoreStock(company({ q: slowQ(g), opPe })), 'peg').points;
-    expect(pegPts(0.30, 20)).toBe(100); // 20 / 30 = 0.67
-    expect(pegPts(0.15, 20)).toBe(50);  // 20 / 15 = 1.33
+    expect(pegPts(0.50, 20)).toBe(100); // 20 / 50 = 0.4
+    expect(pegPts(0.20, 20)).toBe(67);  // 20 / 20 = 1.0
     expect(pegPts(0.05, 20)).toBe(0);   // 20 / 5  = 4
     expect(pegPts(-0.05, 20)).toBe(0);
   });
@@ -326,7 +338,7 @@ describe('preliminary → final', () => {
     const fin = scoreStock(company({ stage: 'final' }));
     expect(pre.scoreType).toBe('Preliminary');
     expect(pre.peerSource).toBe('auto');
-    expect(part(pre, 'pe_peers').points).toBe(50);
+    expect(part(pre, 'pe_peers').points).toBe(28); // 20 vs 18 → 1.11× (v2.7 straight line)
     expect(fin.scoreType).toBe('Final');
     expect(part(fin, 'pe_peers').points).toBe(100);
     expect(fin.investmentScore).toBeGreaterThan(pre.investmentScore);

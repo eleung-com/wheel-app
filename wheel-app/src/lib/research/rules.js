@@ -6,7 +6,8 @@
 // Source of every number: PRD "Stock Research & Trade Ranker" v2.6, §6A and
 // §6A-BUILD, plus the stock-watchlist-evaluator thresholds it builds on.
 
-export const SCORING_VERSION = 'v2.6'; // v2.6 (10-03): auto-peer outlier rule
+export const SCORING_VERSION = 'v2.7'; // v2.7 (10-04): smooth value scale, <3 peers = n/a, upside full at +50%
+// v2.6 (10-03): auto-peer outlier rule
 
 // ── Investment Score ─────────────────────────────────────────────────────────
 // Quality 40% + Value 35% + Target upside 25%. A piece that is n/a (no P/E, no
@@ -62,25 +63,31 @@ export const PIOTROSKI_MIN_TESTS = 7;
 // Altman Z below this → ⚠ tag only, never points (PRD: warning only).
 export const ALTMAN_DANGER = 1.8;
 
-// ── Value (0–100) = average of three parts, each 100 / 50 / 0 ───────────────
-// Operating P/E (fix #9) vs own 5-yr median and vs peer median:
-// at/below = 100 · up to 25% above = 50 · more = 0.
-export const PE_BANDS = { halfPointsUpTo: 1.25 };
+// ── Value (0–100) = average of three parts ──────────────────────────────────
+// v2.7 (El, 10-04): smooth, not all-or-nothing. Under v2.6 a stock 1% below
+// its usual P/E got the same 100 as one 50% below (NFLX/UBER both maxed out).
+// Operating P/E (fix #9) vs own 5-yr median and vs peer median, as a ratio:
+//   25%+ cheaper (≤ 0.75×) = 100 · equal (1.0×) = 50 · 25%+ dearer (≥ 1.25×) = 0
+//   straight line in between (e.g. 10% cheaper = 70).
+export const PE_SCALE = { fullAt: 0.75, zeroAt: 1.25 };
 // Need at least this many positive yearly op P/Es to form an own-history median.
 export const OWN_PE_MIN_YEARS = 2;
-// Fix #7: fewer than this many usable peers → "weak comparison" tag.
+// Fix #7 / v2.7 (El, 10-04): fewer than this many usable peers → the peer
+// comparison is left out (n/a + tag), for auto-peers AND Claude's peers. A
+// median of 2 let one odd peer decide (NFLX vs DIS + ROKU, ROKU's P/E huge).
 export const MIN_PEERS = 3;
 // Auto-peers only (Finnhub's rough list, Preliminary scores) — decided 10-03:
 //   • a peer whose operating P/E is more than 3× the stock's own is an outlier
 //     and is left out of the P/E median (it stays in the debt average);
 //   • fewer than 3 sensible auto-peers left → the peer comparison is skipped
-//     (n/a + tag) rather than trusting junk. Claude's peers (Final) keep the
-//     PRD rule: use what's there + "weak comparison" tag.
+//     (n/a + tag) rather than trusting junk. Since v2.7 the same 3-peer
+//     minimum applies to Claude's peers too (MIN_PEERS above).
 export const AUTO_PEERS = { outlierMultiple: 3, minSensible: 3 };
 // PEG = operating P/E ÷ op-income growth % (3-yr, decided 10-02 as P1-4).
-// <1 = 100 · 1–2 = 50 · >2 = 0.
-export const PEG = { full: 1, half: 2, years: 3 };
+// v2.7 smooth: ≤ 0.5 = 100 · ≥ 2.0 = 0 · straight line between (PEG 1.0 ≈ 67).
+export const PEG = { fullAt: 0.5, zeroAt: 2, years: 3 };
 
 // ── Target upside (0–100) ───────────────────────────────────────────────────
-// 0% or below = 0 · 30%+ = 100 · straight line between.
-export const UPSIDE_FULL_AT_PCT = 30;
+// 0% or below = 0 · 50%+ = 100 · straight line between (v2.7, was 30%:
+// after a big drop analyst targets lag, so beaten-down names maxed out).
+export const UPSIDE_FULL_AT_PCT = 50;
