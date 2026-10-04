@@ -670,10 +670,10 @@ console.log('\nCloudflare Pages');
 {
   stubFetch(() => jsonRes({}));
   for (const [o, want] of [
-    ['https://wheel-desk.pages.dev', true],
-    ['https://abc123.wheel-desk.pages.dev', true],
+    ['https://wheel-app-67w.pages.dev', true],
+    ['https://abc123.wheel-app-67w.pages.dev', true],
     ['https://evil.pages.dev', false],
-    ['https://wheel-desk.pages.dev.evil.com', false],
+    ['https://wheel-app-67w.pages.dev.evil.com', false],
   ]) {
     const r = await worker.fetch(new Request('https://w.dev/notion/runs', { method: 'OPTIONS', headers: { Origin: o } }), ENV);
     const got = r.headers.get('access-control-allow-origin') === o;
@@ -682,7 +682,7 @@ console.log('\nCloudflare Pages');
 
   const { onRequest } = await import('../functions/research/[[path]].js');
   const PENV = { FMP_KEY: 'fmpk', FINNHUB_KEY: 'fhk', SEC_CONTACT_EMAIL: 'x@y.z', APP_SECRET: 's3cret' };
-  const preq = (path, headers = {}, method = 'GET') => ({ request: new Request('https://wheel-desk.pages.dev' + path, { method, headers }), env: PENV });
+  const preq = (path, headers = {}, method = 'GET') => ({ request: new Request('https://wheel-app-67w.pages.dev' + path, { method, headers }), env: PENV });
 
   stubFetch(() => jsonRes({ ok: 1 }));
   let r = await onRequest(preq('/research/sec/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json', { 'x-app-secret': 's3cret' }));
@@ -701,7 +701,7 @@ console.log('\nCloudflare Pages');
   check('pages fn: POST → 405', r.status === 405);
   r = await onRequest(preq('/research/other/x', { 'x-app-secret': 's3cret' }));
   check('pages fn: unknown host → 404, no call', r.status === 404 && calls.length === 0);
-  r = await onRequest({ request: new Request('https://wheel-desk.pages.dev/research/fmp/x'), env: { FMP_KEY: 'k' } });
+  r = await onRequest({ request: new Request('https://wheel-app-67w.pages.dev/research/fmp/x'), env: { FMP_KEY: 'k' } });
   check('pages fn: no APP_SECRET set → Access is the lock, request allowed', r.status === 200);
 }
 
