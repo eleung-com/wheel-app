@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dte, calcATR, deriveIndicators, buildSignals, cspEntryOk, ccEntryOk, PRIORITY } from './signalEngine';
+import { dte, calcATR, deriveIndicators, buildSignals, cspEntryOk, ccEntryOk, weeklyCloses, PRIORITY } from './signalEngine';
 
 const CRITERIA = {
   dropPct: 5, ma: 200,
@@ -18,6 +18,9 @@ function localIso(d) {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
+
+// Part 2A: CSPs need a known earnings date clear of expiry, so fixtures carry one.
+const FAR_EARNINGS = (() => { const d = new Date(); d.setDate(d.getDate() + 120); return localIso(d); })();
 
 describe('dte', () => {
   it('returns null for no expiry', () => {
@@ -115,10 +118,11 @@ describe('deriveIndicators', () => {
 });
 
 describe('buildSignals — CSP', () => {
-  const watchlist = [{ ticker: 'AAPL', diveIn: PRIORITY, pageId: 'p1' }];
-  // RSI inside 30–50, and %K rising from a prior bar below 20: the trigger.
+  const watchlist = [{ ticker: 'AAPL', diveIn: PRIORITY, pageId: 'p1', earnings: FAR_EARNINGS }];
+  // RSI inside 30–50, %K rising from a prior bar below 20, weekly RSI above
+  // the 40 floor: the trigger.
   const trigger = { price: 190, chg1d: -1, dropPct: 6, weekHigh: 200, aboveMa: true,
-                    rsi: 42, stochK: 18, stochKPrev: 12 };
+                    rsi: 42, rsiWeekly: 55, stochK: 18, stochKPrev: 12 };
 
   it('fires when Priority-flagged and both RSI and Stochastic trigger', () => {
     const sigs = buildSignals(watchlist, [], CRITERIA, { AAPL: trigger });
@@ -164,13 +168,14 @@ describe('buildSignals — CSP', () => {
     expect(sigs[0].dropPct).toBe(6);
     expect(sigs[0].atrDrop).toBe(2.4);
     const labels = sigs[0].chks.map(c => c.l);
-    // The two pills that decided the signal lead, in that order. An earnings
-    // pill may follow (this fixture has no date on file, so it does) — that one
-    // is advisory and is covered in earningsNote.test.js.
+    // The pills that decided the signal lead, in that order: daily RSI, %K,
+    // weekly RSI (Part 2A), then the earnings pill (earningsNote.test.js).
     expect(labels.some(l => /Dive-In|week high|ATR/.test(l))).toBe(false);
     expect(labels[0]).toMatch(/^RSI /);
     expect(labels[1]).toMatch(/^%K /);
-    expect(sigs[0].chks.filter(c => !c.warn)).toHaveLength(2);
+    expect(labels[2]).toMatch(/^Wkly RSI /);
+    expect(labels[3]).toMatch(/^Earnings /);
+    expect(labels).toHaveLength(4);
   });
 
   it('does not fire when a short put/call is already open on the ticker', () => {
@@ -328,12 +333,12 @@ describe('buildSignals — Roll / Close', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('entry predicates match buildSignals', () => {
-  const watchlist = [{ ticker: 'AAPL', diveIn: PRIORITY, pageId: 'p1' }];
+  const watchlist = [{ ticker: 'AAPL', diveIn: PRIORITY, pageId: 'p1', earnings: FAR_EARNINGS }];
 
-  /** Does the engine actually emit a CSP card for this quote? */
+  /** Does the engine emit a CSP setup (a card, or a waiting card) for this quote? */
   function engineFiresCsp(q) {
     return buildSignals(watchlist, [], CRITERIA, { AAPL: q })
-      .some(s => s.type === 'csp' && s.ticker === 'AAPL');
+      .some(s => (s.type === 'csp' || s.type === 'csp_wait') && s.ticker === 'AAPL');
   }
 
   /** Same for a covered call against a 100-share lot. */
@@ -354,13 +359,15 @@ describe('entry predicates match buildSignals', () => {
         [null, 12],  // unknown current
         [18, null],  // unknown prior
       ]) {
-        cases.push({ price: 190, chg1d: -1, dropPct: 6, weekHigh: 200, aboveMa: true,
-                     rsi, stochK, stochKPrev });
+        for (const rsiWeekly of [null, 35, 40, 55]) {
+          cases.push({ price: 190, chg1d: -1, dropPct: 6, weekHigh: 200, aboveMa: true,
+                       rsi, rsiWeekly, stochK, stochKPrev });
+        }
       }
     }
 
     for (const q of cases) {
-      const label = `rsi=${q.rsi} k=${q.stochK} prevK=${q.stochKPrev}`;
+      const label = `rsi=${q.rsi} wk=${q.rsiWeekly} k=${q.stochK} prevK=${q.stochKPrev}`;
       expect(cspEntryOk(q, CRITERIA), label).toBe(engineFiresCsp(q));
     }
     // Guard against a matrix that accidentally proves nothing.
@@ -411,7 +418,7 @@ describe('entry predicates match buildSignals', () => {
 
   it('a flat name WITH the oscillator turn IS a candidate (old gate said no — the lost-strike bug)', () => {
     const flatButTurning = { price: 199, chg1d: 0.1, dropPct: 0.5, weekHigh: 200,
-                             rsi: 42, stochK: 18, stochKPrev: 12 };
+                             rsi: 42, rsiWeekly: 55, stochK: 18, stochKPrev: 12 };
     expect(flatButTurning.dropPct).toBeLessThan(CRITERIA.dropPct); // old gate: skip
     expect(cspEntryOk(flatButTurning, CRITERIA)).toBe(true);
     expect(engineFiresCsp(flatButTurning)).toBe(true);
@@ -423,5 +430,63 @@ describe('entry predicates match buildSignals', () => {
     expect(flatButRolling.rallyPct).toBeLessThan(CRITERIA.ccRallyPct); // old gate: skip
     expect(ccEntryOk(flatButRolling, CRITERIA)).toBe(true);
     expect(engineFiresCc(flatButRolling)).toBe(true);
+  });
+});
+
+// ── Part 2A: weekly RSI floor + earnings gate ───────────────────────────────
+
+describe('weeklyCloses', () => {
+  it('keeps the last close of each Mon–Sun week, including the current partial week', () => {
+    const dates  = ['2026-09-28', '2026-09-29', '2026-10-02', '2026-10-05', '2026-10-06'];
+    const closes = [1, 2, 3, 4, 5];
+    expect(weeklyCloses(closes, dates)).toEqual([3, 5]);
+  });
+  it('returns [] when dates are missing or misaligned', () => {
+    expect(weeklyCloses([1, 2], [])).toEqual([]);
+    expect(weeklyCloses([1, 2], ['2026-10-05'])).toEqual([]);
+  });
+});
+
+describe('deriveIndicators — weekly RSI', () => {
+  function weekdayBars(nWeeks, closeFn) {
+    const closes = [], highs = [], lows = [], dates = [];
+    const d = new Date('2025-01-06T00:00:00Z'); // a Monday
+    for (let w = 0; w < nWeeks; w++) {
+      for (let k = 0; k < 5; k++) {
+        const c = closeFn(w, k);
+        closes.push(c); highs.push(c + 1); lows.push(c - 1);
+        dates.push(d.toISOString().slice(0, 10));
+        d.setUTCDate(d.getUTCDate() + 1);
+      }
+      d.setUTCDate(d.getUTCDate() + 2);
+    }
+    return { closes, highs, lows, dates };
+  }
+  it('is null with fewer than 15 weeks of history', () => {
+    const h = weekdayBars(10, (w) => 100 + w);
+    expect(deriveIndicators(h, 110, 0, 200).rsiWeekly).toBeNull();
+  });
+  it('is high for a steady weekly uptrend and low for a steady downtrend', () => {
+    const up = weekdayBars(30, (w, k) => 100 + w * 2 + k * 0.1);
+    const dn = weekdayBars(30, (w, k) => 200 - w * 2 - k * 0.1);
+    expect(deriveIndicators(up, up.closes.at(-1), 0, 200).rsiWeekly).toBeGreaterThan(70);
+    expect(deriveIndicators(dn, dn.closes.at(-1), 0, 200).rsiWeekly).toBeLessThan(30);
+  });
+});
+
+describe('CSP weekly RSI floor', () => {
+  const watchlist = [{ ticker: 'AAPL', diveIn: PRIORITY, pageId: 'p1', earnings: FAR_EARNINGS }];
+  const q = { price: 190, chg1d: -1, rsi: 35, stochK: 18, stochKPrev: 12 };
+  it('fires at 40, not at 39, and not when unknown', () => {
+    expect(buildSignals(watchlist, [], CRITERIA, { AAPL: { ...q, rsiWeekly: 40 } })).toHaveLength(1);
+    expect(buildSignals(watchlist, [], CRITERIA, { AAPL: { ...q, rsiWeekly: 39.9 } })).toHaveLength(0);
+    expect(buildSignals(watchlist, [], CRITERIA, { AAPL: { ...q, rsiWeekly: null } })).toHaveLength(0);
+  });
+  it('respects a custom floor from criteria', () => {
+    expect(buildSignals(watchlist, [], { ...CRITERIA, weeklyRsiMin: 50 }, { AAPL: { ...q, rsiWeekly: 45 } })).toHaveLength(0);
+  });
+  it('shows the weekly RSI as a passing pill', () => {
+    const [s] = buildSignals(watchlist, [], CRITERIA, { AAPL: { ...q, rsiWeekly: 46.2 } });
+    expect(s.chks.some(c => c.ok && c.l === 'Wkly RSI 46')).toBe(true);
   });
 });

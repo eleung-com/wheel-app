@@ -16,6 +16,34 @@ export const PRIORITY = '🔥 Priority';
 
 const RSI_PERIOD = 14;
 
+// Index / ETF symbols: no earnings, so the earnings gate never applies to them.
+// Shared with worker/earnings.js so both agree on what "has no earnings" means.
+export const NO_EARNINGS = new Set(['XSP', 'SPX', 'NDX', 'RUT', 'DJX', 'VIX', 'SPY', 'QQQ', 'IWM', 'DIA', 'SMH']);
+
+// Fewest weekly bars before weekly RSI(14) is worth trusting. A0 check (10-04):
+// 2 yrs of daily bars → ~105 weeks gives the same weekly RSI as 5 yrs.
+const MIN_WEEKS = RSI_PERIOD + 1;
+
+/**
+ * Daily closes → one close per calendar week (Mon–Sun), the last close in it.
+ * `dates` are 'YYYY-MM-DD' aligned to `closes`. The current, unfinished week
+ * counts with its latest close — the same thing TradingView's weekly chart shows.
+ */
+export function weeklyCloses(closes, dates) {
+  if (!Array.isArray(dates) || dates.length !== closes.length) return [];
+  const out = [];
+  let lastKey = null;
+  for (let i = 0; i < closes.length; i++) {
+    const d = new Date(String(dates[i]).slice(0, 10) + 'T00:00:00Z');
+    if (isNaN(d)) continue;
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); // back to Monday
+    const key = d.toISOString().slice(0, 10);
+    if (key === lastKey) out[out.length - 1] = closes[i];
+    else { out.push(closes[i]); lastKey = key; }
+  }
+  return out;
+}
+
 // Option rows the roll/close pass evaluates. `put_spread` was added to the app
 // in 414ce3d but never reached the signal engine, so a breached spread produced
 // no card and no alert — the only thing that ever fired on one was the calendar
@@ -118,6 +146,11 @@ export function deriveIndicators({ closes, highs, lows, dates = [] }, price, chg
   // only. The previous %K rides along because the triggers are crossings
   // ("turning up from below 20"), which need two bars to evaluate.
   const rsiSeries  = rsiWilder(closes, RSI_PERIOD);
+
+  // Weekly RSI(14) — the CSP trend floor (Part 2A). Built from the same daily
+  // bars, so no extra request. null when there isn't enough history.
+  const wk = weeklyCloses(closes, dates);
+  const rsiWeekly = wk.length >= MIN_WEEKS ? (rsiWilder(wk, RSI_PERIOD).at(-1) ?? null) : null;
   const { k: kSeries, d: dSeries } = stochastic(highs, lows, closes);
   const last = closes.length - 1;
 
@@ -125,6 +158,7 @@ export function deriveIndicators({ closes, highs, lows, dates = [] }, price, chg
     price, chg1d, aboveMa, ivrEst, hv30,
     dropPct, rallyPct, weekHigh, weekLow, atr, atrDrop,
     rsi:        rsiSeries[last] ?? null,
+    rsiWeekly,
     stochK:     kSeries[last]   ?? null,
     stochD:     dSeries[last]   ?? null,
     stochKPrev: last > 0 ? (kSeries[last - 1] ?? null) : null,
@@ -152,35 +186,59 @@ function atrNote(q) {
 }
 
 // ── Earnings ────────────────────────────────────────────────────────────────
-// Advisory only, by decision: earnings NEVER suppress a signal. Selling a put
-// through an earnings print is a real risk, but which side of that risk is worth
-// taking is a judgement call the screen shouldn't make on its own — especially
-// when the date it would be acting on is hand-entered in Notion and may simply
-// be missing. So this labels; it does not gate.
+// Part 2A (decided 10-04): for CSPs, earnings now BLOCK. Dates come from
+// Finnhub (worker/earnings.js keeps Notion's "Earnings Date" correct), so the
+// old reason for advisory-only — hand-typed, often-missing dates — is gone.
 //
-// The window is the life of the contract plus `cr.earn` days of buffer. With the
-// buffer at 0 that reads as "earnings land before this contract expires". Expiry
-// is the live strike's DTE when one was fetched, else the far end of the target
-// DTE range — the longest contract the criteria would have you sell.
+//   block  earnings on or before the contract's expiry, OR no usable date
+//          (blank / past). Unknown is never treated as safe.
+//   warn   earnings within `cr.earnAfter` (default 14) days AFTER expiry.
+//   na     index / ETF — no earnings, gate doesn't apply.
+//
+// Expiry is the live strike's DTE when one was fetched, else the far end of the
+// target DTE range (the longest contract the criteria would have you sell) —
+// the conservative choice. Covered calls still only warn (see buildSignals).
 
-/**
- * @returns { known, days, warn } — `known:false` means no usable date on file,
- * which is itself worth surfacing rather than treating as "safe".
- */
-export function earningsNote(earnings, dteTarget, cr) {
-  const horizon = (dteTarget != null ? dteTarget : cr.dteMax) + (cr.earn || 0);
+/** @returns { known, na, days, block, warn } */
+export function earningsNote(earnings, dteTarget, cr, ticker = '') {
+  if (ticker && NO_EARNINGS.has(String(ticker).toUpperCase())) {
+    return { known: false, na: true, days: null, block: false, warn: false };
+  }
+  const expiry = dteTarget != null ? dteTarget : cr.dteMax;
+  const after  = cr.earnAfter != null ? cr.earnAfter : 14;
   const days = earnings ? dte(earnings) : null;
-  // dte() counts today as 1, so anything <= 0 is in the past — a stale Notion
-  // entry nobody cleared. Treated as unknown, never as "safely far away".
-  if (days == null || days <= 0) return { known: false, days: null, warn: false };
-  return { known: true, days, warn: days <= horizon };
+  // dte() counts today as 1, so anything <= 0 is in the past — a stale entry.
+  if (days == null || days <= 0) return { known: false, na: false, days: null, block: true, warn: false };
+  const block = days <= expiry;
+  return { known: true, na: false, days, block, warn: !block && days <= expiry + after };
 }
 
-/** The pill an entry card shows for earnings, or null when there's nothing to say. */
-function earningsPill(note) {
+/** Short date for pills: '2026-10-28' → '10/28'. */
+function md(iso) {
+  const m = /^\d{4}-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? `${+m[1]}/${+m[2]}` : '';
+}
+
+/** Why a CSP is waiting, in words, or null when earnings don't block it. */
+function earningsBlockReason(note, date) {
+  if (!note.block) return null;
+  if (!note.known) return 'No earnings date';
+  return `Earnings ${md(date)} — before expiry`;
+}
+
+/** The earnings pill for a CSP that passed the gate (warn only), else null. */
+function cspEarningsPill(note, date) {
+  if (note.na) return null;
+  if (note.warn) return { l: `Earnings ${md(date)} (${note.days}d, after expiry)`, ok: false, warn: true };
+  return { l: `Earnings ${md(date)}`, ok: true };
+}
+
+/** Covered calls stay advisory: warn when earnings land inside the contract or are unknown. */
+function ccEarningsPill(note) {
+  if (note.na) return null;
   if (!note.known) return { l: 'No earnings date', ok: false, warn: true };
-  if (note.warn)   return { l: `Earnings in ${note.days}d`, ok: false, warn: true };
-  return null; // known, and comfortably outside the window
+  if (note.block)  return { l: `Earnings in ${note.days}d`, ok: false, warn: true };
+  return null;
 }
 
 // ── Entry predicates ─────────────────────────────────────────────────────────
@@ -199,11 +257,17 @@ function earningsPill(note) {
 // an already-open contract — because those legitimately differ by caller. What
 // must never differ again is the oscillator test, which lives here now.
 
-/** CSP entry: RSI inside the band and %K turning up from below the level. */
+/**
+ * CSP entry: daily RSI inside the band, %K turning up from below the level,
+ * and weekly RSI at or above the trend floor (Part 2A — no naked puts on a
+ * stock in a long slide). Unknown weekly RSI fails: not enough history to say.
+ */
 export function cspEntryOk(q, cr) {
   if (!q) return false;
+  const floor = cr.weeklyRsiMin != null ? cr.weeklyRsiMin : 40;
   return rsiInBand(q.rsi, cr.rsiMin, cr.rsiMax)
-    && turningUpFrom(q.stochK, q.stochKPrev, cr.stochBelow);
+    && turningUpFrom(q.stochK, q.stochKPrev, cr.stochBelow)
+    && q.rsiWeekly != null && q.rsiWeekly >= floor;
 }
 
 /** Covered call: the mirror — RSI in its band, %K rolling over from above. */
@@ -261,12 +325,16 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
     // filter every card already passed, and the other two are in the metrics
     // grid directly below — restating them crowded the card without adding
     // anything. What's left is the pair that actually decided the signal.
-    const earnNote = earningsNote(byTicker.get(w.ticker)?.earnings, dteT, cr);
-    const earnPill = earningsPill(earnNote);
+    const earnDate = byTicker.get(w.ticker)?.earnings || '';
+    const earnNote = earningsNote(earnDate, dteT, cr, w.ticker);
+    const blockedBy = earningsBlockReason(earnNote, earnDate);
+    const earnPill  = blockedBy ? null : cspEarningsPill(earnNote, earnDate);
 
+    const floor = cr.weeklyRsiMin != null ? cr.weeklyRsiMin : 40;
     const chks = [
       { l: rsiLabel(q),   ok: rsiOk,   tgt: `${cr.rsiMin}–${cr.rsiMax}` },
       { l: stochLabel(q), ok: stochOk, tgt: `up from <${cr.stochBelow}` },
+      { l: `Wkly RSI ${q.rsiWeekly.toFixed(0)}`, ok: true, tgt: `≥${floor}` },
       ...(earnPill ? [earnPill] : []),
     ];
 
@@ -278,15 +346,19 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
     // difference between a pullback and a falling knife — worth saying out loud.
     if (q.aboveMa === false) suggParts.push(`⚠ Below the ${cr.ma}MA`);
 
+    // Part 2A: an earnings block doesn't hide the setup — it becomes a
+    // "waiting" card (type csp_wait) shown greyed in the app and never sent to
+    // Telegram. The trade line says why instead of what to sell.
     sigs.push({
-      id: `csp-${w.ticker}`, type: 'csp', ticker: w.ticker,
+      id: `csp-${w.ticker}`, type: blockedBy ? 'csp_wait' : 'csp', ticker: w.ticker,
       price: q.price, chg: q.chg1d, strike, dteTarget: dteT,
       ivr: q.ivrEst ?? null, aboveMa: q.aboveMa, maPeriod: cr.ma,
       ...notionOf(w.ticker),
       dropPct: q.dropPct, weekHigh: q.weekHigh, atrDrop: q.atrDrop,
-      rsi: q.rsi, stochK: q.stochK, stochD: q.stochD, chks,
+      rsi: q.rsi, rsiWeekly: q.rsiWeekly, stochK: q.stochK, stochD: q.stochD, chks,
       earnWarn: earnNote,
-      suggestion: suggParts.join(' · '),
+      waitReason: blockedBy,
+      suggestion: blockedBy ? `Waiting: ${blockedBy}` : suggParts.join(' · '),
       ts: Date.now(),
     });
   }
@@ -315,8 +387,8 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       if (dteT != null && strike != null) suggParts.push(`Sell ${contracts} x ${dteT}d $${strike} call`);
       else suggParts.push(`Sell ${contracts} call · ${cr.ccDeltaMin}–${cr.ccDeltaMax}Δ · ${cr.ccDteMin}–${cr.ccDteMax}d`);
       if (live) suggParts.push(deltaStr);
-      const ccEarnNote = earningsNote(byTicker.get(pos.ticker)?.earnings, dteT, cr);
-      const ccEarnPill = earningsPill(ccEarnNote);
+      const ccEarnNote = earningsNote(byTicker.get(pos.ticker)?.earnings, dteT, cr, pos.ticker);
+      const ccEarnPill = ccEarningsPill(ccEarnNote);
       const ccChks = [
         { l: `${pos.qty} shares (${contracts} contract${contracts > 1 ? 's' : ''})`, ok: true },
         { l: rsiLabel(q),   ok: ccRsiOk,   tgt: `${cr.ccRsiMin}–${cr.ccRsiMax}` },

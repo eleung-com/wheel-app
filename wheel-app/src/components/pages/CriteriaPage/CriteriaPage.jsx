@@ -110,17 +110,18 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
           <div className="slabel">CSP Entry — Signal trigger</div>
           <div className="ssec">
             <CriteriaRow
-              label="RSI band" sub="Daily RSI(14), Wilder — signal only fires inside this range"
+              label="RSI band" sub="Daily RSI(14), Wilder — signal only fires inside this range (30–40 = a real dip)"
               pair={{ min: local.rsiMin, max: local.rsiMax }}
               onChange={v => updatePair('rsiMin', 'rsiMax', v)}
             />
             <CriteriaRow label="Stoch %K turning up from below" sub="Slow %K (14,3,3) — prior bar under this level and now rising" inputId="c-stoch" value={local.stochBelow} min={1} max={99} onChange={v => update('stochBelow', v)} />
+            <CriteriaRow label="Weekly RSI at least" sub="Weekly RSI(14) trend floor — below this, no CSP (stock in a long slide)" inputId="c-wrsi" value={local.weeklyRsiMin} min={1} max={99} onChange={v => update('weeklyRsiMin', v)} />
           </div>
           <div className="slabel">CSP Entry — Context</div>
           <div className="ssec">
             <CriteriaRow label="Min drop from week high" sub="Shown on the card — no longer gates the signal" inputId="c-drop" value={local.dropPct} min={1} max={40} onChange={v => update('dropPct', v)} />
             <CriteriaRow label="Price above MA"        sub="Moving average period (days)"              inputId="c-ma"    value={local.ma}    min={20} max={250} onChange={v => update('ma', v)} />
-            <CriteriaRow label="Warn if earnings within" sub="Extra days past expiry to flag — 0 warns when earnings land before expiry. Never blocks a signal." inputId="c-earn"  value={local.earn}  onChange={v => update('earn', v)} />
+            <CriteriaRow label="Warn if earnings within" sub="Days AFTER expiry to warn. Earnings on or before expiry (or no date) always blocks the CSP — it moves to Waiting." inputId="c-earn"  value={local.earnAfter}  min={0} max={60} onChange={v => update('earnAfter', v)} />
           </div>
           <div className="slabel">CSP — Strike &amp; DTE</div>
           <div className="ssec">

@@ -83,7 +83,7 @@ export const DEFAULT_CRITERIA = {
   // a strict 20/80 only fires on a deep extreme, which across a handful of
   // Priority tickers can mean nothing for weeks. 30/70 catches the same turn
   // earlier without loosening the direction requirement.
-  rsiMin: 30, rsiMax: 50, stochBelow: 30,
+  rsiMin: 30, rsiMax: 40, stochBelow: 30, weeklyRsiMin: 40, earnAfter: 14,
   ccRsiMin: 50, ccRsiMax: 70, ccStochAbove: 70,
   deltaMin: 20, deltaMax: 35, dteMin: 21, dteMax: 45,
   shares: 100, ccRallyPct: 5, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
@@ -112,7 +112,11 @@ export function parseCriteria(c) {
     // fall back only when the sheet has no value at all. A sheet written before
     // these existed simply gets the defaults.
     rsiMin:       numOr(c.rsiMin,       30),
-    rsiMax:       numOr(c.rsiMax,       50),
+    rsiMax:       numOr(c.rsiMax,       40),
+    // Part 2A: weekly RSI floor for CSPs, and how many days after expiry an
+    // earnings date still earns a warning (before expiry it blocks).
+    weeklyRsiMin: numOr(c.weeklyRsiMin, 40),
+    earnAfter:    numOr(c.earnAfter,    14),
     stochBelow:   numOr(c.stochBelow,   30),
     ccRsiMin:     numOr(c.ccRsiMin,     50),
     ccRsiMax:     numOr(c.ccRsiMax,     70),

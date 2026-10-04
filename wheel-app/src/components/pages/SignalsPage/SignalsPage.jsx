@@ -28,6 +28,9 @@ export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoa
   const csp = signals
     .filter(s => s.type === 'csp')
     .sort((a, b) => (b.atrDrop ?? 0) - (a.atrDrop ?? 0));
+  // Part 2A: CSPs blocked by earnings. Shown greyed at the bottom of the CSP
+  // section so a good setup isn't invisible — but never a trade today.
+  const waiting = signals.filter(s => s.type === 'csp_wait');
 
   const isEmpty = signals.length === 0;
 
@@ -50,7 +53,7 @@ export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoa
           <div className="empty" style={{ gridColumn: '1/-1' }}>
             <div className="empty-icon">✓</div>
             <div className="empty-title">No signals right now</div>
-            <div className="empty-sub">No Priority ticker is showing an RSI + Stochastic turn, and nothing needs rolling. Refreshes when you open the app · Telegram alerts run in the background.</div>
+            <div className="empty-sub">No Priority ticker is showing a daily RSI 30–40 + Stochastic turn with weekly RSI ≥ 40, and nothing needs rolling. Refreshes when you open the app · Telegram alerts run in the background.</div>
           </div>
         )}
 
@@ -66,10 +69,14 @@ export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoa
             {cc.map(card)}
           </>
         )}
-        {csp.length > 0 && (
+        {(csp.length > 0 || waiting.length > 0) && (
           <>
             <div className="slabel" style={{ gridColumn: '1/-1' }}>🔵 CSP Entry — Priority &amp; Pulled Back</div>
             {csp.map(card)}
+            {waiting.length > 0 && (
+              <div className="slabel" style={{ gridColumn: '1/-1', marginTop: 10 }}>⏳ Waiting — blocked by earnings</div>
+            )}
+            {waiting.map(card)}
           </>
         )}
 

@@ -19,7 +19,7 @@
 // Volume: ~10 calls on a full-refresh day, a handful otherwise. Finnhub free
 // allows 60/min; calls are spaced ~1.1 s apart to stay far under it.
 
-import { PRIORITY } from '../src/lib/signalEngine.js';
+import { PRIORITY, NO_EARNINGS } from '../src/lib/signalEngine.js';
 import { etDateString } from './marketHours.js';
 import { setEarningsFields } from './notion.js';
 
@@ -28,8 +28,9 @@ export const FULL_EVERY_DAYS = 7;
 export const LOOKAHEAD_DAYS = 200;
 const CALL_GAP_MS = 1100;
 
-// No earnings for these — asking would only stamp "checked" forever.
-export const NO_EARNINGS = new Set(['XSP', 'SPX', 'NDX', 'RUT', 'DJX', 'VIX', 'SPY', 'QQQ', 'IWM', 'DIA', 'SMH']);
+// No earnings for index/ETF symbols — the set lives in signalEngine.js so the
+// earnings gate and this refresh agree. Re-exported for existing imports.
+export { NO_EARNINGS };
 
 const KV_DAY  = (d) => `earnings|day|${d}`;
 const KV_FULL = 'earnings|last-full';

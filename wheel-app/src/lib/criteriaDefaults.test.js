@@ -7,16 +7,18 @@ describe('oscillator criteria defaults', () => {
     expect(DEFAULT_CRITERIA.ccStochAbove).toBe(70);
   });
 
-  it('uses the RSI bands from the Strategies cards', () => {
+  it('uses the RSI bands from the Strategies cards (CSP 30–40 since Part 2A)', () => {
     expect(DEFAULT_CRITERIA.rsiMin).toBe(30);
-    expect(DEFAULT_CRITERIA.rsiMax).toBe(50);
+    expect(DEFAULT_CRITERIA.rsiMax).toBe(40);
+    expect(DEFAULT_CRITERIA.weeklyRsiMin).toBe(40);
+    expect(DEFAULT_CRITERIA.earnAfter).toBe(14);
     expect(DEFAULT_CRITERIA.ccRsiMin).toBe(50);
     expect(DEFAULT_CRITERIA.ccRsiMax).toBe(70);
   });
 
   it('parseCriteria agrees with DEFAULT_CRITERIA on an empty sheet', () => {
     const parsed = parseCriteria({});
-    for (const k of ['rsiMin', 'rsiMax', 'stochBelow', 'ccRsiMin', 'ccRsiMax', 'ccStochAbove']) {
+    for (const k of ['rsiMin', 'rsiMax', 'stochBelow', 'ccRsiMin', 'ccRsiMax', 'ccStochAbove', 'weeklyRsiMin', 'earnAfter']) {
       expect(parsed[k], k).toBe(DEFAULT_CRITERIA[k]);
     }
   });

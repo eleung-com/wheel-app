@@ -7,7 +7,7 @@ export default function SignalCard({ signal: s, onClick, evaluation, loading }) 
   // Those that do take the full grid row: the evaluation contains tables, and a
   // three-column table is unreadable in a half-width card.
   const showEval = s.type === 'csp' || s.type === 'cc';
-  const lbl = { csp: 'CSP', cc: 'Cov. Call', roll: 'Roll', close: 'Close', maxloss: 'Max Loss' }[s.type];
+  const lbl = { csp: 'CSP', csp_wait: 'Waiting', cc: 'Cov. Call', roll: 'Roll', close: 'Close', maxloss: 'Max Loss' }[s.type];
   const chgC   = s.chg > 0 ? 'g' : s.chg < 0 ? 'r' : 'mu2';
   const chgStr = (s.chg !== null && s.chg !== undefined)
     ? <span style={{ color: `var(--${chgC})` }}>{s.chg > 0 ? '+' : ''}{s.chg.toFixed(1)}%</span>
@@ -18,7 +18,9 @@ export default function SignalCard({ signal: s, onClick, evaluation, loading }) 
   // Strike and DTE need the CBOE option chain to resolve and are already spelled out in
   // the suggestion line, so the grid leads with the figures that always exist:
   // how far the stock fell, and how big that is against its own daily range.
-  if (s.type === 'csp')
+  if (s.type === 'csp_wait')
+    mets = null; // the reason line below is the whole story
+  else if (s.type === 'csp')
     mets = (
       <div className="mgrid c2" style={{ marginBottom: 6 }}>
         <div className="met"><div className="met-l">Off week high</div><div className="met-v r" style={{ fontSize: 11 }}>{s.dropPct != null ? `${s.dropPct.toFixed(1)}%` : '—'}</div></div>

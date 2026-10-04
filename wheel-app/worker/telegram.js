@@ -72,10 +72,15 @@ export function formatAlert(sig) {
     lines.push(`Strike: $${sig.strike}${dteT != null ? ` · ${dteT}d` : ''}`);
   }
   if (sig.ivr != null) lines.push(`HV30 est: ${sig.ivr}`); // realized-vol estimate, not real IV Rank
-  // Advisory, never a block — the signal fired regardless. Says its piece and
-  // leaves the call to you, same as the pill on the card.
-  if (sig.earnWarn && sig.earnWarn.warn)        lines.push(`\u26a0 Earnings in ${sig.earnWarn.days}d - before this contract expires`);
-  else if (sig.earnWarn && !sig.earnWarn.known) lines.push('\u26a0 No earnings date on file');
+  // CSPs blocked by earnings never reach here (csp_wait is filtered in scan.js).
+  // What's left: a CSP with earnings shortly after expiry, or a covered call
+  // (still advisory) with earnings inside the contract / unknown.
+  const ew = sig.earnWarn;
+  if (ew && !ew.na) {
+    if (ew.warn)                   lines.push(`\u26a0 Earnings in ${ew.days}d - shortly after this contract expires`);
+    else if (ew.block && ew.known) lines.push(`\u26a0 Earnings in ${ew.days}d - before this contract expires`);
+    else if (!ew.known)            lines.push('\u26a0 No earnings date on file');
+  }
   if (sig.suggestion) lines.push(sig.suggestion);
   lines.push(APP_URL);
 
