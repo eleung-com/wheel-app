@@ -18,7 +18,7 @@ const ACTIVE_TYPES = new Set(['short_put', 'short_call', 'put_spread']);
 export function navBadges({ positions = [], watchlist = [], signals = [] }) {
   return {
     // Partial "watching" cards aren't actionable, so they don't earn a badge.
-    'pg-signals':   signals.length,
+    'pg-signals':   signals.filter(s => s.type !== 'csp_wait').length,
     'pg-positions': positions.filter(p => ACTIVE_TYPES.has(p.type) && !p.linkedId).length,
     'pg-watchlist': watchlist.length,
   };

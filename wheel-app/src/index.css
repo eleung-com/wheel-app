@@ -75,6 +75,10 @@ html{-webkit-text-size-adjust:100%}
 .scard::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
 .scard.csp::before{background:var(--bl)}.scard.cc::before{background:var(--g)}.scard.roll::before{background:var(--r)}.scard.close::before{background:var(--a)}.scard.maxloss::before{background:var(--r)}
 .scard:active{background:var(--s2)}
+/* Part 2A: CSP blocked by earnings — visible, clearly not a trade today */
+.scard.csp_wait{opacity:.6;border-style:dashed}
+.scard.csp_wait::before{background:var(--mu)}
+.stbdg.csp_wait{background:var(--s3);color:var(--mu2);border:1px solid var(--b2)}
 .ctop{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px}
 .tblk{display:flex;flex-direction:column;gap:2px}
 .tkr{font-family:var(--mono);font-size:18px;font-weight:700;letter-spacing:-.5px}

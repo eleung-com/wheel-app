@@ -250,6 +250,9 @@ export async function runScan(env, now = new Date()) {
       .filter(sig => !(sig.type === 'close' && unpricedIds.has(Number(sig.id.slice('close-'.length)))));
 
     for (const sig of sigs) {
+      // Part 2A: a CSP blocked by earnings is shown in the app as "waiting",
+      // never alerted — the alert would be a trade you shouldn't take.
+      if (sig.type === 'csp_wait') continue;
       const key = `${sig.ticker}|${sig.type}|${etDateString(now)}`;
       if (env.ALERTS_KV && await env.ALERTS_KV.get(key)) continue; // already alerted today
 

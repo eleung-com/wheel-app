@@ -9,7 +9,7 @@ export default function HelpModal({ onClose }) {
           <strong style={{ color: 'var(--tx)' }}>Cross-device sync</strong> — all your positions, watchlist, and criteria are stored in your Google Sheet and sync automatically. Use ⇩ to pull the latest from any device.
         </p>
         <p style={{ marginBottom: 10 }}>
-          <strong style={{ color: 'var(--tx)' }}>Watchlist</strong> — synced from Notion. Only rows where <strong style={{ color: 'var(--tx)' }}>Dive-In = 🔥 Priority</strong> are scanned for CSP entries; a signal fires when one drops 5%+ from its 5-day high. Tap a ticker for the chart, which carries RSI and Stochastic studies.
+          <strong style={{ color: 'var(--tx)' }}>Watchlist</strong> — synced from Notion. Only rows where <strong style={{ color: 'var(--tx)' }}>Dive-In = 🔥 Priority</strong> are scanned for CSP entries; a signal fires when daily RSI is 30–40, Stochastic %K turns up, and weekly RSI is at least 40. Earnings on or before expiry (or no date) moves it to Waiting. Tap a ticker for the chart, which carries RSI and Stochastic studies.
         </p>
         <p style={{ marginBottom: 10 }}>
           <strong style={{ color: 'var(--tx)' }}>Positions</strong> — log share lots and short options. Add a current option price for live P&amp;L and progress tracking.

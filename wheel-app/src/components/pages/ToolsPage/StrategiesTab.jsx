@@ -22,7 +22,8 @@ const INITIAL_CARDS = [
     checks: [
       'Cash for 100 × strike, in this account, now',
       'Strike at or below fair value',
-      'RSI between 30 and 50 (oversold or neutral)',
+      'Daily RSI between 30 and 40 (a real dip)',
+      'Weekly RSI at least 40 (trend not broken)',
       'Stoch %K turning up from below 30',
       'IV rank above 30',
       'No earnings or catalyst before expiration',
