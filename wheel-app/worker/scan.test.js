@@ -178,6 +178,40 @@ describe('runScan', () => {
     await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
     expect(telegramCalls).toBe(0);
   });
+
+  it('refreshes earnings from Finnhub before the signal pass, and a Finnhub outage never stops the alerts', async () => {
+    // Part 2A: Priority row with a past earnings date → asked once; held put
+    // still alerts even though Finnhub answers 503.
+    const page = {
+      id: 'p-amkr',
+      created_time: '2026-01-01T00:00:00.000Z',
+      properties: {
+        Ticker: { title: [{ plain_text: 'AMKR' }] },
+        'Dive-In': { select: { name: '🔥 Priority' } },
+        'Earnings Date': { date: { start: '2026-07-01' } },
+      },
+    };
+    const positions = [{
+      id: 1, ticker: 'TSLA', type: 'short_put', qty: 1, strike: 250,
+      expiry: expiryForDte(60), enteredAt: Date.parse('2026-06-01'), prem: 5, curPrem: 5,
+    }];
+    stubFetch({ watchlistPages: [page], sheet: { positions, criteria: {} }, historyPrice: 240 });
+    const inner = globalThis.fetch;
+    let finnhubCalls = 0;
+    globalThis.fetch = async (url, init) => {
+      if (String(url).includes('finnhub.io')) { finnhubCalls++; return jsonRes({ error: 'down' }, 503); }
+      return inner(url, init);
+    };
+    const kv = fakeKV();
+    await runScan({ ...ENV_BASE, FINNHUB_KEY: 'fh', ALERTS_KV: kv }, OPEN_NOW);
+    expect(finnhubCalls).toBe(1);
+    expect(telegramCalls).toBe(1); // the roll alert still went out
+    expect(kv.store.has(`earnings|day|${etDateString(OPEN_NOW)}`)).toBe(true);
+
+    // Second scan the same day: no second Finnhub call.
+    await runScan({ ...ENV_BASE, FINNHUB_KEY: 'fh', ALERTS_KV: kv }, new Date(Date.UTC(2026, 6, 22, 19, 0)));
+    expect(finnhubCalls).toBe(1);
+  });
 });
 
 describe('21-DTE management nudge', () => {

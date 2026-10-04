@@ -138,6 +138,22 @@ npx wrangler secret put SHEET_URL          --name wheel-tradier-proxy   # your A
 `NOTION_TOKEN` and `APP_SECRET` are already required by the `/notion/*` routes
 above and are reused as-is by the scan — no new setup needed for those two.
 
+### Earnings dates — Finnhub (Part 2A)
+
+`earnings.js` runs inside the first market-hours scan each ET day and keeps the
+Notion **Earnings Date** field correct for 🔥 Priority and held tickers:
+
+- Weekly (7+ days since the last full refresh, tracked in KV): asks Finnhub for
+  every ticker and overwrites Notion when Finnhub differs.
+- Daily: only blank or past dates are asked.
+- No upcoming date at Finnhub → stamps **Earnings checked** = today and waits 14
+  days before asking again.
+- **Earnings locked** ticked → never touched (for a date set by hand).
+- Index/ETF symbols (XSP, SPY, QQQ…) are skipped.
+
+Needs the `FINNHUB_KEY` secret on this Worker (already set 10-02). Without it
+the refresh logs a line and is skipped; the scan carries on.
+
 ### Option chains — CBOE (no secret)
 
 Option chains come from CBOE's free delayed-quote file, one per underlying
