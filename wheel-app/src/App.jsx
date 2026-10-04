@@ -31,6 +31,7 @@ import ClosePositionModal     from './components/modals/ClosePositionModal';
 import ShareGroupDetailModal  from './components/modals/ShareGroupDetailModal';
 import SignalDetailModal      from './components/modals/SignalDetailModal';
 import HelpModal              from './components/modals/HelpModal';
+import { saveDecision }       from './lib/research/runStore';
 
 // How stale the screened data must be before foregrounding the app refetches.
 // Long enough that flicking away and back is free; short enough that a real
@@ -247,6 +248,25 @@ export default function App() {
   // Header refresh pulls Notion as well as prices. Notes edited in Notion would
   // otherwise not reach the app until a full reload — boot is the only other
   // place the watchlist is read.
+  // Part 2B: Score review card. Both choices are recorded on the latest run;
+  // "Move to Watch" also flips Dive-In to 👀 Watch. "Keep Priority" is El's
+  // explicit override of the score guard, and hides the card for that run.
+  const [reviewBusyId, setReviewBusyId] = useState(null);
+  const handleScoreReview = useCallback(async (sig, decision) => {
+    if (!sig?.runPageId) return;
+    setReviewBusyId(sig.id);
+    try {
+      await saveDecision(sig.runPageId, { decision, override: true });
+      showToast(decision === 'Watch' ? `${sig.ticker} moved to 👀 Watch` : `${sig.ticker} stays 🔥 Priority — no trade cards while the score is low`, '');
+      await notionSyncWatchlist({ quiet: true });
+      runScreener(true);
+    } catch (e) {
+      showToast('⚠ ' + (e?.message || 'Could not save'), 'err');
+    } finally {
+      setReviewBusyId(null);
+    }
+  }, [showToast, notionSyncWatchlist, runScreener]);
+
   const handleHeaderRefresh = useCallback((...args) => {
     syncNotionWatchlist();
     return runScreener(...args);
@@ -423,6 +443,8 @@ export default function App() {
           evals={evals}
           evalsLoading={evalsLoading}
           onShowDetail={id => { setDetailSignalId(id); setOpenModal('signal-detail'); }}
+          onScoreReview={handleScoreReview}
+          reviewBusyId={reviewBusyId}
         />
       </div>
 

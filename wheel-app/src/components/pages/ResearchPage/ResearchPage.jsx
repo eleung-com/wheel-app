@@ -25,8 +25,9 @@ const VERDICT_TONE = { 'Worth investing': 'g', Maybe: 'a', 'Not worth it': 'r' }
 
 /** Recent-runs label: decision first, then where Claude / the score stands. */
 function rowTag(h) {
+  if (h.decision === 'Priority') return 'Priority';
   if (h.decision === 'Watch') return 'Watch';
-  if (h.decision === 'Reject') return 'Rejected';
+  if (h.decision === 'Reject') return 'Skipped';
   if (h.scoreType === 'Final') return 'Final';
   const cs = claudeState(h);
   if (cs === 'done') return 'Tap for Final';
@@ -191,8 +192,10 @@ export default function ResearchPage({ showToast }) {
       const row = await saveDecision(save.pageId, d);
       mergeHistoryRow(row);
       refreshRecent();
-      if (d.decision === 'Watch') showToast?.(`Watching ${run.ticker} — add it in TradingView`, '');
-      else if (d.decision === 'Reject') showToast?.(`${run.ticker} rejected — logged in Notion`, '');
+      const pend = row?.diveIn?.pending ? ' — add it in TradingView; Dive-In updates after the sync' : ' — Dive-In updated';
+      if (d.decision === 'Priority') showToast?.(`${run.ticker} → 🔥 Priority${pend}`, '');
+      else if (d.decision === 'Watch') showToast?.(`${run.ticker} → 👀 Watch${pend}`, '');
+      else if (d.decision === 'Reject') showToast?.(`${run.ticker} skipped — logged in Notion${row?.diveIn?.applied ? ', Dive-In set to Skip' : ''}`, '');
       else showToast?.('Decision cleared', '');
       return true;
     } catch (e) {

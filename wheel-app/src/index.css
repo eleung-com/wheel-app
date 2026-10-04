@@ -79,6 +79,13 @@ html{-webkit-text-size-adjust:100%}
 .scard.csp_wait{opacity:.6;border-style:dashed}
 .scard.csp_wait::before{background:var(--mu)}
 .stbdg.csp_wait{background:var(--s3);color:var(--mu2);border:1px solid var(--b2)}
+/* Part 2B: Priority stock whose latest score is Not worth it */
+.scard.score_review::before{background:var(--a)}
+.stbdg.score_review{background:var(--ad);color:var(--a);border:1px solid rgba(176,121,26,.25)}
+.srv-btns{display:flex;gap:6px;margin-top:8px}
+.srv-btn{flex:1;min-height:36px;font-family:var(--sans);font-size:11px;font-weight:700;border-radius:8px;border:1px solid var(--b2);background:transparent;color:var(--mu2);cursor:pointer}
+.srv-btn.go{color:var(--ac);border-color:rgba(210,96,58,.35)}
+.srv-btn:disabled{opacity:.5}
 .ctop{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px}
 .tblk{display:flex;flex-direction:column;gap:2px}
 .tkr{font-family:var(--mono);font-size:18px;font-weight:700;letter-spacing:-.5px}

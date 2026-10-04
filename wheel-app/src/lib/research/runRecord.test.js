@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dayKey, runStamp, runToRecord, cleanRecord, cleanDecision, rejectedBefore } from './runRecord.js';
+import { dayKey, runStamp, runToRecord, cleanRecord, cleanDecision, rejectedBefore, scoreMap, scoreAllowsPriority, DIVE_IN } from './runRecord.js';
 
 describe('dayKey / runStamp (New York day)', () => {
   it('late-evening NY run stays on the NY day, not the UTC day', () => {
@@ -66,12 +66,38 @@ describe('cleanDecision', () => {
   it('Reject needs a reason; tags filtered to the allowed set', () => {
     expect(cleanDecision({ decision: 'Reject', reason: '  ' }).ok).toBe(false);
     const c = cleanDecision({ decision: 'Reject', reason: 'debt', tags: ['Debt', 'Debt', 'Bogus'] });
-    expect(c.d).toEqual({ decision: 'Reject', reason: 'debt', tags: ['Debt'] });
+    expect(c.d).toEqual({ decision: 'Reject', reason: 'debt', tags: ['Debt'], override: false });
   });
   it('Watch and clear wipe reason + tags', () => {
-    expect(cleanDecision({ decision: 'Watch', reason: 'x', tags: ['Debt'] }).d).toEqual({ decision: 'Watch', reason: '', tags: [] });
-    expect(cleanDecision({ decision: null }).d).toEqual({ decision: null, reason: '', tags: [] });
+    expect(cleanDecision({ decision: 'Watch', reason: 'x', tags: ['Debt'] }).d).toEqual({ decision: 'Watch', reason: '', tags: [], override: false });
+    expect(cleanDecision({ decision: null }).d).toEqual({ decision: null, reason: '', tags: [], override: false });
     expect(cleanDecision({ decision: 'Buy' }).ok).toBe(false);
+  });
+  it('Priority is a decision; override only when exactly true', () => {
+    expect(cleanDecision({ decision: 'Priority' }).d).toMatchObject({ decision: 'Priority', override: false });
+    expect(cleanDecision({ decision: 'Priority', override: true }).d.override).toBe(true);
+    expect(cleanDecision({ decision: 'Priority', override: 'yes' }).d.override).toBe(false);
+  });
+});
+
+describe('Part 2B: one field', () => {
+  it('maps decisions to Dive-In values', () => {
+    expect(DIVE_IN).toEqual({ Priority: '🔥 Priority', Watch: '👀 Watch', Reject: '— Skip' });
+  });
+  it('only Worth investing / Maybe can be Priority', () => {
+    expect(scoreAllowsPriority('Worth investing')).toBe(true);
+    expect(scoreAllowsPriority('Maybe')).toBe(true);
+    expect(scoreAllowsPriority('Not worth it')).toBe(false);
+    expect(scoreAllowsPriority('No score')).toBe(false);
+    expect(scoreAllowsPriority(null)).toBe(false);
+  });
+  it('scoreMap keeps the newest row per ticker', () => {
+    const m = scoreMap([
+      { ticker: 'uber', pageId: 'b', verdict: 'Maybe', investmentScore: 60, scoreType: 'Final', runAt: '2026-10-05', decision: null },
+      { ticker: 'UBER', pageId: 'a', verdict: 'Worth investing', investmentScore: 90, runAt: '2026-09-01' },
+    ]);
+    expect(Object.keys(m)).toEqual(['UBER']);
+    expect(m.UBER).toMatchObject({ pageId: 'b', score: 60, verdict: 'Maybe', scoreType: 'Final' });
   });
 });
 
