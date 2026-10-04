@@ -1,8 +1,7 @@
 // Research relay — SEC EDGAR, FMP and Finnhub for the Research tab ("Run a stock").
-// Shared by two hosts so the keys + SEC contact header stay server-side:
-//   • the Worker's /research route (used by the old GitHub Pages site), and
-//   • the Cloudflare Pages Function functions/research/[[path]].js (same
-//     address as the app, so Cloudflare Access protects it — decided 10-03).
+// Served by the Cloudflare Pages Function functions/research/[[path]].js on the
+// app's own address, so Cloudflare Access protects it (decided 10-03). The
+// keys + SEC contact header stay server-side as Pages secrets.
 // Pure relay: the app does the parsing and scoring. Edge-cached per target.
 //
 // /research/sec/files/…   → www.sec.gov/files/…   (ticker → CIK list)

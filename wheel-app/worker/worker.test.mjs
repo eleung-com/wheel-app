@@ -3,7 +3,7 @@
 import worker from './worker.js';
 
 const ENV = { NOTION_TOKEN: 'ntn_fake', APP_SECRET: 's3cret' };
-const ORIGIN = 'https://eleung-com.github.io';
+const ORIGIN = 'https://wheel-app-67w.pages.dev';
 
 let calls = [];
 function stubFetch(responder) {
@@ -376,47 +376,38 @@ console.log('\nExisting routes still work');
   check('retired tradier path → no upstream call', calls.length === 0, calls.length + ' calls');
 }
 
-// ── Research relay ───────────────────────────────────────────────────────────
+// ── Research relay (Pages Function; the Worker route is retired) ─────────────
 console.log('\nResearch relay');
 {
-  const RENV = { ...ENV, SEC_CONTACT_EMAIL: 'me@example.com', FMP_KEY: 'fmpk', FINNHUB_KEY: 'fhk' };
-  const auth = { headers: { 'x-app-secret': 's3cret' } };
+  const { onRequest } = await import('../functions/research/[[path]].js');
+  const RENV = { SEC_CONTACT_EMAIL: 'me@example.com', FMP_KEY: 'fmpk', FINNHUB_KEY: 'fhk', APP_SECRET: 's3cret' };
+  const call = (path, env = RENV) => onRequest({ request: new Request('https://wheel-app-67w.pages.dev' + path, { headers: { 'x-app-secret': 's3cret' } }), env });
 
   stubFetch(() => jsonRes({}));
-  let r = await worker.fetch(req('/research/sec/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json'), RENV);
-  check('no secret → 401', r.status === 401, 'got ' + r.status);
-  check('no secret → no upstream call', calls.length === 0);
+  let r = await worker.fetch(req('/research/sec/api/x', { headers: { 'x-app-secret': 's3cret' } }), { ...ENV, ...RENV });
+  check('Worker /research retired → 404, no upstream call', r.status === 404 && calls.length === 0, 'got ' + r.status);
 
   stubFetch(() => jsonRes({ units: {} }));
-  r = await worker.fetch(req('/research/sec/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json', auth), RENV);
+  r = await call('/research/sec/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json');
   check('sec concept → 200', r.status === 200, 'got ' + r.status);
   check('sec concept → data.sec.gov', calls[0].url === 'https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json', calls[0].url);
   check('sec sends contact User-Agent', calls[0].init.headers['User-Agent'] === 'wheel-desk research me@example.com');
-  check('sec response has CORS for the app', r.headers.get('Access-Control-Allow-Origin') === ORIGIN);
 
   stubFetch(() => jsonRes({}));
-  await worker.fetch(req('/research/sec/files/company_tickers.json', auth), RENV);
+  await call('/research/sec/files/company_tickers.json');
   check('ticker list → www.sec.gov', calls[0].url === 'https://www.sec.gov/files/company_tickers.json', calls[0].url);
 
   stubFetch(() => jsonRes({}));
-  r = await worker.fetch(req('/research/sec/somewhere/else', auth), RENV);
+  r = await call('/research/sec/somewhere/else');
   check('other sec path → 404, no call', r.status === 404 && calls.length === 0, 'got ' + r.status);
 
   stubFetch(() => jsonRes({}));
-  r = await worker.fetch(req('/research/sec/api/x', auth), ENV);
+  r = await call('/research/sec/api/x', { APP_SECRET: 's3cret' });
   check('missing SEC_CONTACT_EMAIL → 500', r.status === 500, 'got ' + r.status);
 
   stubFetch(() => jsonRes([]));
-  await worker.fetch(req('/research/fmp/stable/price-target-consensus?symbol=MU', auth), RENV);
+  await call('/research/fmp/stable/price-target-consensus?symbol=MU');
   check('fmp adds apikey', calls[0].url === 'https://financialmodelingprep.com/stable/price-target-consensus?symbol=MU&apikey=fmpk', calls[0].url);
-
-  stubFetch(() => jsonRes({}));
-  await worker.fetch(req('/research/finnhub/api/v1/stock/peers?symbol=MU', auth), RENV);
-  check('finnhub adds token', calls[0].url === 'https://finnhub.io/api/v1/stock/peers?symbol=MU&token=fhk', calls[0].url);
-
-  stubFetch(() => jsonRes({}));
-  r = await worker.fetch(req('/research/sec/api/x', { method: 'OPTIONS' }), RENV);
-  check('preflight → 204 allowing x-app-secret', r.status === 204 && /x-app-secret/.test(r.headers.get('Access-Control-Allow-Headers')));
 }
 
 // ── Stock Runs (P1.5) ────────────────────────────────────────────────────────

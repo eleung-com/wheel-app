@@ -176,8 +176,8 @@ behind Cloudflare Access (email one-time code, one allowed email). The
 Research tab's `/research` relay runs there as a Pages Function
 (`functions/research/[[path]].js`, shared code in `worker/research.js`), so it
 is protected by the same login. This Worker keeps the cron alerts, `/notify`,
-`/notion`, `/watchlist-feed`, `/yf`, `/cboe` (and `/research` until the old
-GitHub Pages site is switched off).
+`/notion`, `/watchlist-feed`, `/yf`, `/cboe`. The old GitHub Pages site was
+switched off 10-04.
 
 Pages project settings: root directory `wheel-app`, build command
 `npm run build`, output `dist`, env `NODE_VERSION=20`. Secrets
@@ -244,7 +244,7 @@ curl -H 'x-app-secret: YOUR_SECRET' \
   'https://wheel-tradier-proxy.esthercandy.workers.dev/notion/eval?pageId=PAGE_UUID'
 ```
 
-The deployed app at `eleung-com.github.io/wheel-app` depends on the `/yf` route —
+The deployed app at `wheel-app-67w.pages.dev` depends on the `/yf` route —
 if chart data is missing in production but works at localhost, re-check this Worker first.
 
 ### Testing the scan without waiting for a cron firing

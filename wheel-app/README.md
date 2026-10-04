@@ -110,8 +110,9 @@ needs no key. Worker secrets are separate; see
 
 ## Deploying
 
-The **app** deploys itself: pushing to `main` builds and publishes to GitHub
-Pages (`.github/workflows/deploy-pages.yml`).
+The **app** deploys itself: pushing to `main` builds and publishes to
+Cloudflare Pages (project `wheel-app`, <https://wheel-app-67w.pages.dev>,
+behind Cloudflare Access). See `worker/README.md` → Cloudflare Pages.
 
 The **Worker** does not. After merging anything that touches `worker/` or
 `src/lib/`:
