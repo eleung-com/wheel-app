@@ -81,6 +81,11 @@ export async function readWatchlist(env) {
         // names the database uses, so renaming the Notion property to any of them
         // keeps working; '' when none is set or the date is empty.
         earnings: dateProp(p, ['Earnings Date', 'Earnings', 'Next Earnings']),
+        // Part 2A (earnings.js): Finnhub refresh bookkeeping. "checked" = the
+        // last day Finnhub had no upcoming date; "locked" = El set the date by
+        // hand and Finnhub must leave it alone.
+        earningsChecked: dateProp(p, ['Earnings checked']),
+        earningsLocked:  !!(p['Earnings locked'] && p['Earnings locked'].checkbox),
         // Groups the watchlist cards and the chart's ticker strip.
         sector:   p.sector && p.sector.select ? p.sector.select.name : '',
         addedAt:  Date.parse(page.created_time) || null,
@@ -193,6 +198,29 @@ export async function updatePage(env, pageId, patch) {
   if (!res.ok) {
     const detail = await res.text();
     throw new Error(`notion patch ${res.status}: ${detail.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+/**
+ * Earnings fields only (Part 2A, earnings.js). Finnhub owns "Earnings Date"
+ * unless "Earnings locked" is ticked — the caller checks the lock.
+ *   earnings: 'YYYY-MM-DD' → sets Earnings Date
+ *   checked:  'YYYY-MM-DD' sets / null clears "Earnings checked"; omit to leave it
+ */
+export async function setEarningsFields(env, pageId, { earnings, checked } = {}) {
+  const properties = {};
+  if (earnings) properties['Earnings Date'] = { date: { start: earnings } };
+  if (checked !== undefined) properties['Earnings checked'] = { date: checked ? { start: checked } : null };
+  if (!Object.keys(properties).length) return null;
+
+  const res = await notionFetch(env, `/v1/pages/${pageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ properties }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`notion earnings patch ${res.status}: ${detail.slice(0, 300)}`);
   }
   return res.json();
 }

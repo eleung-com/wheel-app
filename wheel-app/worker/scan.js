@@ -10,6 +10,7 @@ import { parsePositions, parseCriteria, CLOSE_TYPES, isPriceableOption } from '.
 import { fetchQ, fetchOptionPrice, fetchBestStrike } from '../src/lib/marketData.js';
 import { sendTelegram, formatAlert, formatDteAlert } from './telegram.js';
 import { isMarketOpen, etDateString } from './marketHours.js';
+import { refreshEarnings } from './earnings.js';
 
 const CBOE_ORIGIN    = 'https://cdn.cboe.com/api/global/delayed_quotes';
 const YAHOO_ORIGIN   = 'https://query1.finance.yahoo.com';
@@ -175,6 +176,15 @@ export async function runScan(env, now = new Date()) {
       .filter(p => (p.type === 'shares' || OPEN_OPTION_TYPES.has(p.type)) && !p.linkedId)
       .map(p => p.ticker);
     const tickers = [...new Set([...priorityTickers, ...heldTickers])];
+
+    // Earnings dates from Finnhub, once per ET day (Part 2A). Runs before the
+    // signal pass so today's cards and alerts see corrected dates. Its own
+    // failure never stops the scan.
+    try {
+      await refreshEarnings(env, watchlist, heldTickers, now);
+    } catch (e) {
+      console.error('[scan] earnings refresh failed:', e?.message || e);
+    }
 
     if (!tickers.length) return; // nothing flagged and nothing held → clean no-op
 
