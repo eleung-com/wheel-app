@@ -16,7 +16,7 @@ npm run dev    # http://localhost:5173
 
 | | |
 |---|---|
-| App | <https://eleung-com.github.io/wheel-app/> — deploys automatically on push to `main` |
+| App | <https://wheel-app-67w.pages.dev> — Cloudflare Pages behind Cloudflare Access; deploys automatically on push to `main` |
 | Worker | `wheel-tradier-proxy` — **deployed by hand**, see [`wheel-app/worker/README.md`](wheel-app/worker/README.md) |
 | Tests | `npm test` and `npm run test:worker`, both gated on every PR by [`ci.yml`](.github/workflows/ci.yml) |
 

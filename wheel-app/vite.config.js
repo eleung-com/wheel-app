@@ -3,11 +3,8 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  // Cloudflare Pages (wheel-app-67w.pages.dev) serves the app at the root; the
-  // old GitHub Pages site serves it under /wheel-app/. Pages sets CF_PAGES=1
-  // during its build, so the same main branch builds right for both while
-  // the move is tested. Drop the GitHub branch once Pages is the only host.
-  base: process.env.CF_PAGES ? '/' : '/wheel-app/',
+  // Cloudflare Pages (wheel-app-67w.pages.dev) serves the app at the root.
+  base: '/',
   server: {
     port: 5173,
     proxy: {
@@ -27,9 +24,11 @@ export default defineConfig({
         target: process.env.YF_PROXY_TARGET || 'https://wheel-tradier-proxy.esthercandy.workers.dev',
         changeOrigin: true,
       },
-      // Research relay (SEC / FMP / Finnhub) — through the worker, which holds the keys.
+      // Research relay (SEC / FMP / Finnhub) — the Pages Function, run locally:
+      //   npx wrangler pages dev dist --port 8788   (keys in wheel-app/.dev.vars)
+      // The deployed copy sits behind Cloudflare Access, so dev can't use it.
       '/research': {
-        target: process.env.RESEARCH_PROXY_TARGET || 'https://wheel-tradier-proxy.esthercandy.workers.dev',
+        target: process.env.RESEARCH_PROXY_TARGET || 'http://localhost:8788',
         changeOrigin: true,
       },
       // CBOE delayed option chains — through the worker's /cboe pass-through,

@@ -6,10 +6,8 @@
 //   /notion/*   → api.notion.com            (holds NOTION_TOKEN server-side — the app is a
 //                 public static site, so the token can never reach the client).
 //                 /notion/runs = Research tab history + Watch/Reject + Claude routine (stockRuns.js)
-//   /research/* → SEC EDGAR, FMP, Finnhub for the Research tab ("Run a stock").
-//                 Gated on x-app-secret like /notion; adds the SEC contact header
-//                 and the FMP/Finnhub keys; edge-cached. Pure relay: the app does
-//                 the parsing and scoring (decided 10-02, keeps every request tiny).
+//   (/research/* moved to the Cloudflare Pages Function on the app's own address,
+//    behind Cloudflare Access — functions/research/[[path]].js, worker/research.js)
 //   /cboe/*     → cdn.cboe.com/api/global/delayed_quotes (free delayed option chains
 //                 with greeks; no CORS headers upstream, so the browser comes through here)
 //   anything else → 404 (the Tradier proxy that lived here was retired 10-02-2026)
@@ -20,9 +18,7 @@
 import { readWatchlist, readEval, updatePage, UUID_RE } from './notion.js';
 import { saveRun, listRuns, setDecision, getRun, redoClaude } from './stockRuns.js';
 import { runScan } from './scan.js';
-import { researchTarget, fetchResearch } from './research.js';
 
-export { researchTarget };
 import { sendTelegram } from './telegram.js';
 
 const YAHOO_ORIGIN   = 'https://query1.finance.yahoo.com';
@@ -31,7 +27,6 @@ const CBOE_ORIGIN    = 'https://cdn.cboe.com/api/global/delayed_quotes';
 // Notion routes carry a shared secret, so unlike the finance proxies they are not
 // open to any origin. Browsers enforce this; the secret is what stops everything else.
 const ALLOWED_ORIGINS = [
-  'https://eleung-com.github.io',
   'https://wheel-app-67w.pages.dev',
   'http://localhost:5173',
   'https://localhost:5173',
@@ -154,17 +149,6 @@ export default {
       } catch (e) {
         return json({ error: String(e.message || e) }, e.status || 502, cors);
       }
-    }
-
-    // ── Research relay ───────────────────────────────────────────────────
-    if (url.pathname.startsWith('/research/')) {
-      const cors = notionCors(origin);
-      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-      if (request.method !== 'GET') return json({ error: 'GET only' }, 405, cors);
-      if (!env.APP_SECRET) return json({ error: 'APP_SECRET secret is not set on the worker' }, 500, cors);
-      if (request.headers.get('x-app-secret') !== env.APP_SECRET) return json({ error: 'unauthorized' }, 401, cors);
-
-      return fetchResearch(url, env, cors);
     }
 
     // ── Watchlist feed (read-only relay) ─────────────────────────────────────

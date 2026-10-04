@@ -1,7 +1,6 @@
 // Cloudflare Pages Function: /research/* on the app's own address
-// (wheel-app-67w.pages.dev). Same relay as the Worker's /research route, but
-// behind Cloudflare Access with the rest of the site, so no cross-site cookie
-// problem on Safari (decided 10-03).
+// (wheel-app-67w.pages.dev), behind Cloudflare Access with the rest of the
+// site, so no cross-site cookie problem on Safari (decided 10-03).
 //
 // Pages project → Settings → Variables and secrets (encrypted):
 //   FMP_KEY, FINNHUB_KEY, SEC_CONTACT_EMAIL — required

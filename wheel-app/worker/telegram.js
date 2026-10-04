@@ -4,7 +4,7 @@
 
 import { formatDateDisplay } from '../src/lib/utils.js';
 
-const APP_URL = 'https://eleung-com.github.io/wheel-app/';
+const APP_URL = 'https://wheel-app-67w.pages.dev/';
 
 export async function sendTelegram(env, text) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
