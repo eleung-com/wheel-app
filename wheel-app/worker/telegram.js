@@ -1,10 +1,26 @@
-// Telegram delivery for the unattended scan — one DM per new signal, plain text
-// (no parse_mode) so tickers, dollar signs, and deltas never need HTML/Markdown
-// escaping.
+// Telegram delivery for the unattended scan. Plain text (no parse_mode) so
+// tickers, dollar signs, and deltas never need HTML/Markdown escaping.
+//
+// Part 2C (decided 10-04): the scan sends ONE count message, no details —
+// formatCountAlert(). It forces a look at the app, where the cards are.
+// formatAlert / formatDteAlert are kept for reference and tests only.
 
 import { formatDateDisplay } from '../src/lib/utils.js';
 
 const APP_URL = 'https://wheel-app-67w.pages.dev/';
+
+/**
+ * Part 2C: the only signal message the scan sends.
+ *   📡 Wheel: 2 to manage · 3 new trades · 1 waiting
+ *   Open app → https://wheel-app-67w.pages.dev/
+ */
+export function formatCountAlert({ manage = 0, trades = 0, waiting = 0 } = {}) {
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  return [
+    `\u{1F4E1} Wheel: ${manage} to manage \u00b7 ${n(trades, 'new trade', 'new trades')} \u00b7 ${waiting} waiting`,
+    `Open app \u2192 ${APP_URL}`,
+  ].join('\n');
+}
 
 export async function sendTelegram(env, text) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {

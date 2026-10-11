@@ -221,11 +221,11 @@ describe('21-DTE management nudge', () => {
 
     await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
 
+    // Part 2C: counted in the one count message, not its own nudge.
     expect(telegramCalls).toBe(1);
-    expect(telegramTexts[0]).toContain('21-DTE — TSLA');
-    expect(telegramTexts[0]).toContain('Short put');
-    expect(telegramTexts[0]).toContain('$200 strike');
-    expect(telegramTexts[0]).toContain('21 DTE');
+    expect(telegramTexts[0]).toContain('1 to manage');
+    expect(telegramTexts[0]).toContain('wheel-app-67w.pages.dev');
+    expect(telegramTexts[0]).not.toContain('TSLA'); // counts only, no details
     expect(kv.store.has(`manage-dte|1|${etDateString(OPEN_NOW)}`)).toBe(true);
   });
 
@@ -257,7 +257,7 @@ describe('21-DTE management nudge', () => {
     expect(telegramCalls).toBe(2);
   });
 
-  it('sends one message per position, not per ticker', async () => {
+  it('counts each position, not each ticker — still one message', async () => {
     const positions = [
       quietPut({ id: 1, strike: 200 }),
       quietPut({ id: 2, strike: 190, expiry: expiryForDte(15) }),
@@ -267,9 +267,8 @@ describe('21-DTE management nudge', () => {
 
     await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
 
-    expect(telegramCalls).toBe(2);
-    expect(telegramTexts.some(t => t.includes('$200 strike'))).toBe(true);
-    expect(telegramTexts.some(t => t.includes('$190 strike'))).toBe(true);
+    expect(telegramCalls).toBe(1);
+    expect(telegramTexts[0]).toContain('2 to manage');
   });
 
   it('ignores positions that are no longer open', async () => {
@@ -288,7 +287,7 @@ describe('21-DTE management nudge', () => {
     stubFetch({ sheet: { positions, criteria: { manageDte: 35 } }, historyPrice: 240 });
     await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
     expect(telegramCalls).toBe(1);
-    expect(telegramTexts[0]).toContain('35-DTE — TSLA');
+    expect(telegramTexts[0]).toContain('1 to manage');
   });
 
   it('does not nudge outside market hours', async () => {
@@ -302,7 +301,8 @@ describe('21-DTE management nudge', () => {
     // it runs before the quote pass and owns its own error handling.
     stubFetch({ sheet: { positions: [quietPut()], criteria: {} }, historyOk: false });
     await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
-    expect(telegramTexts.some(t => t.includes('21-DTE — TSLA'))).toBe(true);
+    // one self-alert + one count message
+    expect(telegramTexts.some(t => t.includes('1 to manage'))).toBe(true);
   });
 });
 
@@ -334,12 +334,13 @@ describe('runScan — live option premium before close alerts', () => {
       chainOptions: [{ option_type: 'put', strike: 200, bid: 0.9, ask: 1.1 }],
     });
     const kv = fakeKV();
-    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
+    const { sigs } = await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
 
     expect(chainCalls).toBeGreaterThan(0);
-    const closeMsg = telegramTexts.find(t => t.includes('CLOSE'));
-    expect(closeMsg).toBeTruthy();
-    expect(closeMsg).toMatch(/80% of premium captured/);
+    const close = sigs.find(s => s.type === 'close');
+    expect(close).toBeTruthy();
+    expect(close.suggestion).toMatch(/80% of premium captured/);
+    expect(telegramTexts[0]).toContain('1 to manage');
   });
 
   it('stays silent when the chain cannot be priced, rather than using the sheet', async () => {
@@ -351,9 +352,9 @@ describe('runScan — live option premium before close alerts', () => {
       chainStatus: 500,
     });
     const kv = fakeKV();
-    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
+    const { sigs } = await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
 
-    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(false);
+    expect(sigs.some(s => s.type === 'close')).toBe(false);
   });
 
   it('suppressing a close alert does not suppress the roll alert for the same position', async () => {
@@ -364,10 +365,10 @@ describe('runScan — live option premium before close alerts', () => {
       historyPrice: 180, // below the 200 strike
       chainStatus: 500,
     });
-    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+    const { sigs } = await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
 
-    expect(telegramTexts.some(t => t.includes('ROLL'))).toBe(true);
-    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(false);
+    expect(sigs.some(s => s.type === 'roll')).toBe(true);
+    expect(sigs.some(s => s.type === 'close')).toBe(false);
   });
 
   it('prices a spread as the net of both legs', async () => {
@@ -386,11 +387,11 @@ describe('runScan — live option premium before close alerts', () => {
         { option_type: 'put', strike: 95,  bid: 0.15, ask: 0.25 },
       ],
     });
-    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+    const { sigs } = await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
 
-    const closeMsg = telegramTexts.find(t => t.includes('CLOSE'));
-    expect(closeMsg).toBeTruthy();
-    expect(closeMsg).toMatch(/73% of premium captured/);
+    const close = sigs.find(s => s.type === 'close');
+    expect(close).toBeTruthy();
+    expect(close.suggestion).toMatch(/73% of premium captured/);
   });
 
   it('stays silent on a spread when only one leg prices', async () => {
@@ -404,9 +405,9 @@ describe('runScan — live option premium before close alerts', () => {
       historyPrice: 130,
       chainOptions: [{ option_type: 'put', strike: 100, bid: 0.55, ask: 0.65 }], // long leg absent
     });
-    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+    const { sigs } = await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
 
-    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(false);
+    expect(sigs.some(s => s.type === 'close')).toBe(false);
   });
 
   it('reads option chains from CBOE with no key configured', async () => {
@@ -421,9 +422,48 @@ describe('runScan — live option premium before close alerts', () => {
       if (String(url).includes('cdn.cboe.com')) chainUrl = String(url);
       return inner(url, init);
     };
-    await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
+    const { sigs } = await runScan({ ...ENV_BASE, ALERTS_KV: fakeKV() }, OPEN_NOW);
 
     expect(chainUrl).toBe('https://cdn.cboe.com/api/global/delayed_quotes/options/TSLA.json');
-    expect(telegramTexts.some(t => t.includes('CLOSE'))).toBe(true);
+    expect(sigs.some(s => s.type === 'close')).toBe(true);
+  });
+});
+
+// ── Part 2C: one count message ─────────────────────────────────────────────
+describe('count message', () => {
+  it('one message for several items; silent when nothing new; speaks again when something is', async () => {
+    const roll = { id: 1, ticker: 'TSLA', type: 'short_put', qty: 1, strike: 250,
+      expiry: expiryForDte(60), enteredAt: Date.parse('2026-06-01'), prem: 5, curPrem: 5 };
+    const dtePut = quietPut({ id: 2, ticker: 'AMD' });
+    stubFetch({ sheet: { positions: [roll, dtePut], criteria: {} }, historyPrice: 240 });
+    const kv = fakeKV();
+
+    const r1 = await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
+    expect(telegramCalls).toBe(1);
+    expect(r1.counts).toEqual({ manage: 2, trades: 0, waiting: 0 });
+    expect(telegramTexts[0]).toMatch(/^📡 Wheel: 2 to manage · 0 new trades · 0 waiting\nOpen app → /);
+
+    // 30 min later, same picture → no message
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, new Date(Date.UTC(2026, 6, 22, 14, 30)));
+    expect(telegramCalls).toBe(1);
+  });
+
+  it('a failed send marks nothing, so the next scan retries', async () => {
+    const roll = { id: 1, ticker: 'TSLA', type: 'short_put', qty: 1, strike: 250,
+      expiry: expiryForDte(60), enteredAt: Date.parse('2026-06-01'), prem: 5, curPrem: 5 };
+    stubFetch({ sheet: { positions: [roll], criteria: {} }, historyPrice: 240 });
+    const inner = globalThis.fetch;
+    let fail = true;
+    globalThis.fetch = async (url, init) => {
+      if (String(url).includes('api.telegram.org') && fail) return new Response('{}', { status: 500 });
+      return inner(url, init);
+    };
+    const kv = fakeKV();
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, OPEN_NOW);
+    expect([...kv.store.keys()].some(k => k.startsWith('TSLA|roll'))).toBe(false);
+    fail = false;
+    await runScan({ ...ENV_BASE, ALERTS_KV: kv }, new Date(Date.UTC(2026, 6, 22, 14, 30)));
+    expect(telegramCalls).toBe(1);
+    expect(kv.store.has('TSLA|roll|2026-07-22')).toBe(true);
   });
 });
