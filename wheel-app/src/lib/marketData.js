@@ -75,8 +75,9 @@ export function yahooCandidates(ticker) {
   return YAHOO_INDEX[t] || [{ symbol: t, scale: 1 }];
 }
 
-async function historyFromYahoo(transport, ticker, scale = 1) {
-  const res = await transport.yahoo(`/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=${HISTORY_YEARS}y`, T_HISTORY_YAHOO);
+async function historyFromYahoo(transport, ticker, scale = 1, { interval = '1d', range = `${HISTORY_YEARS}y`, events = '' } = {}) {
+  const ev = events ? `&events=${events}` : '';
+  const res = await transport.yahoo(`/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${interval}&range=${range}${ev}`, T_HISTORY_YAHOO);
   if (!res || !res.ok) return null;
   const result = (await res.json())?.chart?.result?.[0];
   if (!result) return null;
@@ -114,7 +115,12 @@ async function historyFromYahoo(transport, ticker, scale = 1) {
     }
     live = { price: meta.regularMarketPrice * scale, prevclose };
   }
-  return { closes, highs, lows, dates, live };
+  // Dividends (only when asked for with events=div): [{ date, amount }].
+  const divs = Object.values(result.events?.dividends || {})
+    .filter(d => d && d.date && d.amount != null)
+    .map(d => ({ date: new Date(d.date * 1000).toISOString().slice(0, 10), amount: d.amount * scale }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return { closes, highs, lows, dates, live, divs };
 }
 
 /** `{closes, highs, lows, dates, live}` from Yahoo, else null. */
@@ -122,6 +128,22 @@ export async function fetchHistory(transport, ticker) {
   for (const { symbol, scale } of yahooCandidates(ticker)) {
     try {
       const h = await historyFromYahoo(transport, symbol, scale);
+      if (h) return h;
+    } catch (_) { /* try the next candidate */ }
+  }
+  return null;
+}
+
+/**
+ * Part 2D (decided 10-11): 5 years of WEEKLY bars + dividends, one small
+ * request (~15 KB) — only for LEAPS, so the every-30-min daily download stays
+ * light. Index symbols use the same stand-ins as fetchHistory (XSP → ^XSP or
+ * S&P 500 ÷ 10). `{closes, highs, lows, dates, live, divs}`, else null.
+ */
+export async function fetchWeekly(transport, ticker) {
+  for (const { symbol, scale } of yahooCandidates(ticker)) {
+    try {
+      const h = await historyFromYahoo(transport, symbol, scale, { interval: '1wk', range: '5y', events: 'div' });
       if (h) return h;
     } catch (_) { /* try the next candidate */ }
   }
@@ -273,18 +295,21 @@ export async function fetchOptionPrice(transport, { ticker, type, strike, expiry
  *
  * @returns { strike, expiry, dte, delta, premium } or null.
  */
-export async function fetchBestStrike(transport, ticker, optionType, deltaMin, deltaMax, dteMin, dteMax) {
+export async function fetchBestStrike(transport, ticker, optionType, deltaMin, deltaMax, dteMin, dteMax, { targetDte = null, strict = false } = {}) {
   try {
     const full = await fetchFullChain(transport, ticker);
     if (!full) return null;
     const dateArr = [...new Set(full.filter(o => o.option_type === optionType).map(o => o.expiry))].sort();
     if (!dateArr.length) return null;
 
-    const dteMid   = (dteMin + dteMax) / 2;
+    // Part 2D: LEAPS aim at a set point (21 mo) inside a lopsided window, and
+    // must not fall back outside it (strict) — "no LEAPS listed" is an answer.
+    const dteMid   = targetDte != null ? targetDte : (dteMin + dteMax) / 2;
     const allDated = dateArr.map(d => ({ date: d, dte: dte(d) })).filter(d => d.dte !== null && d.dte > 0);
     if (!allDated.length) return null;
     // Prefer an expiry inside the range; if none is listed, take the closest.
     const inRange = allDated.filter(d => d.dte >= dteMin && d.dte <= dteMax);
+    if (strict && !inRange.length) return { none: true };
     const pool    = inRange.length ? inRange : allDated;
     const target  = pool.reduce((best, d) => Math.abs(d.dte - dteMid) < Math.abs(best.dte - dteMid) ? d : best);
 
@@ -310,6 +335,8 @@ export async function fetchBestStrike(transport, ticker, optionType, deltaMin, d
       dte:     target.dte,
       delta:   chosen.greeks.delta,
       premium: mid === null ? null : parseFloat(mid.toFixed(2)),
+      bid:     chosen.bid ?? null,
+      ask:     chosen.ask ?? null,
     };
   } catch (_) {
     return null;

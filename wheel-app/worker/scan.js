@@ -14,6 +14,7 @@ import { refreshEarnings } from './earnings.js';
 import { listRuns, applyPendingDecisions } from './stockRuns.js';
 import { scoreMap } from '../src/lib/research/runRecord.js';
 import { SECTION } from '../src/lib/signalSections.js';
+import { prefetchLeaps } from '../src/lib/leaps.js';
 
 const CBOE_ORIGIN    = 'https://cdn.cboe.com/api/global/delayed_quotes';
 const YAHOO_ORIGIN   = 'https://query1.finance.yahoo.com';
@@ -291,7 +292,19 @@ export async function runScan(env, now = new Date()) {
       unpricedIds = new Set(positions.filter(isPriceableOption).map(p => p.id));
     }
 
-    const sigs = buildSignals(watchlist, pricedPositions, criteria, qmap, strikeMap, scores)
+    // Part 2D: weekly LEAPS setups, cached a day in KV. No option chains here
+    // (Telegram only counts; the app picks the contract when opened).
+    let wmap = {};
+    try {
+      ({ wmap } = await prefetchLeaps(tx, {
+        watchlist, positions: pricedPositions, criteria, scores, chains: false, now,
+        cache: env.ALERTS_KV || undefined, sleep,
+      }));
+    } catch (e) {
+      console.error('[scan] leaps prefetch failed:', e?.message || e);
+    }
+
+    const sigs = buildSignals(watchlist, pricedPositions, criteria, qmap, strikeMap, scores, { wmap })
       // A close alert says "buy it back at this price". Sending one computed off
       // a stale Sheet value is worse than staying quiet — the roll and max-loss
       // alerts for the same position are unaffected, since those read the stock.

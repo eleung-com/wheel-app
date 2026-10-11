@@ -32,6 +32,7 @@ function CriteriaRow({ label, sub, inputId, value, onChange, min, max, pair }) {
 const SECTIONS = [
   { id: 'csp',     label: 'CSP Entry',       sub: 'Pullback, delta & DTE ranges' },
   { id: 'cc',      label: 'Covered Calls',   sub: 'Entry rules for calls on shares' },
+  { id: 'leaps',   label: 'LEAPS',           sub: 'Weekly entry rules, contract & limits' },
   { id: 'exit',    label: 'Exit Rules',      sub: 'Early close thresholds' },
   { id: 'capital', label: 'Account Capital', sub: 'Buying power per account' },
   { id: 'sheets',  label: 'Google Sheets',   sub: 'Backend connection' },
@@ -163,6 +164,26 @@ export default function CriteriaPage({ criteria, onSave, onRefresh, onPull }) {
               pair={{ min: local.ccDteMin, max: local.ccDteMax }}
               onChange={v => updatePair('ccDteMin', 'ccDteMax', v)}
             />
+          </div>
+        </>
+      );
+      case 'leaps': return (
+        <>
+          <div className="slabel">LEAPS — Weekly entry (stocks + {local.leapsIndex || 'XSP'})</div>
+          <div className="ssec">
+            <CriteriaRow label="Max % above 50-wk MA" sub="'Slightly above' — price must also be above the 200-wk MA, with both MAs rising" inputId="c-lmax" value={local.leapsMaxAboveMa} min={0} max={50} onChange={v => update('leapsMaxAboveMa', v)} />
+            <CriteriaRow label="Weekly Stoch %K turning up from below" sub="Slow %K (14,3,3) on weekly bars" inputId="c-lstoch" value={local.leapsStochBelow} min={1} max={99} onChange={v => update('leapsStochBelow', v)} />
+          </div>
+          <div className="slabel">LEAPS — Contract</div>
+          <div className="ssec">
+            <CriteriaRow label="Delta range" sub="Contract picked closest to the middle" pair={{ min: local.leapsDeltaMin, max: local.leapsDeltaMax }} onChange={v => updatePair('leapsDeltaMin', 'leapsDeltaMax', v)} />
+            <CriteriaRow label="Stocks: months out" sub="Aim 21 months; nothing listed in this range = Waiting" pair={{ min: local.leapsMinMonths, max: local.leapsMaxMonths }} onChange={v => updatePair('leapsMinMonths', 'leapsMaxMonths', v)} />
+            <CriteriaRow label="Index: months out" sub="Aim 12 months" pair={{ min: local.leapsIndexMinMonths, max: local.leapsIndexMaxMonths }} onChange={v => updatePair('leapsIndexMinMonths', 'leapsIndexMaxMonths', v)} />
+          </div>
+          <div className="slabel">LEAPS — Limits (warnings only)</div>
+          <div className="ssec">
+            <CriteriaRow label="Max cost per contract ($)" sub="Over this = warning on the card" inputId="c-lcost" value={local.leapsMaxCost} min={0} onChange={v => update('leapsMaxCost', v)} />
+            <CriteriaRow label="Max LEAPS open at once" sub="At or over this = warning on the card" inputId="c-lopen" value={local.leapsMaxOpen} min={1} max={20} onChange={v => update('leapsMaxOpen', v)} />
           </div>
         </>
       );

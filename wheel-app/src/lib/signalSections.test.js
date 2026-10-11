@@ -28,6 +28,6 @@ describe('Signals tab sections (Part 2C)', () => {
 
   it('ignores types that belong to no section', () => {
     expect(SECTION.unknown).toBeUndefined();
-    expect(splitSections([{ type: 'unknown' }])).toEqual({ manage: [], trades: [], waiting: [] });
+    expect(splitSections([{ type: 'unknown' }])).toEqual({ manage: [], trades: [], index: [], waiting: [] });
   });
 });

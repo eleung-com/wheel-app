@@ -5,6 +5,7 @@
 export const SECTION = {
   maxloss: 'manage', roll: 'manage', close: 'manage', cc: 'manage', score_review: 'manage',
   csp: 'trades', csp_wait: 'waiting',
+  leaps: 'trades', leaps_wait: 'waiting', // Part 2D
 };
 
 const MANAGE_ORDER = { maxloss: 0, roll: 1, close: 2, score_review: 3, cc: 4 };
@@ -23,9 +24,18 @@ export function rankTrades(list) {
   });
 }
 
-/** signals → { manage, trades, waiting }, each already in display order. */
+/**
+ * signals → { manage, trades, index, waiting }, each in display order.
+ * Index LEAPS (XSP) have no score, so they sit in their own pinned list
+ * under the ranked trades instead of being ranked last.
+ */
 export function splitSections(signals) {
-  const by = { manage: [], trades: [], waiting: [] };
-  for (const s of signals || []) if (SECTION[s.type]) by[SECTION[s.type]].push(s);
-  return { manage: sortManage(by.manage), trades: rankTrades(by.trades), waiting: by.waiting };
+  const by = { manage: [], trades: [], index: [], waiting: [] };
+  for (const s of signals || []) {
+    const sec = SECTION[s.type];
+    if (!sec) continue;
+    if (sec === 'trades' && s.index) by.index.push(s);
+    else by[sec].push(s);
+  }
+  return { manage: sortManage(by.manage), trades: rankTrades(by.trades), index: by.index, waiting: by.waiting };
 }

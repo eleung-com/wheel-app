@@ -5,7 +5,7 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
   const s = signals.find(sig => sig.id === signalId);
   if (!s) return null;
 
-  const lbl = { csp: 'Cash-Secured Put', csp_wait: 'CSP — Waiting', cc: 'Covered Call', roll: 'Roll Position', close: 'Buy to Close', maxloss: 'Spread at Max Loss' }[s.type];
+  const lbl = { csp: 'Cash-Secured Put', csp_wait: 'CSP — Waiting', leaps: 'LEAPS', leaps_wait: 'LEAPS — Waiting', score_review: 'Score review', cc: 'Covered Call', roll: 'Roll Position', close: 'Buy to Close', maxloss: 'Spread at Max Loss' }[s.type];
 
   // For roll/close signals, find the underlying position
   const posId = signalId ? parseInt(signalId.replace('roll-', '').replace('close-', '')) : null;
@@ -36,6 +36,22 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
                     ? `Reports in ${s.earnWarn.days} day${s.earnWarn.days === 1 ? '' : 's'} — before this call would expire. Advisory only for covered calls.`
                     : `Reports in ${s.earnWarn.days} day${s.earnWarn.days === 1 ? '' : 's'} — on or before this contract's expiry, so this CSP is waiting until after earnings.`)
                 : `Reports in ${s.earnWarn.days} day${s.earnWarn.days === 1 ? '' : 's'} — shortly after this contract expires. Not blocked, but the stock may move into the print.`}
+          </div>
+        </div>
+      )}
+
+      {(s.type === 'leaps' || s.type === 'leaps_wait') && s.weekly && (
+        // Part 2D: the weekly numbers behind the card, so it can be checked
+        // against TradingView's weekly chart.
+        <div className="dsec">
+          <div className="dlbl">Weekly setup</div>
+          <div className="mgrid c3">
+            <div className="met"><div className="met-l">50-wk MA</div><div className="met-v">${s.weekly.ma50?.toFixed(2)}</div></div>
+            <div className="met"><div className="met-l">200-wk MA</div><div className="met-v">${s.weekly.ma200?.toFixed(2)}</div></div>
+            <div className="met"><div className="met-l">Above 50MA</div><div className="met-v">{s.weekly.pctAbove50?.toFixed(1)}%</div></div>
+            <div className="met"><div className="met-l">Wkly %K</div><div className="met-v">{s.weekly.stochK?.toFixed(0)} (was {s.weekly.stochKPrev?.toFixed(0)})</div></div>
+            <div className="met"><div className="met-l">Dividends 12 mo</div><div className="met-v">{s.index ? 'n/a' : s.weekly.divCount}</div></div>
+            <div className="met"><div className="met-l">1 contract</div><div className="met-v">{s.cost != null ? `$${s.cost.toLocaleString()}` : '—'}</div></div>
           </div>
         </div>
       )}
