@@ -257,6 +257,60 @@ function ccEarningsPill(note) {
 // an already-open contract — because those legitimately differ by caller. What
 // must never differ again is the oscillator test, which lives here now.
 
+// ── LEAPS (Part 2D) ──────────────────────────────────────────────────────────
+// Your rulebook, on WEEKLY bars (5 yrs from fetchWeekly):
+//   50-wk MA above the 200-wk MA · each higher than 4 weeks ago · price above
+//   both but at most `leapsMaxAboveMa`% (5) above the 50 · weekly Stoch %K
+//   under `leapsStochBelow` (20) and turning up · stocks: NO dividend in the
+//   last 12 months (strict, decided 10-11). Index (XSP) has no dividend test.
+
+const RISE_WEEKS = 4;
+const smaAt = (a, n, end = a.length) => (end < n ? null : a.slice(end - n, end).reduce((x, y) => x + y, 0) / n);
+
+/** Weekly bars → the numbers the LEAPS rules read. Pure. */
+export function deriveWeekly(hist, price = null) {
+  if (!hist || !Array.isArray(hist.closes) || !hist.closes.length) return null;
+  const { closes, highs, lows } = hist;
+  const p = price ?? closes[closes.length - 1];
+  const n = closes.length;
+  const ma50 = smaAt(closes, 50), ma200 = smaAt(closes, 200);
+  const ma50Prev = smaAt(closes, 50, n - RISE_WEEKS), ma200Prev = smaAt(closes, 200, n - RISE_WEEKS);
+  const { k } = stochastic(highs, lows, closes);
+  const lastDate = hist.dates?.[n - 1] || null;
+  const cutoff = lastDate ? new Date(Date.parse(lastDate) - 365 * 86400000).toISOString().slice(0, 10) : null;
+  const divs12m = (hist.divs || []).filter(d => !cutoff || d.date > cutoff);
+  return {
+    weeks: n, price: p, ma50, ma200, ma50Prev, ma200Prev,
+    pctAbove50: ma50 ? (p / ma50 - 1) * 100 : null,
+    stochK: k[n - 1] ?? null, stochKPrev: n > 1 ? (k[n - 2] ?? null) : null,
+    divCount: divs12m.length,
+    divYield: p ? divs12m.reduce((s, d) => s + d.amount, 0) / p * 100 : null,
+  };
+}
+
+/** The trend + timing half of the LEAPS rules (dividend + held checks live in buildSignals). */
+export function leapsEntryOk(w, cr) {
+  if (!w || w.ma50 == null || w.ma200 == null || w.ma50Prev == null || w.ma200Prev == null) return false;
+  const maxAbove = cr.leapsMaxAboveMa != null ? cr.leapsMaxAboveMa : 5;
+  const stochBelow = cr.leapsStochBelow != null ? cr.leapsStochBelow : 20;
+  return w.ma50 > w.ma200
+    && w.ma50 > w.ma50Prev && w.ma200 > w.ma200Prev
+    && w.price > w.ma50 && w.price > w.ma200
+    && w.pctAbove50 <= maxAbove
+    && turningUpFrom(w.stochK, w.stochKPrev, stochBelow);
+}
+
+/** Month windows → DTE numbers for fetchBestStrike. */
+export function leapsWindow(cr, isIndex) {
+  const m = (v) => Math.round(v * 30.44);
+  return isIndex
+    ? { dteMin: m(cr.leapsIndexMinMonths ?? 10), dteMax: m(cr.leapsIndexMaxMonths ?? 14), target: m(cr.leapsIndexTargetMonths ?? 12) }
+    : { dteMin: m(cr.leapsMinMonths ?? 15), dteMax: m(cr.leapsMaxMonths ?? 30), target: m(cr.leapsTargetMonths ?? 21) };
+}
+
+/** Open LEAPS rows (long calls) — added in Part 2D step D3; none before then. */
+export const isOpenLeaps = (p) => p && p.type === 'long_call' && !p.linkedId;
+
 /**
  * CSP entry: daily RSI inside the band, %K turning up from below the level,
  * and weekly RSI at or above the trend floor (Part 2A — no naked puts on a
@@ -297,7 +351,7 @@ function scorePills(s, scores, now) {
   return pills;
 }
 
-export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {}, scores = null) {
+export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {}, scores = null, extra = {}) {
   const cr   = criteria;
   const sigs = [];
 
@@ -409,6 +463,70 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       runPageId: sc?.pageId ?? null,
       suggestion: blockedBy ? `Waiting: ${blockedBy}` : suggParts.join(' · '),
       ts: Date.now(),
+    });
+  }
+
+  // ── LEAPS signals (Part 2D) ───────────────────────────────────────────────
+  // wmap: ticker → deriveWeekly() result. strikeMap[`${T}:leaps`]: the picked
+  // contract, `{ none: true }` when no 15–30 mo option is listed, or missing
+  // when the chain wasn't fetched (the Worker never fetches LEAPS chains —
+  // Telegram only counts).
+  const wmap = extra.wmap || {};
+  const openLeaps = positions.filter(isOpenLeaps);
+  const indexT = cr.leapsIndex || 'XSP';
+  const leapsTickers = [
+    ...watchlist.filter(w => w.diveIn === PRIORITY && !NO_EARNINGS.has(w.ticker)).map(w => ({ ticker: w.ticker, index: false })),
+    ...(indexT ? [{ ticker: indexT, index: true }] : []),
+  ];
+  for (const { ticker, index } of leapsTickers) {
+    const w = wmap[ticker];
+    if (!leapsEntryOk(w, cr)) continue;
+    const sc = scores ? scores[ticker] : undefined;
+    if (!index && sc && sc.verdict === 'Not worth it') continue; // Score review card covers it
+    if (!index && w.divCount > 0) continue;                      // strict: no dividend
+    if (openLeaps.some(p => p.ticker === ticker)) continue;      // already held
+    const q = qmap[ticker];
+    const live = strikeMap[`${ticker}:leaps`];
+    const noneListed = live && live.none;
+    const contract = live && !live.none ? live : null;
+
+    const chks = [
+      { l: 'Wkly 50 > 200, both rising', ok: true },
+      { l: `${w.pctAbove50.toFixed(0)}% above 50MA`, ok: true },
+      { l: `Wkly %K ${w.stochK.toFixed(0)} ↑`, ok: true },
+      ...(index ? [] : [{ l: 'No dividend', ok: true }]),
+    ];
+    const cost = contract && contract.premium != null ? Math.round(contract.premium * 100) : null;
+    const maxCost = cr.leapsMaxCost ?? 10000;
+    if (cost != null && cost > maxCost) chks.push({ l: `$${cost.toLocaleString()} per contract — over $${maxCost.toLocaleString()}`, ok: false, warn: true });
+    if (contract && contract.bid > 0 && contract.ask > 0) {
+      const spread = (contract.ask - contract.bid) / ((contract.ask + contract.bid) / 2) * 100;
+      if (spread > 10) chks.push({ l: `Wide bid/ask ${spread.toFixed(0)}% — use a limit order`, ok: false, warn: true });
+    }
+    if (openLeaps.length >= (cr.leapsMaxOpen ?? 4)) chks.push({ l: `${openLeaps.length} LEAPS already open`, ok: false, warn: true });
+    if (!index) chks.push(...scorePills(sc, scores, now));
+
+    const mon = (iso) => { const d = new Date(String(iso) + 'T12:00:00'); return isNaN(d) ? iso : d.toLocaleString('en-US', { month: 'short', year: 'numeric' }); };
+    const win = leapsWindow(cr, index);
+    const suggestion = contract
+      ? `Buy ${mon(contract.expiry)} $${contract.strike} call · Δ${contract.delta.toFixed(2)} · ~$${cost != null ? cost.toLocaleString() : '—'} per contract (mid)${contract.bid != null && contract.ask != null ? ` · bid/ask $${contract.bid} / $${contract.ask}` : ''}`
+      : `Buy a ~0.80Δ call, ${Math.round(win.dteMin / 30.44)}–${Math.round(win.dteMax / 30.44)} months out · open the app for the contract`;
+
+    sigs.push({
+      id: `leaps-${ticker}`, type: noneListed ? 'leaps_wait' : 'leaps', ticker, index,
+      price: q?.price ?? w.price, chg: q?.chg1d ?? null,
+      strike: contract?.strike ?? null, expiry: contract?.expiry ?? null, dteTarget: contract?.dte ?? null,
+      delta: contract?.delta ?? null, mid: contract?.premium ?? null, bid: contract?.bid ?? null, ask: contract?.ask ?? null, cost,
+      weekly: w, chks,
+      ...(index ? {} : notionOf(ticker)),
+      waitReason: noneListed ? `No ${Math.round(win.dteMin / 30.44)}–${Math.round(win.dteMax / 30.44)} mo options listed` : null,
+      score: index ? null : sc?.score ?? null, verdict: index ? null : sc?.verdict ?? null,
+      scoreType: index ? null : sc?.scoreType ?? null, scoreAt: index ? null : sc?.runAt ?? null,
+      unscored: !index && !!scores && (!sc || sc.score == null || sc.verdict === 'No score'),
+      quality: index ? null : sc?.quality ?? null, value: index ? null : sc?.value ?? null, upsideScore: index ? null : sc?.upside ?? null,
+      openLeaps: openLeaps.length,
+      suggestion: noneListed ? `Waiting: No ${Math.round(win.dteMin / 30.44)}–${Math.round(win.dteMax / 30.44)} mo options listed` : suggestion,
+      ts: now,
     });
   }
 

@@ -5,6 +5,7 @@ import { browserTransport as tx } from '../lib/browserTransport';
 import { buildSignals, cspEntryOk, ccEntryOk, PRIORITY } from '../lib/signalEngine';
 import { isOpenPosition, isPriceableOption } from '../lib/utils';
 import { loadRuns } from '../lib/research/runStore';
+import { prefetchLeaps } from '../lib/leaps';
 import { scoreMap } from '../lib/research/runRecord';
 
 // Part 2B: latest Investment Score per ticker, refreshed each screen. Kept
@@ -242,7 +243,14 @@ export function useScreener(showToast) {
       // and the price columns keep their last-known values for the same reason.
       if (gotAny || !cached) {
         const scores = await scoresP;
-        const sigs = buildSignals(currentState.watchlist, mergedPositions, cr, qmap, strikeMap, scores);
+        // Part 2D: weekly LEAPS setups (+ a contract when one passes).
+        let wmap = {};
+        try {
+          const lp = await prefetchLeaps(tx, { watchlist: currentState.watchlist, positions: mergedPositions, criteria: cr, scores });
+          wmap = lp.wmap;
+          Object.assign(strikeMap, lp.strikes);
+        } catch (_) { /* LEAPS are additive — never block the rest */ }
+        const sigs = buildSignals(currentState.watchlist, mergedPositions, cr, qmap, strikeMap, scores, { wmap });
         dispatch({ type: 'SET_SIGNALS', payload: sigs });
       }
 

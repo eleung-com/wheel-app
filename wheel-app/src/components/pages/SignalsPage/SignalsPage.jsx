@@ -85,20 +85,21 @@ const VERDICT_SHORT = { 'Worth investing': 'Worth investing', Maybe: 'Maybe', 'N
 const tone = (v) => (v == null ? '' : v >= 75 ? 'up' : v >= 55 ? 'am' : 'dn');
 
 function TradeCard({ s, rank, onClick }) {
+  const leaps = s.type === 'leaps';
   // The score lives in the corner, so its pill would just repeat it.
   const pills = (s.chks || []).filter(c => !(c.ok && /^Score \d/.test(c.l)));
   const scored = s.score != null;
   return (
     <div className={`sx-ncard ${s.type}`} onClick={() => onClick(s.id)}>
-      <div className="sx-rk">{rank}<small>CSP</small></div>
+      <div className={`sx-rk${leaps ? ' leaps' : ''}`}>{s.index ? <span className="sx-rk-ix">{s.ticker}</span> : rank}<small>{leaps ? 'LEAPS' : 'CSP'}</small></div>
       <div className="sx-nb">
         <div className="sx-ntop">
           <div>
             <div className="sx-tkr">{s.ticker}</div>
-            <div className="sx-pos">{fmtPrice(s.price)} <Chg v={s.chg} /> · Sell a put</div>
+            <div className="sx-pos">{fmtPrice(s.price)} <Chg v={s.chg} /> · {leaps ? 'Buy a LEAPS' : 'Sell a put'}</div>
           </div>
           <div className={`sx-score ${scored ? tone(s.score) : 'none'}`}>
-            <b>{scored ? Math.round(s.score) : 'Unscored'}</b>
+            <b>{scored ? Math.round(s.score) : s.index ? '' : 'Unscored'}</b>
             {scored && <small>{VERDICT_SHORT[s.verdict] || s.verdict}{s.scoreType === 'Preliminary' ? ' · Prelim' : ''}</small>}
           </div>
         </div>
@@ -112,7 +113,11 @@ function TradeCard({ s, rank, onClick }) {
           </div>
         )}
         <div className="sx-foot">
-          <span>{[s.ivr != null ? `HV30 est ${s.ivr}` : null, s.scoreAt ? `run ${md(s.scoreAt)}` : s.unscored ? 'Never run in Research' : null].filter(Boolean).join(' · ')}</span>
+          <span>{[
+            s.ivr != null ? `HV30 est ${s.ivr}` : null,
+            leaps ? `${s.openLeaps ?? 0} LEAPS open` : null,
+            s.index ? 'Index · no score' : s.scoreAt ? `run ${md(s.scoreAt)}` : s.unscored ? 'Never run in Research' : null,
+          ].filter(Boolean).join(' · ')}</span>
           <span className="sx-more">Details →</span>
         </div>
       </div>
@@ -126,7 +131,7 @@ function WaitRow({ s, onClick }) {
   return (
     <div className="sx-wrow" onClick={() => onClick(s.id)}>
       <span className="t">{s.ticker}</span>
-      <span className="sx-tag">CSP</span>
+      <span className={`sx-tag${s.type === 'leaps_wait' ? ' leaps' : ''}`}>{s.type === 'leaps_wait' ? 'LEAPS' : 'CSP'}</span>
       <span className="why">{s.waitReason}</span>
       <span className="s">{s.score != null ? Math.round(s.score) : '—'}</span>
     </div>
@@ -156,14 +161,14 @@ export default function SignalsPage({ signals, lastRefresh, onShowDetail, onScor
     if (h) document.documentElement.style.setProperty('--sx-top', `${h}px`);
   }, []);
 
-  const { manage, trades, waiting } = splitSections(signals);
+  const { manage, trades, index, waiting } = splitSections(signals);
   const ago = lastRefresh ? Math.round((Date.now() - lastRefresh) / 60000) : null;
 
   return (
     <div className="sx">
       <div className="sx-sum">
         <button type="button" className="sx-chip m" onClick={() => jump('sec-manage')}><div className="v">{manage.length}</div><div className="l">Manage</div></button>
-        <button type="button" className="sx-chip n" onClick={() => jump('sec-trades')}><div className="v">{trades.length}</div><div className="l">New trades</div></button>
+        <button type="button" className="sx-chip n" onClick={() => jump('sec-trades')}><div className="v">{trades.length + index.length}</div><div className="l">New trades</div></button>
         <button type="button" className="sx-chip w" onClick={() => jump('sec-waiting')}><div className="v">{waiting.length}</div><div className="l">Waiting</div></button>
       </div>
 
@@ -173,10 +178,16 @@ export default function SignalsPage({ signals, lastRefresh, onShowDetail, onScor
           : <div className="sx-empty">Nothing to manage{lastRefresh ? ' right now' : ' yet'}.</div>}
       </Section>
 
-      <Section id="sec-trades" kind="new" title="🆕 New trades" sub="New money · ranked by Investment Score" count={trades.length}>
+      <Section id="sec-trades" kind="new" title="🆕 New trades" sub="New money · ranked by Investment Score" count={trades.length + index.length}>
         {trades.length
           ? trades.map((s, i) => <TradeCard key={s.id} s={s} rank={i + 1} onClick={onShowDetail} />)
-          : <div className="sx-empty">No Priority stock has a daily RSI 30–40 + Stochastic turn with weekly RSI ≥ 40.</div>}
+          : <div className="sx-empty">No CSP or LEAPS setup on your Priority stocks right now.</div>}
+        {index.length > 0 && (
+          <div className="sx-idx">
+            <div className="sx-idx-l">📌 Index · no score</div>
+            {index.map(s => <TradeCard key={s.id} s={s} rank="" onClick={onShowDetail} />)}
+          </div>
+        )}
       </Section>
 
       <Section id="sec-waiting" kind="wait" title="⏳ Waiting" sub="Setup fired, but blocked. Not a trade today" count={waiting.length}>

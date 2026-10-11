@@ -84,6 +84,11 @@ export const DEFAULT_CRITERIA = {
   // Priority tickers can mean nothing for weeks. 30/70 catches the same turn
   // earlier without loosening the direction requirement.
   rsiMin: 30, rsiMax: 40, stochBelow: 30, weeklyRsiMin: 40, earnAfter: 14,
+  // Part 2D LEAPS (your rulebook + decisions 10-11)
+  leapsMaxAboveMa: 5, leapsStochBelow: 20, leapsDeltaMin: 75, leapsDeltaMax: 85,
+  leapsMinMonths: 15, leapsMaxMonths: 30, leapsTargetMonths: 21,
+  leapsIndex: 'XSP', leapsIndexMinMonths: 10, leapsIndexMaxMonths: 14, leapsIndexTargetMonths: 12,
+  leapsMaxOpen: 4, leapsMaxCost: 10000,
   ccRsiMin: 50, ccRsiMax: 70, ccStochAbove: 70,
   deltaMin: 20, deltaMax: 35, dteMin: 21, dteMax: 45,
   shares: 100, ccRallyPct: 5, ccDeltaMin: 15, ccDeltaMax: 25, ccDteMin: 21, ccDteMax: 35,
@@ -117,6 +122,20 @@ export function parseCriteria(c) {
     // earnings date still earns a warning (before expiry it blocks).
     weeklyRsiMin: numOr(c.weeklyRsiMin, 40),
     earnAfter:    numOr(c.earnAfter,    14),
+    // Part 2D LEAPS
+    leapsMaxAboveMa:   numOr(c.leapsMaxAboveMa,   5),
+    leapsStochBelow:   numOr(c.leapsStochBelow,   20),
+    leapsDeltaMin:     numOr(c.leapsDeltaMin,     75),
+    leapsDeltaMax:     numOr(c.leapsDeltaMax,     85),
+    leapsMinMonths:    numOr(c.leapsMinMonths,    15),
+    leapsMaxMonths:    numOr(c.leapsMaxMonths,    30),
+    leapsTargetMonths: numOr(c.leapsTargetMonths, 21),
+    leapsIndex:        c.leapsIndex != null && c.leapsIndex !== '' ? String(c.leapsIndex).toUpperCase() : 'XSP',
+    leapsIndexMinMonths:    numOr(c.leapsIndexMinMonths,    10),
+    leapsIndexMaxMonths:    numOr(c.leapsIndexMaxMonths,    14),
+    leapsIndexTargetMonths: numOr(c.leapsIndexTargetMonths, 12),
+    leapsMaxOpen:      numOr(c.leapsMaxOpen,      4),
+    leapsMaxCost:      numOr(c.leapsMaxCost,      10000),
     stochBelow:   numOr(c.stochBelow,   30),
     ccRsiMin:     numOr(c.ccRsiMin,     50),
     ccRsiMax:     numOr(c.ccRsiMax,     70),
