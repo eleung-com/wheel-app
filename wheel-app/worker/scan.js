@@ -8,11 +8,12 @@ import { readWatchlist } from './notion.js';
 import { PRIORITY, dte, buildSignals, cspEntryOk, ccEntryOk, OPEN_OPTION_TYPES } from '../src/lib/signalEngine.js';
 import { parsePositions, parseCriteria, CLOSE_TYPES, isPriceableOption } from '../src/lib/utils.js';
 import { fetchQ, fetchOptionPrice, fetchBestStrike } from '../src/lib/marketData.js';
-import { sendTelegram, formatAlert, formatDteAlert } from './telegram.js';
+import { sendTelegram, formatCountAlert } from './telegram.js';
 import { isMarketOpen, etDateString } from './marketHours.js';
 import { refreshEarnings } from './earnings.js';
 import { listRuns, applyPendingDecisions } from './stockRuns.js';
 import { scoreMap } from '../src/lib/research/runRecord.js';
+import { SECTION } from '../src/lib/signalSections.js';
 
 const CBOE_ORIGIN    = 'https://cdn.cboe.com/api/global/delayed_quotes';
 const YAHOO_ORIGIN   = 'https://query1.finance.yahoo.com';
@@ -123,35 +124,53 @@ function isOpenOption(p) {
 }
 
 /**
- * One Telegram nudge per open option per ET day while it sits in the management
- * window. De-duped on position id (not ticker) so two contracts on the same
- * underlying each get their own message. Runs before the market-data pass and in
- * its own try/catch — a Yahoo/CBOE outage must not swallow a calendar alert.
+ * Open options inside the management window (Part 2C: no longer their own
+ * message — they count toward "to manage" in the single count message).
+ * Keyed on position id (not ticker) so two contracts on one underlying each
+ * count. @returns [{ key, bucket: 'manage' }]
  */
-export async function runDteNudges(env, positions, criteria, now) {
+export function dteDue(positions, criteria, now) {
   const threshold = criteria.manageDte;
-  if (!threshold || threshold < 1) return;
-
+  if (!threshold || threshold < 1) return [];
+  const out = [];
   for (const pos of positions.filter(isOpenOption)) {
     const days = dte(pos.expiry);
     // NOTE the `<= 1`. The shared dte() counts expiry day itself as 1 — an
     // option expiring today reads "1 DTE" everywhere in the dashboard — so
-    // "silent on expiry day, and after it" is days <= 1, not days < 1. The
-    // number in the message is deliberately the same one the dashboard shows.
+    // "silent on expiry day, and after it" is days <= 1, not days < 1.
     if (days == null || days <= 1 || days > threshold) continue;
-
-    const key = `manage-dte|${pos.id}|${etDateString(now)}`;
-    if (env.ALERTS_KV && await env.ALERTS_KV.get(key)) continue; // already nudged today
-
-    try {
-      await sendTelegram(env, formatDteAlert(pos, days, threshold));
-    } catch (e) {
-      console.error(`[scan] dte nudge send failed for ${key}, will retry next run:`, e?.message || e);
-      continue; // no KV write — a failed send must not go silent for the day
-    }
-    if (env.ALERTS_KV) await env.ALERTS_KV.put(key, '1', { expirationTtl: DEDUPE_TTL_SECONDS });
-    await sleep(1200); // Telegram throttle, same pacing as the signal loop
+    out.push({ key: `manage-dte|${pos.id}|${etDateString(now)}`, bucket: 'manage' });
   }
+  return out;
+}
+
+// Signal type → count-message bucket — the same map the app's three sections use.
+const BUCKET = SECTION;
+
+/**
+ * Part 2C: ONE Telegram message with the counts, sent only when something is
+ * new since the last one today (an item whose KV key isn't set yet). A
+ * failed send marks nothing, so the next scan retries.
+ * @returns { sent, counts }
+ */
+export async function sendCounts(env, items, now) {
+  const counts = { manage: 0, trades: 0, waiting: 0 };
+  for (const it of items) counts[it.bucket]++;
+  const fresh = [];
+  for (const it of items) {
+    if (!env.ALERTS_KV || !(await env.ALERTS_KV.get(it.key))) fresh.push(it);
+  }
+  if (!fresh.length) return { sent: false, counts };
+  try {
+    await sendTelegram(env, formatCountAlert(counts));
+  } catch (e) {
+    console.error('[scan] count message failed, will retry next run:', e?.message || e);
+    return { sent: false, counts };
+  }
+  if (env.ALERTS_KV) {
+    for (const it of fresh) await env.ALERTS_KV.put(it.key, '1', { expirationTtl: DEDUPE_TTL_SECONDS });
+  }
+  return { sent: true, counts };
 }
 
 // `now` is an injectable clock — worker.js's scheduled() calls this with no
@@ -165,12 +184,14 @@ export async function runScan(env, now = new Date()) {
     const watchlist = await readWatchlist(env);
     const { positions, criteria } = await fetchSheetData(env);
 
-    // Calendar-only, so it runs before (and independently of) the market-data
-    // pass — and its own failure can never take the signal scan down with it.
+    // Calendar-only, so it's worked out before (and independently of) the
+    // market-data pass — a Yahoo/CBOE outage must not swallow it (Part 2C:
+    // counted in the one message, sent even when every price fetch fails).
+    let due = [];
     try {
-      await runDteNudges(env, positions, criteria, now);
+      due = dteDue(positions, criteria, now);
     } catch (e) {
-      console.error('[scan] dte nudge pass failed:', e?.message || e);
+      console.error('[scan] dte pass failed:', e?.message || e);
     }
 
     const priorityTickers = watchlist.filter(w => w.diveIn === PRIORITY).map(w => w.ticker);
@@ -211,7 +232,7 @@ export async function runScan(env, now = new Date()) {
     try { scores = scoreMap(await listRuns(env, { limit: 50 })); }
     catch (e) { console.error('[scan] score read failed:', e?.message || e); }
 
-    if (!tickers.length) return; // nothing flagged and nothing held → clean no-op
+    if (!tickers.length) { await sendCounts(env, due, now); return; } // nothing flagged or held
 
     const qmap = {};
     let gotAny = false;
@@ -224,6 +245,8 @@ export async function runScan(env, now = new Date()) {
 
     if (!gotAny) {
       await selfAlertOnce(env, 'Every ticker fetch failed this run — Yahoo price history may be unreachable or blocking the Worker.', now);
+      // Calendar items don't need prices — still count them.
+      await sendCounts(env, due, now);
       return;
     }
 
@@ -274,24 +297,15 @@ export async function runScan(env, now = new Date()) {
       // alerts for the same position are unaffected, since those read the stock.
       .filter(sig => !(sig.type === 'close' && unpricedIds.has(Number(sig.id.slice('close-'.length)))));
 
-    for (const sig of sigs) {
-      // Part 2A: a CSP blocked by earnings is shown in the app as "waiting",
-      // never alerted — the alert would be a trade you shouldn't take.
-      if (sig.type === 'csp_wait') continue;
-      // Score reviews are an in-app decision, not a market event (Part 2B).
-      if (sig.type === 'score_review') continue;
-      const key = `${sig.ticker}|${sig.type}|${etDateString(now)}`;
-      if (env.ALERTS_KV && await env.ALERTS_KV.get(key)) continue; // already alerted today
-
-      try {
-        await sendTelegram(env, formatAlert(sig));
-      } catch (e) {
-        console.error(`[scan] telegram send failed for ${key}, will retry next run:`, e?.message || e);
-        continue; // don't write the KV key — a failed send must not go silent forever
-      }
-      if (env.ALERTS_KV) await env.ALERTS_KV.put(key, '1', { expirationTtl: DEDUPE_TTL_SECONDS });
-      await sleep(1200); // Telegram throttle — keep well under its rate limits
-    }
+    const items = [
+      ...due,
+      ...sigs.filter(sig => BUCKET[sig.type]).map(sig => ({
+        key: `${sig.ticker}|${sig.type}|${etDateString(now)}`, bucket: BUCKET[sig.type],
+      })),
+    ];
+    const { counts } = await sendCounts(env, items, now);
+    // Returned for tests and logs; the cron caller ignores it.
+    return { sigs, counts };
   } catch (e) {
     console.error('[scan] run failed:', e?.message || e);
     await selfAlertOnce(env, `Scan crashed: ${e?.message || e}`, now);

@@ -405,6 +405,8 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       waitReason: blockedBy,
       score: sc?.score ?? null, verdict: sc?.verdict ?? null, scoreType: sc?.scoreType ?? null,
       scoreAt: sc?.runAt ?? null, unscored: !!scores && (!sc || sc.score == null || sc.verdict === 'No score'),
+      quality: sc?.quality ?? null, value: sc?.value ?? null, upsideScore: sc?.upside ?? null,
+      runPageId: sc?.pageId ?? null,
       suggestion: blockedBy ? `Waiting: ${blockedBy}` : suggParts.join(' · '),
       ts: Date.now(),
     });

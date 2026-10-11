@@ -1,92 +1,192 @@
-import React from 'react';
-import SummaryBar from './SummaryBar';
-import SignalCard from './SignalCard';
+import React, { useEffect } from 'react';
+import { splitSections } from '../../../lib/signalSections';
 
-export default function SignalsPage({ signals, lastRefresh, evals = {}, evalsLoading, onShowDetail, onScoreReview, reviewBusyId }) {
-  const card = s => (
-    <SignalCard
-      key={s.id}
-      signal={s}
-      evaluation={evals[s.ticker] || null}
-      loading={evalsLoading}
-      onClick={onShowDetail}
-      onScoreReview={onScoreReview}
-      reviewBusy={reviewBusyId === s.id}
-    />
+// Part 2C (PRD v1.5 §4, mockup v2): three visually distinct sections.
+//   ⚡ Manage      positions you hold — act on these first (wine header,
+//                  cards lead with a colored action strip)
+//   🆕 New trades  new money, ranked by Investment Score (blue header, cards
+//                  lead with a big rank number)
+//   ⏳ Waiting     setup fired but blocked — one-line rows, no cards
+// The Notion evaluation lives in the tap-to-open detail view, not on the card.
+
+
+const fmtPrice = (p) => (p != null ? `$${p.toFixed(2)}` : '—');
+function Chg({ v }) {
+  if (v == null) return null;
+  return <span className={v > 0 ? 'up' : v < 0 ? 'dn' : ''}>{v > 0 ? '+' : ''}{v.toFixed(1)}%</span>;
+}
+const md = (iso) => { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? `${d.getMonth() + 1}/${d.getDate()}` : ''; };
+
+function Pills({ chks }) {
+  if (!chks?.length) return null;
+  return (
+    <div className="sx-pills">
+      {chks.map((ch, i) => (
+        <span key={i} className={`cpill ${ch.warn ? 'warn' : ch.ok ? 'pass' : 'fail'}`}>
+          {ch.warn ? '⚠' : ch.ok ? '✓' : '✗'} {ch.l}
+        </span>
+      ))}
+    </div>
   );
+}
 
-  // Max loss leads: it is the only one of these where the position is already
-  // as bad as it can get. Within the group, fewest days left first — breached at
-  // 3 DTE and breached at 40 are different decisions and the sooner one is the
-  // one to look at.
-  const ACT_ORDER = { maxloss: 0, roll: 1, close: 2, score_review: 3 };
-  const act = signals
-    .filter(s => s.type === 'roll' || s.type === 'close' || s.type === 'maxloss' || s.type === 'score_review')
-    .sort((a, b) => (ACT_ORDER[a.type] - ACT_ORDER[b.type]) || ((a.days ?? 99) - (b.days ?? 99)));
-  const cc  = signals.filter(s => s.type === 'cc');
-  // Biggest move relative to the stock's own daily range leads — a 5% drop
-  // means far more on a quiet name than on a volatile one, so this is the
-  // order worth working down when checking RSI and Stochastic by hand.
-  const csp = signals
-    .filter(s => s.type === 'csp')
-    .sort((a, b) => (b.atrDrop ?? 0) - (a.atrDrop ?? 0));
-  // Part 2A: CSPs blocked by earnings. Shown greyed at the bottom of the CSP
-  // section so a good setup isn't invisible — but never a trade today.
-  const waiting = signals.filter(s => s.type === 'csp_wait');
+// ── Manage ────────────────────────────────────────────────────────────────
 
-  const isEmpty = signals.length === 0;
+function posLabel(s) {
+  if (s.type === 'cc') return `${s.sharesOwned} shares`;
+  if (s.type === 'score_review') return '🔥 Priority';
+  const kind = s.posType === 'put_spread' ? 'Put spread' : s.posType === 'short_call' ? 'Short call' : 'Short put';
+  const strikes = s.longStrike != null ? `$${s.strike}/$${s.longStrike}` : `$${s.strike}`;
+  return `${kind} ${strikes}`;
+}
 
+function stripFor(s) {
+  switch (s.type) {
+    case 'maxloss':      return ['Max loss', s.days != null ? `${s.days}d left` : ''];
+    case 'roll':         return ['Roll', s.days != null ? `${s.days}d left` : ''];
+    case 'close':        return ['Close early', s.pctCap != null ? `${s.pctCap}% captured` : ''];
+    case 'cc':           return ['Sell call', `${s.contracts} contract${s.contracts > 1 ? 's' : ''}`];
+    case 'score_review': return ['Score review', s.scoreAt ? `run ${md(s.scoreAt)}` : ''];
+    default:             return [s.type, ''];
+  }
+}
+
+function ManageCard({ s, onClick, onScoreReview, busy }) {
+  const [act, right] = stripFor(s);
+  return (
+    <div className="sx-mcard" onClick={() => onClick(s.id)}>
+      <div className={`sx-strip ${s.type}`}><span>{act}</span><span>{right}</span></div>
+      <div className="sx-mbody">
+        <div className="sx-mrow">
+          <div>
+            <div className="sx-tkr">{s.ticker}</div>
+            <div className="sx-pos">{posLabel(s)}{s.type === 'score_review' && <> · now <b className="dn">{s.score != null ? Math.round(s.score) : '—'} · Not worth it</b></>}</div>
+          </div>
+          <div className="sx-px">{fmtPrice(s.price)}<br /><Chg v={s.chg} /></div>
+        </div>
+        <div className="sx-do">{s.suggestion}</div>
+        {s.type === 'cc' && <Pills chks={s.chks} />}
+        {s.type === 'score_review' && onScoreReview && (
+          <div className="srv-btns" onClick={e => e.stopPropagation()}>
+            <button type="button" className="srv-btn go" disabled={busy} onClick={() => onScoreReview(s, 'Watch')}>
+              {busy ? <span className="spinner" /> : 'Move to 👀 Watch'}
+            </button>
+            <button type="button" className="srv-btn" disabled={busy} onClick={() => onScoreReview(s, 'Priority')}>Keep Priority</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── New trades ────────────────────────────────────────────────────────────
+
+const VERDICT_SHORT = { 'Worth investing': 'Worth investing', Maybe: 'Maybe', 'Not worth it': 'Not worth it' };
+const tone = (v) => (v == null ? '' : v >= 75 ? 'up' : v >= 55 ? 'am' : 'dn');
+
+function TradeCard({ s, rank, onClick }) {
+  // The score lives in the corner, so its pill would just repeat it.
+  const pills = (s.chks || []).filter(c => !(c.ok && /^Score \d/.test(c.l)));
+  const scored = s.score != null;
+  return (
+    <div className={`sx-ncard ${s.type}`} onClick={() => onClick(s.id)}>
+      <div className="sx-rk">{rank}<small>CSP</small></div>
+      <div className="sx-nb">
+        <div className="sx-ntop">
+          <div>
+            <div className="sx-tkr">{s.ticker}</div>
+            <div className="sx-pos">{fmtPrice(s.price)} <Chg v={s.chg} /> · Sell a put</div>
+          </div>
+          <div className={`sx-score ${scored ? tone(s.score) : 'none'}`}>
+            <b>{scored ? Math.round(s.score) : 'Unscored'}</b>
+            {scored && <small>{VERDICT_SHORT[s.verdict] || s.verdict}{s.scoreType === 'Preliminary' ? ' · Prelim' : ''}</small>}
+          </div>
+        </div>
+        <div className="sx-contract">{s.suggestion}</div>
+        <Pills chks={pills} />
+        {(s.quality != null || s.value != null || s.upsideScore != null) && (
+          <div className="sx-qvu">
+            <div>Quality<b className={tone(s.quality)}>{s.quality != null ? Math.round(s.quality) : '—'}</b></div>
+            <div>Value<b className={tone(s.value)}>{s.value != null ? Math.round(s.value) : '—'}</b></div>
+            <div>Upside<b className={tone(s.upsideScore)}>{s.upsideScore != null ? Math.round(s.upsideScore) : '—'}</b></div>
+          </div>
+        )}
+        <div className="sx-foot">
+          <span>{[s.ivr != null ? `HV30 est ${s.ivr}` : null, s.scoreAt ? `run ${md(s.scoreAt)}` : s.unscored ? 'Never run in Research' : null].filter(Boolean).join(' · ')}</span>
+          <span className="sx-more">Details →</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Waiting ───────────────────────────────────────────────────────────────
+
+function WaitRow({ s, onClick }) {
+  return (
+    <div className="sx-wrow" onClick={() => onClick(s.id)}>
+      <span className="t">{s.ticker}</span>
+      <span className="sx-tag">CSP</span>
+      <span className="why">{s.waitReason}</span>
+      <span className="s">{s.score != null ? Math.round(s.score) : '—'}</span>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────
+
+function Section({ id, kind, title, sub, count, children }) {
+  return (
+    <section className={`sx-sec ${kind}`} id={id}>
+      <div className="sx-sec-h">
+        <div><div className="t">{title}</div><div className="sub">{sub}</div></div>
+        <span className="c">{count}</span>
+      </div>
+      <div className="sx-sec-b">{children}</div>
+    </section>
+  );
+}
+
+const jump = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+export default function SignalsPage({ signals, lastRefresh, onShowDetail, onScoreReview, reviewBusyId }) {
+  // Section headers stick just under the app header, whatever its height.
+  useEffect(() => {
+    const h = document.querySelector('.hdr')?.offsetHeight;
+    if (h) document.documentElement.style.setProperty('--sx-top', `${h}px`);
+  }, []);
+
+  const { manage, trades, waiting } = splitSections(signals);
   const ago = lastRefresh ? Math.round((Date.now() - lastRefresh) / 60000) : null;
 
   return (
-    <div>
-      <SummaryBar signals={signals} />
+    <div className="sx">
+      <div className="sx-sum">
+        <button type="button" className="sx-chip m" onClick={() => jump('sec-manage')}><div className="v">{manage.length}</div><div className="l">Manage</div></button>
+        <button type="button" className="sx-chip n" onClick={() => jump('sec-trades')}><div className="v">{trades.length}</div><div className="l">New trades</div></button>
+        <button type="button" className="sx-chip w" onClick={() => jump('sec-waiting')}><div className="v">{waiting.length}</div><div className="l">Waiting</div></button>
+      </div>
 
-      <div id="sig-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>
-        {isEmpty && !lastRefresh && (
-          <div className="empty" style={{ gridColumn: '1/-1' }}>
-            <div className="empty-icon">📡</div>
-            <div className="empty-title">No signals yet</div>
-            <div className="empty-sub">Add tickers to your watchlist and positions, then tap ↻.</div>
-          </div>
-        )}
+      <Section id="sec-manage" kind="manage" title="⚡ Manage" sub="Positions you hold. Act on these first" count={manage.length}>
+        {manage.length
+          ? manage.map(s => <ManageCard key={s.id} s={s} onClick={onShowDetail} onScoreReview={onScoreReview} busy={reviewBusyId === s.id} />)
+          : <div className="sx-empty">Nothing to manage{lastRefresh ? ' right now' : ' yet'}.</div>}
+      </Section>
 
-        {isEmpty && lastRefresh && (
-          <div className="empty" style={{ gridColumn: '1/-1' }}>
-            <div className="empty-icon">✓</div>
-            <div className="empty-title">No signals right now</div>
-            <div className="empty-sub">No Priority ticker is showing a daily RSI 30–40 + Stochastic turn with weekly RSI ≥ 40, and nothing needs rolling. Refreshes when you open the app · Telegram alerts run in the background.</div>
-          </div>
-        )}
+      <Section id="sec-trades" kind="new" title="🆕 New trades" sub="New money · ranked by Investment Score" count={trades.length}>
+        {trades.length
+          ? trades.map((s, i) => <TradeCard key={s.id} s={s} rank={i + 1} onClick={onShowDetail} />)
+          : <div className="sx-empty">No Priority stock has a daily RSI 30–40 + Stochastic turn with weekly RSI ≥ 40.</div>}
+      </Section>
 
-        {act.length > 0 && (
-          <>
-            <div className="slabel" style={{ gridColumn: '1/-1' }}>⚡ Action Required</div>
-            {act.map(card)}
-          </>
-        )}
-        {cc.length > 0 && (
-          <>
-            <div className="slabel" style={{ gridColumn: '1/-1' }}>🟢 Covered Call Opportunities</div>
-            {cc.map(card)}
-          </>
-        )}
-        {(csp.length > 0 || waiting.length > 0) && (
-          <>
-            <div className="slabel" style={{ gridColumn: '1/-1' }}>🔵 CSP Entry — Priority &amp; Pulled Back</div>
-            {csp.map(card)}
-            {waiting.length > 0 && (
-              <div className="slabel" style={{ gridColumn: '1/-1', marginTop: 10 }}>⏳ Waiting — blocked by earnings</div>
-            )}
-            {waiting.map(card)}
-          </>
-        )}
+      <Section id="sec-waiting" kind="wait" title="⏳ Waiting" sub="Setup fired, but blocked. Not a trade today" count={waiting.length}>
+        {waiting.length
+          ? waiting.map(s => <WaitRow key={s.id} s={s} onClick={onShowDetail} />)
+          : <div className="sx-empty">Nothing blocked.</div>}
+      </Section>
 
-        {!isEmpty && ago !== null && (
-          <div style={{ gridColumn: '1/-1', textAlign: 'center', fontSize: 10, color: 'var(--mu)', padding: '14px 0' }}>
-            Last screened {ago < 1 ? 'just now' : `${ago}m ago`} · refreshes when you open the app · Telegram alerts run in the background
-          </div>
-        )}
+      <div className="sx-legend">
+        {ago !== null ? `Last screened ${ago < 1 ? 'just now' : `${ago}m ago`} · ` : ''}Telegram sends counts only
       </div>
     </div>
   );

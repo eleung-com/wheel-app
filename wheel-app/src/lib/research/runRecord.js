@@ -44,6 +44,8 @@ export function scoreMap(rows) {
     out[t] = {
       pageId: r.pageId, verdict: r.verdict || null, score: r.investmentScore ?? null,
       scoreType: r.scoreType || null, runAt: r.runAt || null, decision: r.decision || null,
+      // Part 2C: shown on the new-trade card (Quality · Value · Upside).
+      quality: r.quality ?? null, value: r.value ?? null, upside: r.upside ?? null,
     };
   }
   return out;
