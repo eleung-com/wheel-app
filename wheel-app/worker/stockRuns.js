@@ -23,7 +23,11 @@
 // write-up) alone.
 
 import { notionFetch, plain, NOTION_DB_ID } from './notion.js';
+import { etDateString } from './marketHours.js';
 import { cleanRecord, cleanDecision, dayKey, runStamp, TICKER_RE, CLAUDE_TIMEOUT_MIN, DIVE_IN, scoreAllowsPriority } from '../src/lib/research/runRecord.js';
+
+/** Part 3: KV key for a Research Dive-In decision the daily job must respect. */
+export const OVERRIDE_KEY = (ticker) => `divein|override|${ticker}`;
 
 export const STOCK_RUNS_DB = '60a0a2a4-5833-487e-b8d4-80c509e5fcff';
 const STOCK_RUNS_DS = 'cca96b9f-921e-4439-bc01-df52119197cf';
@@ -364,6 +368,12 @@ export async function setDecision(env, body) {
   if (decision) {
     const wlId = await watchlistPageId(env, row.ticker);
     if (wlId) { await setDiveIn(env, wlId, decision); applied = true; }
+    // Part 3: El's own call from Research wins over the daily automatic
+    // Dive-In until a newer score run or newer FMV numbers (worker/daily.js).
+    if (env.ALERTS_KV) {
+      await env.ALERTS_KV.put(OVERRIDE_KEY(row.ticker), JSON.stringify({ runId: pageId, day: etDateString(), diveIn: DIVE_IN[decision] }),
+        { expirationTtl: 180 * 86400 }).catch(() => {});
+    }
   }
 
   const updated = await ok(await notionFetch(env, `/v1/pages/${pageId}`, {
@@ -421,4 +431,36 @@ export async function applyPendingDecisions(env) {
     done.push({ ticker: row.ticker, decision: row.decision });
   }
   return done;
+}
+
+// ── Part 3W: manual Dive-In override from the Watchlist tab ─────────────────
+const OVERRIDE_NAMES = ['🔥 Priority', '👀 Watch', '— Skip'];
+
+/**
+ * { ticker, diveIn } → set Dive-In and remember it as El's call (KV), so the
+ * daily job leaves it alone until a newer score run or newer FMV numbers.
+ * diveIn null → clear the override (the daily job decides again tomorrow).
+ */
+export async function setDiveInOverride(env, body) {
+  const ticker = String(body && body.ticker || '').toUpperCase();
+  if (!TICKER_RE.test(ticker)) throw httpError('bad ticker', 400);
+  const diveIn = body.diveIn == null ? null : String(body.diveIn);
+  if (diveIn !== null && !OVERRIDE_NAMES.includes(diveIn)) throw httpError('bad Dive-In', 400);
+  if (!env.ALERTS_KV) throw httpError('ALERTS_KV not bound', 500);
+
+  if (diveIn === null) {
+    await env.ALERTS_KV.delete(OVERRIDE_KEY(ticker));
+    return { ok: true, ticker, override: null };
+  }
+  const wlId = await watchlistPageId(env, ticker);
+  if (!wlId) throw httpError(`${ticker} is not on the watchlist`, 404);
+  await ok(await notionFetch(env, `/v1/pages/${wlId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ properties: { 'Dive-In': { select: { name: diveIn } } } }),
+  }), 'dive-in update');
+  const runs = await listRuns(env, { ticker, limit: 1 }).catch(() => []);
+  const runId = runs[0] ? runs[0].pageId : 'none';
+  await env.ALERTS_KV.put(OVERRIDE_KEY(ticker), JSON.stringify({ runId, day: etDateString(), diveIn }),
+    { expirationTtl: 180 * 86400 });
+  return { ok: true, ticker, override: diveIn };
 }

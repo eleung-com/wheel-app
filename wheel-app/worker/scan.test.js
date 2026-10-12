@@ -203,9 +203,14 @@ describe('runScan', () => {
       return inner(url, init);
     };
     const kv = fakeKV();
+    // Part 3: before 11:00 ET the scan leaves earnings to the daily job.
     await runScan({ ...ENV_BASE, FINNHUB_KEY: 'fh', ALERTS_KV: kv }, OPEN_NOW);
-    expect(finnhubCalls).toBe(1);
+    expect(finnhubCalls).toBe(0);
     expect(telegramCalls).toBe(1); // the roll alert still went out
+    // 11:30 ET (15:30 UTC in EDT): fallback refresh runs.
+    const LATE = new Date(Date.UTC(2026, 6, 22, 15, 30));
+    await runScan({ ...ENV_BASE, FINNHUB_KEY: 'fh', ALERTS_KV: kv }, LATE);
+    expect(finnhubCalls).toBe(1);
     expect(kv.store.has(`earnings|day|${etDateString(OPEN_NOW)}`)).toBe(true);
 
     // Second scan the same day: no second Finnhub call.

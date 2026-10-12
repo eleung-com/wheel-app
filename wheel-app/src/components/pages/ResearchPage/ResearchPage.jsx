@@ -35,7 +35,7 @@ function rowTag(h) {
   return 'Prelim';
 }
 
-export default function ResearchPage({ showToast }) {
+export default function ResearchPage({ showToast, initialTicker = null }) {
   const [ticker, setTicker] = useState('');
   const [status, setStatus] = useState({ running: false, step: null, startedAt: null });
   const [run, setRun] = useState(null);
@@ -57,6 +57,15 @@ export default function ResearchPage({ showToast }) {
   }, []);
 
   useEffect(() => { refreshRecent(); }, [refreshRecent]);
+
+  // Part 3W: "Research" on a Watchlist card → this tab with the ticker typed
+  // in, ready to Run (not started automatically).
+  useEffect(() => {
+    if (!initialTicker?.ticker || status.running) return;
+    runId.current++;
+    setRun(null); setSave(null); setClaude(null); setError(null);
+    setTicker(initialTicker.ticker);
+  }, [initialTicker]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!status.running) return undefined;

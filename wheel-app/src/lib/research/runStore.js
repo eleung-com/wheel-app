@@ -47,6 +47,11 @@ export async function loadRuns({ ticker = '', limit = 20 } = {}) {
   return data.runs || [];
 }
 
+/** Part 3W: Watchlist Override menu. diveIn = Dive-In name, or null = back to automatic. */
+export function setDiveInOverride(ticker, diveIn) {
+  return call('/divein-override', { method: 'POST', body: { ticker, diveIn } });
+}
+
 /** decision: 'Watch' | 'Reject' | null (clear). Returns the updated row. */
 export async function saveDecision(pageId, { decision, reason = '', tags = [] }) {
   const data = await call('/runs/decision', { method: 'PATCH', body: { pageId, decision, reason, tags } });

@@ -31,7 +31,7 @@ import ClosePositionModal     from './components/modals/ClosePositionModal';
 import ShareGroupDetailModal  from './components/modals/ShareGroupDetailModal';
 import SignalDetailModal      from './components/modals/SignalDetailModal';
 import HelpModal              from './components/modals/HelpModal';
-import { saveDecision }       from './lib/research/runStore';
+import { saveDecision, setDiveInOverride } from './lib/research/runStore';
 
 // How stale the screened data must be before foregrounding the app refetches.
 // Long enough that flicking away and back is free; short enough that a real
@@ -67,6 +67,9 @@ export default function App() {
   // Pre-fill ticker when adding lot from share group modal
   const [addLotTicker,      setAddLotTicker]      = useState(null);
   const [addPosType,        setAddPosType]        = useState(null);
+  // Part 3W: Watchlist "Trade" → Log a trade, filled in.
+  const [tradePrefill,      setTradePrefill]      = useState(null);
+  const [researchTicker,    setResearchTicker]    = useState(null);
   // Signal detail
   const [detailSignalId,    setDetailSignalId]    = useState(null);
 
@@ -383,6 +386,35 @@ export default function App() {
     setOpenModal('shareGroup');
   }
 
+  // ── Watchlist card buttons (Part 3W) ─────────────────────────────────────
+  function handleWatchTrade(ticker) {
+    // Use the Signals tab's suggested put when it has one for this stock.
+    const sig = (state.signals || []).find(s => s.ticker === ticker && (s.type === 'csp' || s.type === 'csp_wait'));
+    setEditPositionId(null);
+    setAddLotTicker(null);
+    setAddPosType(null);
+    setTradePrefill({
+      ticker, type: 'short_put', qty: 1,
+      strike: sig?.strike ?? null, expiry: sig?.expiry ?? null, prem: sig?.mid ?? null,
+    });
+    setOpenModal('pos');
+  }
+
+  function handleWatchResearch(ticker) {
+    setResearchTicker({ ticker, at: Date.now() });
+    setActivePage('pg-research');
+  }
+
+  async function handleWatchOverride(ticker, diveIn) {
+    try {
+      await setDiveInOverride(ticker, diveIn);
+      showToast(diveIn ? `${ticker} set to ${diveIn} (your call)` : `${ticker} back to automatic`, 'ok');
+      notionSyncWatchlist({ quiet: true });
+    } catch (e) {
+      showToast(`Override failed: ${String(e.message || e).slice(0, 80)}`, 'err');
+    }
+  }
+
   function handleAddLot(ticker) {
     setOpenModal(null);
     setEditPositionId(null);
@@ -449,7 +481,7 @@ export default function App() {
       </div>
 
       <div className={`page${activePage === 'pg-research' ? ' active' : ''}`} id="pg-research">
-        <ResearchPage showToast={showToast} />
+        <ResearchPage showToast={showToast} initialTicker={researchTicker} />
       </div>
 
       <div className={`page${activePage === 'pg-positions' ? ' active' : ''}`} id="pg-positions">
@@ -472,6 +504,10 @@ export default function App() {
           onSaveNotes={handleUpdateWatchNotes}
           onSyncNotion={syncNotionWatchlist}
           onModalOpenChange={handleWatchModalOpenChange}
+          scores={state.scores}
+          onTrade={handleWatchTrade}
+          onResearch={handleWatchResearch}
+          onOverride={handleWatchOverride}
         />
       </div>
 
@@ -505,13 +541,14 @@ export default function App() {
 
       <ModalOverlay open={openModal === 'pos'} onClose={() => setOpenModal(null)}>
         <PositionModal
-          key={editPositionId ?? `new-${addLotTicker ?? ''}-${addPosType ?? ''}`}
+          key={editPositionId ?? `new-${addLotTicker ?? ''}-${addPosType ?? ''}-${tradePrefill?.ticker ?? ''}`}
           editId={editPositionId}
           initialType={addPosType}
+          initial={tradePrefill}
           positions={state.positions}
           onSave={handleSavePos}
           onDelete={handleDeletePos}
-          onClose={() => { setOpenModal(null); setEditPositionId(null); setAddPosType(null); }}
+          onClose={() => { setOpenModal(null); setEditPositionId(null); setAddPosType(null); setTradePrefill(null); }}
         />
       </ModalOverlay>
 

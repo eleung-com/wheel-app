@@ -33,6 +33,21 @@ function dateProp(props, names) {
   return '';
 }
 
+/** A Notion number property, or null. */
+function numProp(props, name) {
+  const v = props[name] && props[name].number;
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/** Part 3: set Dive-In on a watchlist row by option name ('🔥 Priority' / '👀 Watch' / '— Skip'). */
+export async function setDiveInName(env, pageId, name) {
+  const res = await notionFetch(env, `/v1/pages/${pageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ properties: { 'Dive-In': { select: { name } } } }),
+  });
+  if (!res.ok) throw new Error(`notion dive-in ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
 /** Every page where TV Lists is non-empty, flattened for the app. */
 export async function readWatchlist(env) {
   const rows = [];
@@ -86,6 +101,11 @@ export async function readWatchlist(env) {
         // hand and Finnhub must leave it alone.
         earningsChecked: dateProp(p, ['Earnings checked']),
         earningsLocked:  !!(p['Earnings locked'] && p['Earnings locked'].checkbox),
+        // Part 3: fair value range (Monday eval / after-earnings routine).
+        fmvLow:  numProp(p, 'FMV Low'),
+        fmvMid:  numProp(p, 'FMV Mid'),
+        fmvHigh: numProp(p, 'FMV High'),
+        fmvDate: dateProp(p, ['FMV date']),
         // Groups the watchlist cards and the chart's ticker strip.
         sector:   p.sector && p.sector.select ? p.sector.select.name : '',
         addedAt:  Date.parse(page.created_time) || null,

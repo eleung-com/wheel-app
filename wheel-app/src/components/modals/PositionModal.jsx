@@ -32,11 +32,18 @@ function initState(pos) {
   };
 }
 
-export default function PositionModal({ editId, initialType, positions, onSave, onDelete, onClose }) {
+export default function PositionModal({ editId, initialType, initial, positions, onSave, onDelete, onClose }) {
   const pos = editId ? positions.find(p => p.id === editId) : null;
   const [f, setF] = useState(() => {
     const base = initState(pos);
     if (!editId && initialType) base.type = initialType;
+    // Part 3W: "Trade" on a Watchlist card starts the form with the ticker
+    // (and the Signals tab's suggested contract when there is one).
+    if (!editId && initial) {
+      for (const k of ['ticker', 'type', 'strike', 'expiry', 'prem', 'qty']) {
+        if (initial[k] != null && initial[k] !== '') base[k] = String(initial[k]);
+      }
+    }
     return base;
   });
 

@@ -9,7 +9,7 @@ import { PRIORITY, dte, buildSignals, cspEntryOk, ccEntryOk, OPEN_OPTION_TYPES }
 import { parsePositions, parseCriteria, CLOSE_TYPES, isPriceableOption } from '../src/lib/utils.js';
 import { fetchQ, fetchOptionPrice, fetchBestStrike } from '../src/lib/marketData.js';
 import { sendTelegram, formatCountAlert } from './telegram.js';
-import { isMarketOpen, etDateString } from './marketHours.js';
+import { isMarketOpen, etDateString, etMinutes } from './marketHours.js';
 import { refreshEarnings } from './earnings.js';
 import { listRuns, applyPendingDecisions } from './stockRuns.js';
 import { scoreMap } from '../src/lib/research/runRecord.js';
@@ -29,7 +29,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Sheet: positions + criteria (Notion owns the watchlist; the Sheet owns
 // held lots and the screener's saved thresholds) ────────────────────────────
-async function fetchSheetData(env) {
+export async function fetchSheetData(env) {
   if (!env.SHEET_URL) throw new Error('SHEET_URL secret is not set on the worker');
   const url = `${env.SHEET_URL}?secret=${encodeURIComponent(env.APP_SECRET || '')}&action=read`;
   const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -201,11 +201,12 @@ export async function runScan(env, now = new Date()) {
       .map(p => p.ticker);
     const tickers = [...new Set([...priorityTickers, ...heldTickers])];
 
-    // Earnings dates from Finnhub, once per ET day (Part 2A). Runs before the
-    // signal pass so today's cards and alerts see corrected dates. Its own
-    // failure never stops the scan.
+    // Earnings dates from Finnhub, once per ET day (Part 2A). Part 3 moved the
+    // normal run to the daily job (worker/daily.js, 9:40 ET); this is only the
+    // fallback if that job didn't run — after 11:00 ET, and the KV day key
+    // makes it a no-op when the daily job already did it.
     try {
-      await refreshEarnings(env, watchlist, heldTickers, now);
+      if (etMinutes(now) >= 660) await refreshEarnings(env, watchlist, heldTickers, now);
     } catch (e) {
       console.error('[scan] earnings refresh failed:', e?.message || e);
     }

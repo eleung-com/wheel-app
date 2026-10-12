@@ -8,6 +8,8 @@ const initialState = {
   signals:       [],
   criteria:      { ...DEFAULT_CRITERIA },
   lastRefresh:   null,
+  // Part 3W: latest app score per ticker (scoreMap), for the Watchlist tab.
+  scores:        null,
 };
 
 function reducer(state, action) {
@@ -20,6 +22,9 @@ function reducer(state, action) {
 
     case 'SET_SIGNALS':
       return { ...state, signals: action.payload, lastRefresh: Date.now() };
+
+    case 'SET_SCORES':
+      return { ...state, scores: action.payload };
 
     case 'SET_CRITERIA':
       return { ...state, criteria: action.payload };
