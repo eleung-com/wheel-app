@@ -104,6 +104,15 @@ function TradeCard({ s, rank, onClick }) {
           </div>
         </div>
         <div className="sx-contract">{s.suggestion}</div>
+        {s.fmv && (
+          // Part 3E: price vs fair value (FMV Mid) from the Monday eval.
+          <div className={`sx-fmv${s.fmvPct != null && s.fmvPct <= 0 ? ' under' : ''}`}>
+            Fair ${s.fmv.mid >= 1000 ? Math.round(s.fmv.mid).toLocaleString() : s.fmv.mid.toFixed(2)}
+            {s.fmvPct != null && <> · {Math.abs(s.fmvPct)}% {s.fmvPct <= 0 ? 'under' : 'over'}</>}
+            {s.fmv.low != null && <> · buy below ${s.fmv.low >= 1000 ? Math.round(s.fmv.low).toLocaleString() : s.fmv.low.toFixed(2)}</>}
+            {s.fmvStale && <span className="sx-stale">stale</span>}
+          </div>
+        )}
         <Pills chks={pills} />
         {(s.quality != null || s.value != null || s.upsideScore != null) && (
           <div className="sx-qvu">
