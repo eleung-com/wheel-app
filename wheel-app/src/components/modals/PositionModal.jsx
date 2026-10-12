@@ -49,7 +49,8 @@ export default function PositionModal({ editId, initialType, initial, positions,
 
   const isSpread    = f.type === 'put_spread';
   const isOpt       = f.type !== 'shares';       // any option strategy
-  const isSingleOpt = isOpt && !isSpread;        // short_put / short_call
+  const isSingleOpt = isOpt && !isSpread;        // short_put / short_call / long_call
+  const isLeaps     = f.type === 'long_call';    // Part 4A: a bought call (LEAPS)
 
   // Live projection inputs — DTE runs from the open date (or today) to expiry.
   const openMs = f.openDate ? new Date(f.openDate + 'T12:00:00').getTime() : Date.now();
@@ -68,6 +69,8 @@ export default function PositionModal({ editId, initialType, initial, positions,
 
   const showSingleProjection = isSingleOpt && parseFloat(f.strike) > 0 && parseFloat(f.prem) > 0;
   const showProjection = showSingleProjection || spreadValid;
+  // Max loss on a LEAPS = what you paid (per share × 100 × contracts).
+  const leapsCost = isLeaps && parseFloat(f.prem) > 0 ? parseFloat(f.prem) * (parseFloat(f.qty) || 1) * 100 : null;
 
   const legs = isSpread
     ? buildPutSpreadLegs({
@@ -75,8 +78,8 @@ export default function PositionModal({ editId, initialType, initial, positions,
         shortPrem: f.shortPrem, longPrem: f.longPrem, qty: f.qty || '1',
       })
     : [{
-        id: 1, action: 'sell',
-        optType: f.type === 'short_call' ? 'call' : 'put',
+        id: 1, action: isLeaps ? 'buy' : 'sell',
+        optType: f.type === 'short_call' || isLeaps ? 'call' : 'put',
         qty: f.qty || '1', strike: f.strike, premium: f.prem, expiry: f.expiry,
       }];
 
@@ -129,7 +132,8 @@ export default function PositionModal({ editId, initialType, initial, positions,
       newPos.strike = parseFloat(f.strike) || 0;
       newPos.expiry = f.expiry || '';
       const prem = parseFloat(f.prem);
-      if (isNaN(prem)) { alert('Premium collected is required.'); return; }
+      if (isNaN(prem)) { alert(isLeaps ? 'Premium paid is required.' : 'Premium collected is required.'); return; }
+      if (isLeaps && !f.expiry) { alert('Expiry date is required for a LEAPS.'); return; }
       newPos.prem = prem;
       newPos.cost = prem;
       const cp = parseFloat(f.curPrem);
@@ -170,6 +174,7 @@ export default function PositionModal({ editId, initialType, initial, positions,
             <option value="short_put">Short Put</option>
             <option value="short_call">Short Call</option>
             <option value="put_spread">Put Credit Spread</option>
+            <option value="long_call">Long Call (LEAPS)</option>
           </select>
         </div>
       </div>
@@ -217,7 +222,7 @@ export default function PositionModal({ editId, initialType, initial, positions,
             </div>
           </div>
           <div>
-            <div className="mlbl">Premium collected / share <span style={{ color: 'var(--mu)', fontSize: 9 }}>— e.g. $1.85 = $185 per contract</span></div>
+            <div className="mlbl">{isLeaps ? 'Premium paid / share' : 'Premium collected / share'} <span style={{ color: 'var(--mu)', fontSize: 9 }}>— e.g. {isLeaps ? '$45.20 = $4,520' : '$1.85 = $185'} per contract</span></div>
             <input className="minput norm" type="number" placeholder="1.85" step="0.01" style={{ margin: 0 }} value={f.prem} onChange={e => set('prem', e.target.value)} />
           </div>
         </div>
@@ -274,12 +279,20 @@ export default function PositionModal({ editId, initialType, initial, positions,
       {/* Live yield + P&L projection */}
       {showProjection && (
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--b1)' }}>
+          {isLeaps ? (
+            <div style={{ fontSize: 12, color: 'var(--mu2)', marginBottom: 4 }}>
+              Cost <b style={{ color: 'var(--tx)' }}>${leapsCost != null ? leapsCost.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}</b>
+              {' '}· most you can lose · breakeven at expiry ${(parseFloat(f.strike) + parseFloat(f.prem)).toFixed(2)}
+              {dte > 0 ? ` · ${dte} days` : ''}
+            </div>
+          ) : (<>
           <div style={{ fontSize: 10, color: 'var(--mu)', letterSpacing: '.5px', textTransform: 'uppercase', marginBottom: 9 }}>
             Projected yield{dte > 0 ? ` · ${dte} DTE` : ''}
           </div>
           {isSpread
             ? <YieldSummary spread={{ shortStrike: f.strike, longStrike: f.longStrike, shortPrem: f.shortPrem, longPrem: f.longPrem }} qty={f.qty} dte={dte} />
             : <YieldSummary prem={f.prem} strike={f.strike} qty={f.qty} dte={dte} />}
+          </>)}
 
           <div style={{ fontSize: 10, color: 'var(--mu)', letterSpacing: '.5px', textTransform: 'uppercase', margin: '14px 0 9px' }}>
             P&amp;L at expiry

@@ -325,6 +325,9 @@ export function leapsWindow(cr, isIndex) {
 
 /** Open LEAPS rows (long calls) — added in Part 2D step D3; none before then. */
 export const isOpenLeaps = (p) => p && p.type === 'long_call' && !p.linkedId;
+// Part 4C: LEAPS review card thresholds (days to expiry).
+export const LEAPS_REVIEW_DAYS = 180;
+export const LEAPS_URGENT_DAYS = 90;
 
 /**
  * CSP entry: daily RSI inside the band, %K turning up from below the level,
@@ -549,6 +552,28 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       openLeaps: openLeaps.length,
       suggestion: noneListed ? `Waiting: No ${Math.round(win.dteMin / 30.44)}–${Math.round(win.dteMax / 30.44)} mo options listed` : suggestion,
       ts: now,
+    });
+  }
+
+  // ── LEAPS review (Part 4C / D3) ──────────────────────────────────────────
+  // A held LEAPS shows a Manage card once ≤180 days are left (decide: keep,
+  // roll out or sell), urgent at ≤90 (time value decays fast from there).
+  for (const pos of openLeaps) {
+    const days = dte(pos.expiry);
+    if (days == null || days > LEAPS_REVIEW_DAYS) continue;
+    const q = qmap[pos.ticker];
+    const urgent = days <= LEAPS_URGENT_DAYS;
+    const cur = pos._liveCurPrem ?? pos.curPrem ?? null;
+    const pnlPct = cur != null && pos.prem ? Math.round((cur / pos.prem - 1) * 100) : null;
+    const pnlTxt = pnlPct != null ? ` Now ${pnlPct >= 0 ? '+' : ''}${pnlPct}% on what you paid.` : '';
+    sigs.push({
+      id: `leapsrev-${pos.id}`, type: 'leaps_review', ticker: pos.ticker, posId: pos.id, posType: 'long_call',
+      price: q?.price ?? null, chg: q?.chg1d ?? null, strike: pos.strike, expiry: pos.expiry,
+      days, urgent, prem: pos.prem ?? null, cur, pnlPct,
+      suggestion: (urgent
+        ? `${days} days left — time value now shrinks fast. Sell it, or roll out to a later expiry.`
+        : `${days} days left — decide: keep it, roll out to a later expiry, or sell.`) + pnlTxt,
+      ts: Date.now(),
     });
   }
 

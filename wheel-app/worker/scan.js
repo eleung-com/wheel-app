@@ -80,7 +80,9 @@ function workerTransport(env) {
  */
 async function withLivePremiums(env, positions) {
   const tx = workerTransport(env);
-  const open = positions.filter(isPriceableOption);
+  // Part 4C: LEAPS aren't priced here — their review card needs only days
+  // left, and an index LEAPS chain (XSP ~7 MB) is too heavy for the Worker.
+  const open = positions.filter(p => isPriceableOption(p) && p.type !== 'long_call');
   if (!open.length) return { priced: positions, unpricedIds: new Set() };
 
   const live = new Map();
@@ -120,6 +122,7 @@ function isOpenOption(p) {
   return p.strike != null
     && !!p.expiry
     && p.type !== 'shares'
+    && p.type !== 'long_call'  // Part 4C: LEAPS get their own 180/90-day card
     && !p.linkedId            // set on the opening row once it's been closed
     && !CLOSE_TYPES.has(p.type); // the close row itself
 }
@@ -169,7 +172,7 @@ export async function sendCounts(env, items, now) {
     return { sent: false, counts };
   }
   if (env.ALERTS_KV) {
-    for (const it of fresh) await env.ALERTS_KV.put(it.key, '1', { expirationTtl: DEDUPE_TTL_SECONDS });
+    for (const it of fresh) await env.ALERTS_KV.put(it.key, '1', { expirationTtl: it.ttl || DEDUPE_TTL_SECONDS });
   }
   return { sent: true, counts };
 }
@@ -313,9 +316,11 @@ export async function runScan(env, now = new Date()) {
 
     const items = [
       ...due,
-      ...sigs.filter(sig => BUCKET[sig.type]).map(sig => ({
-        key: `${sig.ticker}|${sig.type}|${etDateString(now)}`, bucket: BUCKET[sig.type],
-      })),
+      ...sigs.filter(sig => BUCKET[sig.type]).map(sig => (sig.type === 'leaps_review'
+        // Part 4C: a LEAPS review counts as new only when it first appears
+        // (≤180 days) and again when it turns urgent (≤90) — not every day.
+        ? { key: `${sig.id}|${sig.urgent ? 90 : 180}`, bucket: BUCKET[sig.type], ttl: 200 * 86400 }
+        : { key: `${sig.ticker}|${sig.type}|${etDateString(now)}`, bucket: BUCKET[sig.type] })),
     ];
     const { counts } = await sendCounts(env, items, now);
     // Returned for tests and logs; the cron caller ignores it.

@@ -695,3 +695,8 @@ details>.wl-sech{cursor:pointer}
 .sx-fmv{font-size:12px;font-weight:600;color:var(--mu2);margin:4px 0 2px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .sx-fmv.under{color:var(--g)}
 .sx-stale{font-size:10.5px;font-weight:700;color:var(--r);background:var(--rd);border-radius:5px;padding:1px 6px}
+
+/* Part 4C: LEAPS review card in Manage */
+.sx-strip.leaps_review{background:var(--pud);color:var(--pu)}
+.sx-strip.leaps_review.urgent{background:var(--pu);color:#fff}
+.pos-table.leaps{min-width:0} /* Part 4A: 4 columns fit a phone */
