@@ -9,6 +9,10 @@ describe('fmvOf / fmvStale / vsMidPct', () => {
     expect(fmvOf({ fmvMid: 0 })).toBeNull();
     expect(fmv).toEqual({ low: 85, mid: 100, high: 130, date: '2026-10-12' });
   });
+  it('High is never below Fair', () => {
+    expect(fmvOf({ fmvLow: 224.52, fmvMid: 264.14, fmvHigh: 259.28 }).high).toBe(264.14);
+    expect(fmvOf({ fmvMid: 100, fmvHigh: null }).high).toBeNull();
+  });
   it('stale after 10 days or undated', () => {
     expect(fmvStale(fmv, '2026-10-22')).toBe(false);
     expect(fmvStale(fmv, '2026-10-23')).toBe(true);
