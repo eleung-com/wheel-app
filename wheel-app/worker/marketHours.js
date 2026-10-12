@@ -33,10 +33,32 @@ export function etDateString(now = new Date()) {
   return etParts(now).dateStr;
 }
 
+/** Minutes since midnight on the ET wall clock. */
+export function etMinutes(now = new Date()) {
+  return etParts(now).mins;
+}
+
 /** True only during regular US equity hours (9:30–16:00 ET), Mon–Fri, non-holiday. */
 export function isMarketOpen(now = new Date()) {
   const { dateStr, dow, mins } = etParts(now);
   if (dow < 1 || dow > 5) return false;
   if (NYSE_HOLIDAYS.has(dateStr)) return false;
   return mins >= 570 && mins < 960; // 9:30–16:00 ET
+}
+
+/** True when YYYY-MM-DD is a NYSE trading day (Mon–Fri, not a full holiday). */
+export function isTradingDay(dateStr) {
+  const dow = new Date(dateStr + 'T12:00:00Z').getUTCDay();
+  return dow >= 1 && dow <= 5 && !NYSE_HOLIDAYS.has(dateStr);
+}
+
+/** The date `n` trading days after `dateStr` (Part 3: FMV refresh 2 trading days after earnings). */
+export function addTradingDays(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00Z');
+  let left = n;
+  while (left > 0) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    if (isTradingDay(d.toISOString().slice(0, 10))) left--;
+  }
+  return d.toISOString().slice(0, 10);
 }

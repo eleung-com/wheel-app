@@ -5,7 +5,7 @@
 // reports before the open on 11/04; Notion said 11/05), which would have let a
 // put expiring on report day through the earnings gate.
 //
-// Rules (per 🔥 Priority or held ticker that has a Notion watchlist row):
+// Rules (per non-Skip or held ticker that has a Notion watchlist row — Part 3):
 //   • "Earnings locked" ticked          → never touched.
 //   • Weekly full refresh (≥7 days since the last one, tracked in KV) → every
 //     ticker is asked and Notion is overwritten when Finnhub differs.
@@ -19,7 +19,10 @@
 // Volume: ~10 calls on a full-refresh day, a handful otherwise. Finnhub free
 // allows 60/min; calls are spaced ~1.1 s apart to stay far under it.
 
-import { PRIORITY, NO_EARNINGS } from '../src/lib/signalEngine.js';
+import { NO_EARNINGS } from '../src/lib/signalEngine.js';
+import { DIVE } from '../src/lib/fairValue.js';
+
+const SKIP = DIVE.SKIP;
 import { etDateString } from './marketHours.js';
 import { setEarningsFields } from './notion.js';
 
@@ -76,11 +79,22 @@ export function needsCheck(row, today, full) {
   return true;
 }
 
-/** Rows to consider: Priority, or held (shares / open options), with a Notion page. */
+/**
+ * Rows to consider: every row that isn't Skip (Priority, Watch, blank), plus
+ * held tickers, with a Notion page. Part 3 widened this from Priority-only:
+ * a Watch stock can turn Priority any day (price ≤ fair value), and its
+ * after-earnings FMV refresh needs a correct earnings date.
+ */
 export function targetRows(watchlist, heldTickers = []) {
   const held = new Set(heldTickers.map(t => String(t).toUpperCase()));
-  return watchlist.filter(w => w.pageId && (w.diveIn === PRIORITY || held.has(w.ticker)));
+  return watchlist.filter(w => w.pageId && (w.diveIn !== SKIP || held.has(w.ticker)));
 }
+
+// Part 3: the last earnings date that passed, kept when Notion's date is
+// replaced by the next one — worker/daily.js needs it to start the
+// "FMV after earnings" routine 2 trading days later.
+export const KV_LAST = (t) => `earnings|last|${t}`;
+const LAST_TTL = 120 * 86400;
 
 async function finnhubNext(env, ticker, today) {
   const q = new URLSearchParams({ symbol: ticker, from: today, to: addDays(today, LOOKAHEAD_DAYS), token: env.FINNHUB_KEY });
@@ -121,8 +135,10 @@ export async function refreshEarnings(env, watchlist, heldTickers, now = new Dat
 
     try {
       if (next) {
-        if (next !== (row.earnings || '').slice(0, 10)) {
+        const prev = (row.earnings || '').slice(0, 10);
+        if (next !== prev) {
           await setEarningsFields(env, row.pageId, { earnings: next, checked: null });
+          if (kv && prev && prev < today) await kv.put(KV_LAST(row.ticker), prev, { expirationTtl: LAST_TTL });
           out.updated.push(`${row.ticker} ${row.earnings || '—'}→${next}`);
           row.earnings = next;
         }

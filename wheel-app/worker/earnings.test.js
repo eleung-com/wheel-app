@@ -86,9 +86,9 @@ describe('needsCheck', () => {
 });
 
 describe('targetRows', () => {
-  it('Priority or held, with a Notion page', () => {
-    const wl = [row('A'), row('B', { diveIn: '👀 Watch' }), row('C', { diveIn: '👀 Watch' }), { ticker: 'D', diveIn: PRI }];
-    expect(targetRows(wl, ['c']).map(r => r.ticker)).toEqual(['A', 'C']);
+  it('every non-Skip row or held, with a Notion page (Part 3)', () => {
+    const wl = [row('A'), row('B', { diveIn: '— Skip' }), row('C', { diveIn: '— Skip' }), row('W', { diveIn: '👀 Watch' }), { ticker: 'D', diveIn: PRI }];
+    expect(targetRows(wl, ['c']).map(r => r.ticker)).toEqual(['A', 'C', 'W']);
   });
 });
 

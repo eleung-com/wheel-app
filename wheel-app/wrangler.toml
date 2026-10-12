@@ -8,7 +8,10 @@ compatibility_date = "2024-11-01"
 # guard (worker/marketHours.js) does the real ET-and-holiday-aware check, so
 # firings outside actual market hours are a harmless no-op.
 [triggers]
-crons = ["*/30 12-21 * * 1-5"]
+# Part 3: "40 13,14" = the daily job (worker/daily.js) — 9:40 ET in both EDT
+# (13:40 UTC) and EST (14:40 UTC); the other firing is a no-op (market closed
+# or already ran today).
+crons = ["*/30 12-21 * * 1-5", "40 13,14 * * 1-5"]
 
 # De-dupe store for the Telegram alert loop (worker/scan.js) — one alert per
 # ticker+signal-type per ET day. Create it once with:

@@ -18,6 +18,7 @@
 import { readWatchlist, readEval, updatePage, UUID_RE } from './notion.js';
 import { saveRun, listRuns, setDecision, getRun, redoClaude } from './stockRuns.js';
 import { runScan } from './scan.js';
+import { runDaily, DAILY_CRON } from './daily.js';
 
 import { sendTelegram } from './telegram.js';
 
@@ -241,7 +242,10 @@ export default {
 
   // Cron Trigger entry (see wrangler.toml [triggers]). Runs the unattended
   // signal scan and Telegram alert loop — see scan.js for the full pipeline.
+  // Part 3: the daily job (Dive-In, earnings dates, FMV after earnings) has
+  // its own cron so it gets its own subrequest budget.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runScan(env));
+    if (event && event.cron === DAILY_CRON) ctx.waitUntil(runDaily(env));
+    else ctx.waitUntil(runScan(env));
   },
 };

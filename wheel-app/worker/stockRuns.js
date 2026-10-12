@@ -23,7 +23,11 @@
 // write-up) alone.
 
 import { notionFetch, plain, NOTION_DB_ID } from './notion.js';
+import { etDateString } from './marketHours.js';
 import { cleanRecord, cleanDecision, dayKey, runStamp, TICKER_RE, CLAUDE_TIMEOUT_MIN, DIVE_IN, scoreAllowsPriority } from '../src/lib/research/runRecord.js';
+
+/** Part 3: KV key for a Research Dive-In decision the daily job must respect. */
+export const OVERRIDE_KEY = (ticker) => `divein|override|${ticker}`;
 
 export const STOCK_RUNS_DB = '60a0a2a4-5833-487e-b8d4-80c509e5fcff';
 const STOCK_RUNS_DS = 'cca96b9f-921e-4439-bc01-df52119197cf';
@@ -364,6 +368,12 @@ export async function setDecision(env, body) {
   if (decision) {
     const wlId = await watchlistPageId(env, row.ticker);
     if (wlId) { await setDiveIn(env, wlId, decision); applied = true; }
+    // Part 3: El's own call from Research wins over the daily automatic
+    // Dive-In until a newer score run or newer FMV numbers (worker/daily.js).
+    if (env.ALERTS_KV) {
+      await env.ALERTS_KV.put(OVERRIDE_KEY(row.ticker), JSON.stringify({ runId: pageId, day: etDateString() }),
+        { expirationTtl: 180 * 86400 }).catch(() => {});
+    }
   }
 
   const updated = await ok(await notionFetch(env, `/v1/pages/${pageId}`, {
