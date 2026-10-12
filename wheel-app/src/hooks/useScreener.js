@@ -97,6 +97,8 @@ export function useScreener(showToast) {
       // Started now, awaited just before the fresh signal pass, so the Notion
       // read overlaps the price fetches instead of adding to them.
       const scoresP = fetchScores();
+      // Part 3W: the Watchlist tab shows the same scores.
+      scoresP.then((s) => { if (s) dispatch({ type: 'SET_SCORES', payload: s }); });
       // Closed rows carry a ticker but nothing here needs their price — a name
       // you traded once and exited should stop costing a history fetch forever.
       const tickers = [...new Set([

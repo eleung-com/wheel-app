@@ -77,3 +77,54 @@ export function decideDiveIn({ current = '', verdict = null, price = null, fmv =
   }
   return want === current ? null : { diveIn: want, reason };
 }
+
+// ── Watchlist tab (Part 3W) ─────────────────────────────────────────────────
+// Groups follow the LIVE price with the same rule the daily job applies to
+// Dive-In (decided 10-12), so the tab never disagrees with the rule even
+// between the 9:40am updates.
+export const CLOSE_PCT = 10;   // within 10% above fair = "Close"
+export const WL_GROUPS = ['ready', 'close', 'wait', 'todo', 'skip', 'idx'];
+const OVERRIDE_GROUP = { [DIVE.PRIORITY]: 'ready', [DIVE.SKIP]: 'skip' };
+
+/**
+ * Where a watchlist row sits on the Watchlist tab, and the one-line "why".
+ * @param row       watchlist row (diveIn, fmvLow/Mid/High, fmvDate)
+ * @param score     scoreMap entry ({ verdict, score }) or null
+ * @param price     live price or null
+ * @param isIndex   index/ETF row
+ * @param override  El's manual Dive-In ('🔥 Priority' …) or null
+ * @returns { group, pct, why, tag }
+ */
+export function watchlistGroup({ row = {}, score = null, price = null, isIndex = false, override = null }) {
+  if (isIndex) return { group: 'idx', pct: null, why: 'Index · LEAPS live in Signals', tag: null };
+  const fmv = fmvOf(row);
+  const p = num(price);
+  const pct = p && fmv ? vsMidPct(p, fmv) : null;
+  const priceWhy = () => (pct == null ? null
+    : pct <= 0 ? `${Math.abs(pct)}% under fair value · in buy zone`
+      : `${pct}% over fair · Priority at ≤ $${fmv.mid}`);
+
+  if (override) {
+    const g = OVERRIDE_GROUP[override] || (pct != null && pct <= CLOSE_PCT ? 'close' : 'wait');
+    return { group: g, pct, why: priceWhy() || `Set by you: ${override}`, tag: 'Your call' };
+  }
+  const verdict = score && score.verdict && score.verdict !== 'No score' ? score.verdict : null;
+  if (verdict && !GOOD.has(verdict)) return { group: 'skip', pct, why: `Score ${score.score ?? '—'} · ${verdict}`, tag: null };
+  if (!verdict) return { group: 'todo', pct, why: 'No app score yet — run it in Research', tag: null };
+  if (!fmv) return { group: 'todo', pct, why: 'Fair value not set yet — fills on the Monday run', tag: null };
+  if (!p) {
+    const g = row.diveIn === DIVE.PRIORITY ? 'ready' : 'wait';
+    return { group: g, pct, why: 'No live price — showing Notion Dive-In', tag: null };
+  }
+  if (pct <= 0) return { group: 'ready', pct, why: priceWhy(), tag: null };
+  // Same 3% buffer as the daily job: a Priority stock stays Priority until > Mid + 3%.
+  if (row.diveIn === DIVE.PRIORITY && pct <= FMV_BUFFER * 100) {
+    return { group: 'ready', pct, why: `${pct}% over fair · stays Priority until +3%`, tag: null };
+  }
+  return { group: pct <= CLOSE_PCT ? 'close' : 'wait', pct, why: priceWhy(), tag: null };
+}
+
+/** Sort key inside a group: closest to fair value first, unknowns last. */
+export function wlSortKey(item) {
+  return item.pct == null ? Infinity : item.pct;
+}

@@ -451,6 +451,8 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
     sigs.push({
       id: `csp-${w.ticker}`, type: blockedBy ? 'csp_wait' : 'csp', ticker: w.ticker,
       price: q.price, chg: q.chg1d, strike, dteTarget: dteT,
+      // Part 3W: the Watchlist "Trade" button fills these into Log a trade.
+      expiry: live?.expiry ?? null, mid: live?.premium ?? null,
       ivr: q.ivrEst ?? null, aboveMa: q.aboveMa, maPeriod: cr.ma,
       ...notionOf(w.ticker),
       dropPct: q.dropPct, weekHigh: q.weekHigh, atrDrop: q.atrDrop,

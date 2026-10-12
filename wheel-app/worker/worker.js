@@ -16,7 +16,7 @@
 // running at https://wheel-tradier-proxy.esthercandy.workers.dev
 
 import { readWatchlist, readEval, updatePage, UUID_RE } from './notion.js';
-import { saveRun, listRuns, setDecision, getRun, redoClaude } from './stockRuns.js';
+import { saveRun, listRuns, setDecision, getRun, redoClaude, setDiveInOverride, OVERRIDE_KEY } from './stockRuns.js';
 import { runScan } from './scan.js';
 import { runDaily, DAILY_CRON } from './daily.js';
 
@@ -96,7 +96,23 @@ export default {
 
       try {
         if (url.pathname === '/notion/watchlist' && request.method === 'GET') {
-          return json({ watchlist: await readWatchlist(env) }, 200, cors);
+          const watchlist = await readWatchlist(env);
+          // Part 3W: El's manual Dive-In overrides (KV), shown as "Your call".
+          if (env.ALERTS_KV) {
+            await Promise.all(watchlist.map(async (w) => {
+              try {
+                const ov = JSON.parse((await env.ALERTS_KV.get(OVERRIDE_KEY(w.ticker))) || 'null');
+                if (ov && ov.diveIn) w.override = ov.diveIn;
+              } catch { /* ignore a bad key */ }
+            }));
+          }
+          return json({ watchlist }, 200, cors);
+        }
+
+        // Part 3W: Override menu on the Watchlist tab. diveIn = one of the three
+        // Dive-In names → set it + remember it; diveIn = null → back to automatic.
+        if (url.pathname === '/notion/divein-override' && request.method === 'POST') {
+          return json(await setDiveInOverride(env, await request.json()), 200, cors);
         }
 
         if (url.pathname === '/notion/eval' && request.method === 'GET') {

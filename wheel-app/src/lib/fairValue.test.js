@@ -51,3 +51,33 @@ describe('decideDiveIn', () => {
     expect(decideDiveIn({ current: '', verdict: 'Worth investing', price: 100, fmv: null }).diveIn).toBe(DIVE.WATCH);
   });
 });
+
+import { watchlistGroup } from './fairValue.js';
+describe('watchlistGroup (live)', () => {
+  const row = { fmvLow: 85, fmvMid: 100, fmvHigh: 130, fmvDate: '2026-10-12', diveIn: DIVE.WATCH };
+  const good = { verdict: 'Maybe', score: 60 };
+  const g = (o) => watchlistGroup({ row, score: good, ...o }).group;
+  it('ready / close / wait by price vs Mid', () => {
+    expect(g({ price: 99 })).toBe('ready');
+    expect(g({ price: 105 })).toBe('close');
+    expect(g({ price: 110 })).toBe('close');
+    expect(g({ price: 111 })).toBe('wait');
+  });
+  it('Priority keeps the 3% buffer', () => {
+    expect(watchlistGroup({ row: { ...row, diveIn: DIVE.PRIORITY }, score: good, price: 102.5 }).group).toBe('ready');
+    expect(watchlistGroup({ row: { ...row, diveIn: DIVE.PRIORITY }, score: good, price: 104 }).group).toBe('close');
+  });
+  it('skip, todo, idx, override, no price', () => {
+    expect(watchlistGroup({ row, score: { verdict: 'Not worth it', score: 40 }, price: 50 }).group).toBe('skip');
+    expect(watchlistGroup({ row, score: null, price: 50 }).group).toBe('todo');
+    expect(watchlistGroup({ row: { diveIn: DIVE.WATCH }, score: good, price: 50 }).group).toBe('todo');
+    expect(watchlistGroup({ row, isIndex: true }).group).toBe('idx');
+    const o = watchlistGroup({ row, score: { verdict: 'Not worth it' }, price: 150, override: DIVE.PRIORITY });
+    expect(o.group).toBe('ready'); expect(o.tag).toBe('Your call');
+    expect(watchlistGroup({ row: { ...row, diveIn: DIVE.PRIORITY }, score: good, price: null }).group).toBe('ready');
+  });
+  it('why line', () => {
+    expect(watchlistGroup({ row, score: good, price: 106.3 }).why).toBe('6.3% over fair · Priority at ≤ $100');
+    expect(watchlistGroup({ row, score: good, price: 90 }).why).toBe('10% under fair value · in buy zone');
+  });
+});

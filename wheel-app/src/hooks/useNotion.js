@@ -49,6 +49,12 @@ export function useNotion(showToast) {
             lastEval:     w.lastEval     || '',
             // Feeds the Home news-tab earnings calendar. ISO date string or ''.
             earnings:     w.earnings     || '',
+            // Part 3: fair value range + El's manual override (Part 3W).
+            fmvLow:   w.fmvLow  ?? null,
+            fmvMid:   w.fmvMid  ?? null,
+            fmvHigh:  w.fmvHigh ?? null,
+            fmvDate:  w.fmvDate || '',
+            override: w.override || null,
             addedAt:  w.addedAt || Date.now(),
             liveData: existing?.liveData || null,
           };
