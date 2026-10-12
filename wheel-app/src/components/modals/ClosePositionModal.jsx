@@ -9,6 +9,10 @@ export default function ClosePositionModal({ posId, positions, onConfirm, onEdit
   if (pos.type === 'put_spread') {
     return <SpreadCloseBody pos={pos} onConfirm={onConfirm} onEdit={onEdit} onClose={onClose} />;
   }
+  // Part 4B: LEAPS (bought calls) close by selling, expiring, exercising or rolling out.
+  if (pos.type === 'long_call') {
+    return <LeapsCloseBody pos={pos} onConfirm={onConfirm} onEdit={onEdit} onClose={onClose} />;
+  }
 
   const isPut  = pos.type === 'short_put';
   const today  = new Date().toISOString().slice(0, 10);
@@ -518,6 +522,138 @@ function SpreadCloseBody({ pos, onConfirm, onEdit, onClose }) {
       <div style={{ marginTop: 14 }}>
         <button className="btn-p" onClick={handleConfirm}>Confirm Close</button>
         <button className="btn-s" onClick={() => onEdit(pos.id)}>Edit Position</button>
+        <button className="btn-s" onClick={onClose}>Cancel</button>
+      </div>
+    </>
+  );
+}
+
+// ── LEAPS (long call) close — Part 4B ────────────────────────────────────────
+// prem = premium PAID per share. P/L = (sold − paid) × 100 × contracts.
+// Index LEAPS (XSP etc.) are cash-settled, so "Exercised" isn't offered.
+const CASH_SETTLED = new Set(['XSP', 'SPX', 'NDX', 'RUT', 'DJX', 'VIX']);
+
+export function leapsCloseDetails(pos, kind, { price = NaN, closeDateTs, roll = null } = {}) {
+  const n = (pos.qty || 1) * 100;
+  const paid = pos.prem || 0;
+  if (kind === 'stc') return { closeType: 'stc', closeDate: closeDateTs, closePrice: price, pnl: Math.round((price - paid) * n * 100) / 100 };
+  if (kind === 'expired') return { closeType: 'expired', closeDate: closeDateTs, closePrice: 0, pnl: -paid * n };
+  if (kind === 'exercised') return {
+    closeType: 'exercised', closeDate: closeDateTs, closePrice: pos.strike || 0, pnl: 0,
+    sharesAcquired: n, costBasis: (pos.strike || 0) + paid,
+    newPosition: {
+      id: Date.now() + 1, ticker: pos.ticker, type: 'shares', qty: n, cost: (pos.strike || 0) + paid,
+      notes: `Exercised $${pos.strike} LEAPS (cost = strike + premium paid)`, account: pos.account || 'Esther', enteredAt: closeDateTs,
+    },
+  };
+  if (kind === 'rolled') return {
+    closeType: 'rolled', closeDate: closeDateTs, closePrice: price, pnl: Math.round((price - paid) * n * 100) / 100,
+    newPosition: {
+      id: Date.now() + 1, ticker: pos.ticker, type: 'long_call', qty: roll.qty, strike: roll.strike, expiry: roll.expiry,
+      prem: roll.paid, cost: roll.paid, notes: `Rolled from ${pos.expiry} $${pos.strike} LEAPS`, account: pos.account || 'Esther', enteredAt: closeDateTs,
+    },
+  };
+  return null;
+}
+
+function LeapsCloseBody({ pos, onConfirm, onEdit, onClose }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [kind, setKind] = useState('stc');
+  const [closeDate, setCloseDate] = useState(today);
+  const [price, setPrice] = useState(pos._liveCurPrem != null ? String(pos._liveCurPrem) : '');
+  const [newStrike, setNewStrike] = useState('');
+  const [newExpiry, setNewExpiry] = useState('');
+  const [newPaid, setNewPaid] = useState('');
+  const [newQty, setNewQty] = useState(String(pos.qty || 1));
+  const n = (pos.qty || 1) * 100;
+  const paidTotal = (pos.prem || 0) * n;
+  const priceNum = parseFloat(price);
+  const pnl = !isNaN(priceNum) ? (priceNum - (pos.prem || 0)) * n : null;
+  const cash = CASH_SETTLED.has(pos.ticker);
+  const KINDS = [
+    { key: 'stc', label: 'Sold' }, { key: 'rolled', label: 'Rolled out' },
+    { key: 'expired', label: 'Expired' }, ...(cash ? [] : [{ key: 'exercised', label: 'Exercised' }]),
+  ];
+
+  function confirm() {
+    const closeDateTs = new Date(closeDate + 'T12:00:00').getTime();
+    if ((kind === 'stc' || kind === 'rolled') && (isNaN(priceNum) || priceNum < 0)) { alert('Enter the price you sold it for (per share).'); return; }
+    let roll = null;
+    if (kind === 'rolled') {
+      roll = { strike: parseFloat(newStrike), expiry: newExpiry, paid: parseFloat(newPaid), qty: parseFloat(newQty) || pos.qty || 1 };
+      if (!(roll.strike > 0)) { alert('Enter the new strike.'); return; }
+      if (!roll.expiry) { alert('Select the new expiry date.'); return; }
+      if (!(roll.paid > 0)) { alert('Enter the premium paid for the new LEAPS.'); return; }
+    }
+    onConfirm(pos.id, leapsCloseDetails(pos, kind, { price: priceNum, closeDateTs, roll }));
+  }
+
+  const pill = (on) => ({
+    padding: '8px 0', borderRadius: 'var(--r)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+    border: `1px solid ${on ? 'var(--pu)' : 'var(--b1)'}`, background: on ? 'rgba(139,92,246,.15)' : 'var(--s2)', color: on ? 'var(--pu)' : 'var(--mu2)',
+  });
+  const box = { background: 'var(--s2)', border: '1px solid var(--b1)', borderRadius: 'var(--r)', padding: '9px 12px', fontSize: 11, marginBottom: 12 };
+
+  return (
+    <>
+      <div className="mtitle">Close LEAPS</div>
+      <div style={{ ...box, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 15 }}>{pos.ticker}</span>
+          <span className="pos-type-pill call">Long Call</span>
+        </div>
+        <div style={{ display: 'flex', gap: 14, fontFamily: 'var(--mono)', color: 'var(--mu2)', flexWrap: 'wrap' }}>
+          <span>Strike ${pos.strike}</span><span>Exp {formatDateDisplay(pos.expiry)}</span><span>{pos.qty} contract{pos.qty !== 1 ? 's' : ''}</span>
+        </div>
+        <div style={{ marginTop: 4, fontFamily: 'var(--mono)' }}>Paid ${pos.prem?.toFixed(2)}/share = ${paidTotal.toFixed(0)}</div>
+      </div>
+
+      <div className="mlbl" style={{ marginBottom: 6 }}>What happened</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
+        {KINDS.map(k => <button key={k.key} style={pill(kind === k.key)} onClick={() => setKind(k.key)}>{k.label}</button>)}
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <div className="mlbl">Date</div>
+        <input className="minput norm" type="date" style={{ margin: 0, color: 'var(--tx)' }} value={closeDate} onChange={e => setCloseDate(e.target.value)} />
+      </div>
+
+      {(kind === 'stc' || kind === 'rolled') && (
+        <div style={{ marginBottom: 10 }}>
+          <div className="mlbl">Sold for / share</div>
+          <input className="minput norm" type="number" step="0.01" placeholder="0.00" style={{ margin: 0 }} value={price} onChange={e => setPrice(e.target.value)} />
+          {pnl !== null && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 12, marginTop: 6, color: pnl >= 0 ? 'var(--g)' : 'var(--r)' }}>
+              P&amp;L {pnl >= 0 ? '+' : '−'}${Math.abs(pnl).toFixed(0)} ({paidTotal > 0 ? `${pnl >= 0 ? '+' : ''}${Math.round(pnl / paidTotal * 100)}%` : '—'})
+            </div>
+          )}
+        </div>
+      )}
+
+      {kind === 'rolled' && (
+        <div style={{ ...box }}>
+          <div className="mlbl" style={{ marginBottom: 6 }}>New LEAPS</div>
+          <div className="mg2" style={{ marginBottom: 8 }}>
+            <div><div className="mlbl">Strike</div><input className="minput norm" type="number" step="0.5" style={{ margin: 0 }} value={newStrike} onChange={e => setNewStrike(e.target.value)} /></div>
+            <div><div className="mlbl">Expiry</div><input className="minput norm" type="date" style={{ margin: 0, color: 'var(--tx)' }} value={newExpiry} onChange={e => setNewExpiry(e.target.value)} /></div>
+          </div>
+          <div className="mg2">
+            <div><div className="mlbl">Paid / share</div><input className="minput norm" type="number" step="0.01" style={{ margin: 0 }} value={newPaid} onChange={e => setNewPaid(e.target.value)} /></div>
+            <div><div className="mlbl">Contracts</div><input className="minput norm" type="number" style={{ margin: 0 }} value={newQty} onChange={e => setNewQty(e.target.value)} /></div>
+          </div>
+        </div>
+      )}
+
+      {kind === 'expired' && <div style={box}>Expired worthless — P&amp;L <b style={{ color: 'var(--r)' }}>−${paidTotal.toFixed(0)}</b> (the premium paid).</div>}
+      {kind === 'exercised' && (
+        <div style={box}>
+          You buy {n} shares at ${pos.strike}. A shares row is added with cost basis <b>${((pos.strike || 0) + (pos.prem || 0)).toFixed(2)}</b> (strike + premium paid).
+        </div>
+      )}
+
+      <div style={{ marginTop: 6 }}>
+        <button className="btn-p" onClick={confirm}>Confirm</button>
+        <button className="btn-s" onClick={() => onEdit(pos.id)}>Edit position</button>
         <button className="btn-s" onClick={onClose}>Cancel</button>
       </div>
     </>

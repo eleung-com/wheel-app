@@ -1,11 +1,11 @@
 import React from 'react';
 import EvalBody from '../pages/SignalsPage/EvalBody';
 
-export default function SignalDetailModal({ signalId, signals, positions, onClose, evaluation, loading }) {
+export default function SignalDetailModal({ signalId, signals, positions, onClose, onTrade, evaluation, loading }) {
   const s = signals.find(sig => sig.id === signalId);
   if (!s) return null;
 
-  const lbl = { csp: 'Cash-Secured Put', csp_wait: 'CSP — Waiting', leaps: 'LEAPS', leaps_wait: 'LEAPS — Waiting', score_review: 'Score review', cc: 'Covered Call', roll: 'Roll Position', close: 'Buy to Close', maxloss: 'Spread at Max Loss' }[s.type];
+  const lbl = { csp: 'Cash-Secured Put', csp_wait: 'CSP — Waiting', leaps: 'LEAPS', leaps_wait: 'LEAPS — Waiting', leaps_review: 'LEAPS review', score_review: 'Score review', cc: 'Covered Call', roll: 'Roll Position', close: 'Buy to Close', maxloss: 'Spread at Max Loss' }[s.type];
 
   // For roll/close signals, find the underlying position
   const posId = signalId ? parseInt(signalId.replace('roll-', '').replace('close-', '')) : null;
@@ -142,11 +142,15 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
         <div className="dlbl">Criteria Check</div>
         <div className="cpills">
           {(s.chks || []).map((ch, i) => (
-            <span key={i} className={`cpill ${ch.ok ? 'pass' : 'fail'}`}>{ch.ok ? '✓' : '✗'} {ch.l}</span>
+            <span key={i} className={`cpill ${ch.warn ? 'warn' : ch.ok ? 'pass' : 'fail'}`}>{ch.warn ? '⚠' : ch.ok ? '✓' : '✗'} {ch.l}</span>
           ))}
         </div>
       </div>
 
+      {onTrade && (s.type === 'csp' || s.type === 'leaps') && (
+        // Part 4C: log the suggested contract (the order itself is placed in Fidelity).
+        <button className="btn-p" onClick={() => onTrade(s)}>Log this trade</button>
+      )}
       <button className="btn-s" onClick={onClose}>Close</button>
     </>
   );

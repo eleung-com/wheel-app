@@ -1,6 +1,7 @@
 import React from 'react';
 import { ACCOUNTS } from '../../../lib/utils';
 import SharesTable from './SharesTable';
+import LeapsTable from './LeapsTable';
 import OptionsTable from './OptionsTable';
 
 function fmt(n) {
@@ -49,6 +50,8 @@ export default function PositionsPage({ positions, watchlist, criteria, onSelect
   // Only active option rows — exclude close entries and any opening row that has been linked (closed)
   const ACTIVE_OPTION_TYPES = new Set(['short_put', 'short_call', 'put_spread']);
   const optPositions = positions.filter(p => ACTIVE_OPTION_TYPES.has(p.type) && !p.linkedId);
+  // Part 4A: open LEAPS (bought calls) get their own table.
+  const leapsPositions = positions.filter(p => p.type === 'long_call' && !p.linkedId);
 
   // Price lookup: watchlist liveData first, then share position _livePrice
   const priceMap = {};
@@ -73,6 +76,12 @@ export default function PositionsPage({ positions, watchlist, criteria, onSelect
   for (const pos of positions.filter(p => p.type === 'put_spread' && !p.linkedId && p.strike && p.longStrike)) {
     const acct = pos.account || 'Esther';
     capitalByAccount[acct] = (capitalByAccount[acct] || 0) + (pos.strike - pos.longStrike) * pos.qty * 100;
+  }
+
+  // Part 4B: LEAPS tie up the premium paid.
+  for (const pos of positions.filter(p => p.type === 'long_call' && !p.linkedId)) {
+    const acct = pos.account || 'Esther';
+    capitalByAccount[acct] = (capitalByAccount[acct] || 0) + (pos.prem || 0) * (pos.qty || 1) * 100;
   }
 
   const showCapital = criteria && (criteria.capitalEsther > 0 || criteria.capitalFam > 0);
@@ -111,6 +120,12 @@ export default function PositionsPage({ positions, watchlist, criteria, onSelect
         <OptionsTable
           optPositions={optPositions}
           criteria={criteria}
+          priceMap={priceMap}
+          onSelectPos={onSelectOptPos}
+          onEditPos={onEditPos}
+        />
+        <LeapsTable
+          leaps={leapsPositions}
           priceMap={priceMap}
           onSelectPos={onSelectOptPos}
           onEditPos={onEditPos}

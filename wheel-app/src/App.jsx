@@ -31,7 +31,10 @@ import ClosePositionModal     from './components/modals/ClosePositionModal';
 import ShareGroupDetailModal  from './components/modals/ShareGroupDetailModal';
 import SignalDetailModal      from './components/modals/SignalDetailModal';
 import HelpModal              from './components/modals/HelpModal';
-import { saveDecision, setDiveInOverride } from './lib/research/runStore';
+import { saveDecision, setDiveInOverride, loadRuns } from './lib/research/runStore';
+import { runAutoResearch } from './lib/research/autoRun';
+import { scoreMap } from './lib/research/runRecord';
+import { NO_EARNINGS } from './lib/signalEngine';
 
 // How stale the screened data must be before foregrounding the app refetches.
 // Long enough that flicking away and back is free; short enough that a real
@@ -240,6 +243,21 @@ export default function App() {
   // A pull replaces every row's `notes`, so it would swap the text out from
   // under an open detail modal and lose the draft. The watchlist tells us when
   // one is up; background pulls no-op until it closes.
+  // ── Part 4D: auto-run Research for unscored / stale stocks, once per app
+  // open, after the first scores + watchlist have loaded. Background only.
+  const autoRanRef = useRef(false);
+  useEffect(() => {
+    if (autoRanRef.current || state.scores == null || !state.watchlist.length) return;
+    autoRanRef.current = true;
+    runAutoResearch(state.watchlist, (t) => NO_EARNINGS.has(t), {
+      onDone: async ({ done, failed }) => {
+        if (done.length) showToast(`Auto-research: ${done.join(' · ')}`, 'ok');
+        if (failed.length) showToast(`Auto-research couldn’t score ${failed.join(', ')} — will retry tomorrow`, 'err');
+        try { dispatch({ type: 'SET_SCORES', payload: scoreMap(await loadRuns({ limit: 50 })) }); } catch { /* next screener run refreshes */ }
+      },
+    });
+  }, [state.scores, state.watchlist, dispatch, showToast]);
+
   const watchModalOpen = useRef(false);
   const handleWatchModalOpenChange = useCallback(open => { watchModalOpen.current = open; }, []);
 
@@ -363,7 +381,8 @@ export default function App() {
     nextPositions = [...nextPositions, closeEntry];
     const nextClosedTrades = [...state.closedTrades, logEntry];
 
-    if (details.closeType === 'rolled' && details.newPosition) {
+    // Rolled → the replacement contract; Part 4B: exercised LEAPS → the shares.
+    if (details.newPosition) {
       dispatch({ type: 'ADD_POSITION', payload: details.newPosition });
       nextPositions = [...nextPositions, details.newPosition];
     }
@@ -396,6 +415,20 @@ export default function App() {
     setTradePrefill({
       ticker, type: 'short_put', qty: 1,
       strike: sig?.strike ?? null, expiry: sig?.expiry ?? null, prem: sig?.mid ?? null,
+    });
+    setOpenModal('pos');
+  }
+
+  // Part 4C: "Log this trade" on a CSP or LEAPS card's detail view.
+  function handleSignalTrade(sig) {
+    const leaps = sig.type === 'leaps' || sig.type === 'leaps_wait';
+    setDetailSignalId(null);
+    setEditPositionId(null);
+    setAddLotTicker(null);
+    setAddPosType(null);
+    setTradePrefill({
+      ticker: sig.ticker, type: leaps ? 'long_call' : 'short_put', qty: 1,
+      strike: sig.strike ?? null, expiry: sig.expiry ?? null, prem: sig.mid ?? null,
     });
     setOpenModal('pos');
   }
@@ -582,6 +615,7 @@ export default function App() {
           evaluation={evals[(state.signals.find(s => s.id === detailSignalId) || {}).ticker] || null}
           loading={evalsLoading}
           onClose={() => { setOpenModal(null); setDetailSignalId(null); }}
+          onTrade={handleSignalTrade}
         />
       </ModalOverlay>
 

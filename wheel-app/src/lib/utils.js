@@ -249,7 +249,8 @@ export function parseClosedTrades(raw) {
 
 // Rows that record the *closing* of a position rather than an open one.
 // Exported because the Worker's scan needs the same "is this still open?" test.
-export const CLOSE_TYPES = new Set(['btc', 'expired', 'assigned', 'rolled']);
+// stc / exercised: Part 4B (LEAPS: sold to close / exercised into shares).
+export const CLOSE_TYPES = new Set(['btc', 'expired', 'assigned', 'rolled', 'stc', 'exercised']);
 
 // ── "Is this row still open?" ────────────────────────────────────────────────
 // Closing a position writes a SECOND row (type btc/expired/assigned/rolled) and

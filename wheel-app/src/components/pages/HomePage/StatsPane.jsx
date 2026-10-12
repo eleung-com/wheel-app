@@ -50,11 +50,16 @@ export default function StatsPane({
     }
     return s;
   }, 0);
+  // Part 4B: money in LEAPS = premium paid on open long calls. Counted in
+  // "Capital deployed" and shown on its own line under it.
+  const inLeaps = positions
+    .filter(p => p.type === 'long_call' && !p.linkedId && (account === 'all' || (p.account || 'Esther') === account))
+    .reduce((s, p) => s + (p.prem || 0) * (p.qty || 1) * 100, 0);
   const capital = account === 'all'
     ? (criteria.capitalEsther || 0) + (criteria.capitalFam || 0)
     : account === 'Esther' ? (criteria.capitalEsther || 0) : (criteria.capitalFam || 0);
   const deployedPct = capital > 0
-    ? Math.round((secured / capital) * 100)
+    ? Math.round(((secured + inLeaps) / capital) * 100)
     : null;
 
   // Realized this calendar month.
@@ -115,6 +120,7 @@ export default function StatsPane({
           {deployedPct === null
             ? <div className="stat-s">Set capital in Settings</div>
             : <div className="statmeter"><i style={{ width: `${Math.min(deployedPct, 100)}%` }} /></div>}
+          {inLeaps > 0 && <div className="stat-s">incl. {money(inLeaps)} in LEAPS</div>}
         </div>
 
         <div className="stat">

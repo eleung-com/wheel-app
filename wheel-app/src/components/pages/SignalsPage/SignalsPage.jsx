@@ -35,6 +35,7 @@ function Pills({ chks }) {
 function posLabel(s) {
   if (s.type === 'cc') return `${s.sharesOwned} shares`;
   if (s.type === 'score_review') return '🔥 Priority';
+  if (s.type === 'leaps_review') return `LEAPS $${s.strike} call · exp ${md(s.expiry + 'T12:00:00')}`;
   const kind = s.posType === 'put_spread' ? 'Put spread' : s.posType === 'short_call' ? 'Short call' : 'Short put';
   const strikes = s.longStrike != null ? `$${s.strike}/$${s.longStrike}` : `$${s.strike}`;
   return `${kind} ${strikes}`;
@@ -47,6 +48,7 @@ function stripFor(s) {
     case 'close':        return ['Close early', s.pctCap != null ? `${s.pctCap}% captured` : ''];
     case 'cc':           return ['Sell call', `${s.contracts} contract${s.contracts > 1 ? 's' : ''}`];
     case 'score_review': return ['Score review', s.scoreAt ? `run ${md(s.scoreAt)}` : ''];
+    case 'leaps_review': return [s.urgent ? 'LEAPS · act soon' : 'LEAPS review', `${s.days}d left`];
     default:             return [s.type, ''];
   }
 }
@@ -55,7 +57,7 @@ function ManageCard({ s, onClick, onScoreReview, busy }) {
   const [act, right] = stripFor(s);
   return (
     <div className="sx-mcard" onClick={() => onClick(s.id)}>
-      <div className={`sx-strip ${s.type}`}><span>{act}</span><span>{right}</span></div>
+      <div className={`sx-strip ${s.type}${s.urgent ? ' urgent' : ''}`}><span>{act}</span><span>{right}</span></div>
       <div className="sx-mbody">
         <div className="sx-mrow">
           <div>

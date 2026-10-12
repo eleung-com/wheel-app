@@ -1,10 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { formatDateDisplay } from '../../../lib/utils';
 
-const CLOSE_TYPES  = new Set(['btc', 'expired', 'assigned', 'rolled']);
-const CLOSE_LABEL  = { btc: 'BTC', expired: 'Expired', assigned: 'Assigned', rolled: 'Rolled' };
-const CLOSE_COLOR  = { btc: 'var(--bl)', expired: 'var(--g)', assigned: 'var(--a)', rolled: 'var(--pu)' };
-const STRAT_LABEL  = { short_put: 'CSP', short_call: 'CC', put_spread: 'PCS' };
+const CLOSE_TYPES  = new Set(['btc', 'expired', 'assigned', 'rolled', 'stc', 'exercised']);
+const CLOSE_LABEL  = { btc: 'BTC', expired: 'Expired', assigned: 'Assigned', rolled: 'Rolled', stc: 'Sold', exercised: 'Exercised' };
+const CLOSE_COLOR  = { btc: 'var(--bl)', expired: 'var(--g)', assigned: 'var(--a)', rolled: 'var(--pu)', stc: 'var(--bl)', exercised: 'var(--a)' };
+const STRAT_LABEL  = { short_put: 'CSP', short_call: 'CC', put_spread: 'PCS', long_call: 'LEAPS' };
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function fmt(n) {
@@ -22,10 +22,11 @@ function fmtDollar(n) {
 }
 
 function calcStats(entries) {
-  const scoreable = entries.filter(e => e.type !== 'assigned');
+  const scoreable = entries.filter(e => e.type !== 'assigned' && e.type !== 'exercised');
   const wins      = scoreable.filter(e => e.pnl != null && e.pnl > 0);
   const totalPnl  = entries.reduce((s, e) => s + (e.pnl ?? 0), 0);
-  const totalPrem = entries.reduce((s, e) => s + (e.prem ?? 0) * (e.qty ?? 1) * 100, 0);
+  // LEAPS (long_call) premium is money paid, not collected — left out of "premium".
+  const totalPrem = entries.reduce((s, e) => s + (e.posType === 'long_call' ? 0 : (e.prem ?? 0) * (e.qty ?? 1) * 100), 0);
   const winRate   = scoreable.length ? Math.round((wins.length / scoreable.length) * 100) : null;
   return { totalPnl, totalPrem, winRate, count: entries.length, wins: wins.length, losses: scoreable.length - wins.length, scoreable: scoreable.length };
 }
@@ -291,6 +292,8 @@ function CaptureEfficiencyChart({ entries, posMap }) {
 function TradeDetailModal({ entry, posMap, onClose }) {
   const maxPrem    = (entry.prem ?? 0) * (entry.qty ?? 1) * 100;
   const pnl        = entry.pnl ?? 0;
+  // Part 4B: for a LEAPS, prem is what was PAID — the % is return on cost.
+  const isLeaps    = entry.posType === 'long_call';
   const capturePct = maxPrem > 0 ? Math.round((pnl / maxPrem) * 100) : null;
   const premFill   = maxPrem > 0 ? Math.max(0, Math.min(100, (pnl / maxPrem) * 100)) : 0;
 
@@ -366,7 +369,7 @@ function TradeDetailModal({ entry, posMap, onClose }) {
         <div style={{ background: 'var(--s1)', border: '1px solid var(--b1)', borderRadius: 10, padding: '12px 14px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
             <div>
-              <div style={{ fontSize: 9, color: 'var(--mu)', marginBottom: 3 }}>Collected</div>
+              <div style={{ fontSize: 9, color: 'var(--mu)', marginBottom: 3 }}>{isLeaps ? 'Paid' : 'Collected'}</div>
               <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 18, color: 'var(--tx)' }}>{fmtDollar(maxPrem)}</div>
               {entry.qty > 1 && (
                 <div style={{ fontSize: 9, color: 'var(--mu)', marginTop: 2 }}>${Number(entry.prem).toFixed(2)} × {entry.qty} contracts</div>
@@ -376,12 +379,12 @@ function TradeDetailModal({ entry, posMap, onClose }) {
             {capturePct !== null && (
               <div style={{ textAlign: 'center', padding: '0 10px' }}>
                 <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 20, color: pnl >= 0 ? 'var(--g)' : 'var(--r)' }}>{capturePct}%</div>
-                <div style={{ fontSize: 9, color: 'var(--mu)' }}>captured</div>
+                <div style={{ fontSize: 9, color: 'var(--mu)' }}>{isLeaps ? 'return' : 'captured'}</div>
               </div>
             )}
 
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 9, color: 'var(--mu)', marginBottom: 3 }}>Kept</div>
+              <div style={{ fontSize: 9, color: 'var(--mu)', marginBottom: 3 }}>{isLeaps ? 'Profit / loss' : 'Kept'}</div>
               <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 18, color: pnl >= 0 ? 'var(--g)' : 'var(--r)' }}>
                 {pnl >= 0 ? '' : '−'}{fmtDollar(Math.abs(pnl))}
               </div>
@@ -555,6 +558,7 @@ export default function HistoryPage({ positions, account }) {
             { val: 'all',        label: 'All' },
             { val: 'short_put',  label: 'CSP' },
             { val: 'short_call', label: 'CC'  },
+            { val: 'long_call',  label: 'LEAPS' },
           ].map(f => (
             <button key={f.val} onClick={() => setStratFilter(f.val)} style={{
               padding: '6px 12px', minHeight: 36, borderRadius: 20, fontSize: 10, cursor: 'pointer',

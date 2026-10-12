@@ -4,11 +4,12 @@
 
 export const SECTION = {
   maxloss: 'manage', roll: 'manage', close: 'manage', cc: 'manage', score_review: 'manage',
+  leaps_review: 'manage', // Part 4C
   csp: 'trades', csp_wait: 'waiting',
   leaps: 'trades', leaps_wait: 'waiting', // Part 2D
 };
 
-const MANAGE_ORDER = { maxloss: 0, roll: 1, close: 2, score_review: 3, cc: 4 };
+const MANAGE_ORDER = { maxloss: 0, roll: 1, close: 2, leaps_review: 3, score_review: 4, cc: 5 };
 
 /** Worst first: max loss → roll → close → score review → covered call; sooner expiry first. */
 export function sortManage(list) {
