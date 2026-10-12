@@ -557,3 +557,29 @@ describe('CSP score gate', () => {
     expect(sigs.map(s => s.type)).toEqual(['cc']);
   });
 });
+
+// ── Part 3E: fair value on CSP cards ────────────────────────────────────────
+describe('CSP fair value (Part 3E)', () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const row = { ticker: 'AAPL', diveIn: PRIORITY, pageId: 'p1', earnings: FAR_EARNINGS, fmvLow: 170, fmvMid: 200, fmvHigh: 240, fmvDate: today };
+  const q = { price: 190, chg1d: -1, rsi: 35, rsiWeekly: 55, stochK: 18, stochKPrev: 12 };
+  it('carries fair value, % vs fair, not stale', () => {
+    const [s] = buildSignals([row], [], CRITERIA, { AAPL: q });
+    expect(s.fmv.mid).toBe(200);
+    expect(s.fmvPct).toBe(-5);
+    expect(s.fmvStale).toBe(false);
+  });
+  it('warns (never blocks) when the strike is above buy-below', () => {
+    const [s] = buildSignals([row], [], CRITERIA, { AAPL: q }, { 'AAPL:put': { strike: 180, dte: 30, delta: -0.25, expiry: '2026-11-20', premium: 3.1 } });
+    expect(s.type).toBe('csp');
+    expect(s.chks.some(c => c.warn && c.l === 'Strike $180 > buy-below $170')).toBe(true);
+    expect(s.expiry).toBe('2026-11-20');
+    expect(s.mid).toBe(3.1);
+    const [t] = buildSignals([row], [], CRITERIA, { AAPL: q }, { 'AAPL:put': { strike: 165, dte: 30, delta: -0.2 } });
+    expect(t.chks.some(c => /buy-below/.test(c.l))).toBe(false);
+  });
+  it('no FMV → no fair-value fields', () => {
+    const [s] = buildSignals([{ ...row, fmvMid: null }], [], CRITERIA, { AAPL: q });
+    expect(s.fmv).toBeNull();
+  });
+});

@@ -40,6 +40,25 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
         </div>
       )}
 
+      {s.fmv && (
+        // Part 3E: the fair-value range behind the card (Monday eval / after-earnings).
+        <div className="dsec">
+          <div className="dlbl">Fair value{s.fmv.date ? ` · from ${s.fmv.date.slice(5).replace('-', '/')}` : ''}{s.fmvStale ? ' · stale' : ''}</div>
+          <div className="mgrid c3">
+            <div className="met"><div className="met-l">Buy below (Low)</div><div className="met-v">{s.fmv.low != null ? `$${s.fmv.low.toFixed(2)}` : '—'}</div></div>
+            <div className="met"><div className="met-l">Fair (Mid)</div><div className="met-v b">${s.fmv.mid.toFixed(2)}</div></div>
+            <div className="met"><div className="met-l">High</div><div className="met-v">{s.fmv.high != null ? `$${s.fmv.high.toFixed(2)}` : '—'}</div></div>
+          </div>
+          {s.fmvPct != null && (
+            <div className="mhint" style={{ margin: '8px 0 0' }}>
+              Price is {Math.abs(s.fmvPct)}% {s.fmvPct <= 0 ? 'under' : 'over'} fair value.
+              {s.type === 'csp' && s.strike != null && s.fmv.low != null && s.strike > s.fmv.low
+                ? ` The suggested $${s.strike} strike is above the buy-below price — if assigned, you'd own it above your evaluator's entry price.` : ''}
+            </div>
+          )}
+        </div>
+      )}
+
       {(s.type === 'leaps' || s.type === 'leaps_wait') && s.weekly && (
         // Part 2D: the weekly numbers behind the card, so it can be checked
         // against TradingView's weekly chart.

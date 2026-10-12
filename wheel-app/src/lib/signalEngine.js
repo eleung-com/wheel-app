@@ -9,6 +9,21 @@
 import {
   rsiWilder, stochastic, turningUpFrom, rollingOverFrom, rsiInBand,
 } from './oscillators.js';
+import { fmvOf, fmvStale, vsMidPct } from './fairValue.js';
+
+// Part 3E: fair value on trade cards. Shared by CSP and LEAPS cards.
+function fmvFields(row, price, nowMs) {
+  const fmv = row ? fmvOf(row) : null;
+  if (!fmv) return { fmv: null, fmvPct: null, fmvStale: false };
+  const today = new Date(nowMs).toISOString().slice(0, 10);
+  return { fmv, fmvPct: vsMidPct(price, fmv), fmvStale: fmvStale(fmv, today) };
+}
+
+/** Warning pill: the put strike sits above the evaluator's buy-below price (FMV Low). */
+export function strikeOverLowPill(strike, fmv) {
+  if (strike == null || !fmv || fmv.low == null || !(strike > fmv.low)) return null;
+  return { l: `Strike $${strike} > buy-below $${fmv.low}`, ok: false, warn: true };
+}
 
 // The Dive-In select value in Notion that promotes a watchlist row into the
 // signal engine. Rows reading anything else are never scanned for entries.
@@ -436,6 +451,9 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       ...(earnPill ? [earnPill] : []),
       ...scorePills(sc, scores, now),
     ];
+    const fv = fmvFields(w, q.price, now);
+    const overLow = strikeOverLowPill(strike, fv.fmv);
+    if (overLow) chks.push(overLow);
 
     const suggParts = [];
     if (dteT != null && strike != null) suggParts.push(`Sell ${dteT}d $${strike} put`);
@@ -458,6 +476,7 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       dropPct: q.dropPct, weekHigh: q.weekHigh, atrDrop: q.atrDrop,
       rsi: q.rsi, rsiWeekly: q.rsiWeekly, stochK: q.stochK, stochD: q.stochD, chks,
       earnWarn: earnNote,
+      ...fv,
       waitReason: blockedBy,
       score: sc?.score ?? null, verdict: sc?.verdict ?? null, scoreType: sc?.scoreType ?? null,
       scoreAt: sc?.runAt ?? null, unscored: !!scores && (!sc || sc.score == null || sc.verdict === 'No score'),
@@ -521,6 +540,7 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
       delta: contract?.delta ?? null, mid: contract?.premium ?? null, bid: contract?.bid ?? null, ask: contract?.ask ?? null, cost,
       weekly: w, chks,
       ...(index ? {} : notionOf(ticker)),
+      ...(index ? { fmv: null, fmvPct: null, fmvStale: false } : fmvFields(byTicker.get(ticker), q?.price ?? w.price, now)),
       waitReason: noneListed ? `No ${Math.round(win.dteMin / 30.44)}–${Math.round(win.dteMax / 30.44)} mo options listed` : null,
       score: index ? null : sc?.score ?? null, verdict: index ? null : sc?.verdict ?? null,
       scoreType: index ? null : sc?.scoreType ?? null, scoreAt: index ? null : sc?.runAt ?? null,
