@@ -24,7 +24,10 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : n
 export function fmvOf(row) {
   const mid = num(row && row.fmvMid);
   if (!mid) return null;
-  return { low: num(row.fmvLow), mid, high: num(row.fmvHigh), date: (row.fmvDate || '').slice(0, 10) || null };
+  // High = the bigger of the DCF bull case and Fair (El, 10-12): the bull DCF
+  // can land under the blend when analyst targets pull Fair up.
+  const high = num(row.fmvHigh);
+  return { low: num(row.fmvLow), mid, high: high != null ? Math.max(high, mid) : null, date: (row.fmvDate || '').slice(0, 10) || null };
 }
 
 /** Whole days between two YYYY-MM-DD dates. */
