@@ -216,15 +216,55 @@ export function formatDateDisplay(dateStr) {
 
 // Deduplicate an array by a key function, keeping the last occurrence of each key.
 // "Last" wins so that if GAS appended a corrected copy, the newest row is kept.
-function dedupeBy(arr, keyFn) {
-  const map = new Map();
-  arr.forEach(item => map.set(keyFn(item), item));
-  return [...map.values()];
+// ── Part 5F: ID safety ───────────────────────────────────────────────────────
+// Every save rewrites the whole sheet from what the app has loaded, so a row
+// the app drops on read is deleted from the sheet on the next save. Rows used
+// to be dropped two ways: a blank id became Date.now() (so several blank rows
+// shared one id) and duplicates were then collapsed into one. Now:
+//   • blank / unreadable id → a stable stand-in id, kept, reported
+//   • repeated id, different content → second row gets a stand-in id, kept, reported
+//   • repeated id, identical content → a true copy, dropped (no info lost), reported
+// Stand-in ids are FIXED_ID_BASE + row index: below every real id (real ids are
+// Date.now() ≈ 1.7e12) and the same on every load while row order is unchanged,
+// so an edit started before a re-pull still finds its row. The next save writes
+// them to the sheet, which makes them permanent.
+export const FIXED_ID_BASE = 1e12;
+
+export function assignSafeIds(rows) {
+  const blank = [], dup = [], copies = [];
+  const taken = new Set(rows.map(r => Number(r && r.id)).filter(n => n > 0));
+  const seen  = new Map(); // id → JSON of the first row with it
+  const out = [];
+  rows.forEach((r, i) => {
+    const id = Number(r.id);
+    if (id > 0 && !seen.has(id)) { seen.set(id, JSON.stringify(r)); out.push(r); return; }
+    if (id > 0 && seen.get(id) === JSON.stringify(r)) { copies.push(r.ticker); return; }
+    (id > 0 ? dup : blank).push(r.ticker);
+    let n = FIXED_ID_BASE + i;
+    while (taken.has(n)) n++;
+    taken.add(n);
+    seen.set(n, null);
+    out.push({ ...r, id: n });
+  });
+  return { rows: out, blank, dup, copies };
+}
+
+/** Plain-English warning for the banner, or null when every row was fine. */
+export function idWarning(rawPositions, rawClosed) {
+  const a = assignSafeIds((rawPositions || []).filter(p => p && p.ticker));
+  const b = assignSafeIds(rawClosed || []);
+  const blank = [...a.blank, ...b.blank], dup = [...a.dup, ...b.dup], copies = [...a.copies, ...b.copies];
+  const parts = [];
+  if (blank.length)  parts.push(`${blank.length} row${blank.length > 1 ? 's' : ''} had no ID (${blank.join(', ')})`);
+  if (dup.length)    parts.push(`${dup.length} row${dup.length > 1 ? 's' : ''} shared an ID with another row (${dup.join(', ')})`);
+  if (copies.length) parts.push(`${copies.length} exact duplicate row${copies.length > 1 ? 's were' : ' was'} hidden (${copies.join(', ')})`);
+  if (!parts.length) return null;
+  return `Sheet check: ${parts.join('; ')}. All kept — new IDs are written on your next save.`;
 }
 
 export function parseClosedTrades(raw) {
   if (!Array.isArray(raw)) return [];
-  const mapped = raw.map(t => ({
+  const mapped = assignSafeIds(raw).rows.map(t => ({
     id:           Number(t.id)          || 0,
     ticker:       String(t.ticker       || ''),
     posType:      String(t.posType      || ''),
@@ -244,7 +284,7 @@ export function parseClosedTrades(raw) {
     costBasis:    t.costBasis  != null && t.costBasis  !== '' ? Number(t.costBasis)  : undefined,
     rolledToId:   t.rolledToId != null && t.rolledToId !== '' ? Number(t.rolledToId) : undefined,
   }));
-  return dedupeBy(mapped, t => t.id);
+  return mapped;
 }
 
 // Rows that record the *closing* of a position rather than an open one.
@@ -281,9 +321,9 @@ export function isPriceableOption(p) {
 export const ACCOUNTS = ['Esther', 'Fam'];
 
 export function parsePositions(raw) {
-  const mapped = raw.filter(p => p.ticker).map(p => {
+  const mapped = assignSafeIds(raw.filter(p => p && p.ticker)).rows.map(p => {
     const base = {
-      id:          Number(p.id)     || Date.now(),
+      id:          Number(p.id),
       ticker:      String(p.ticker),
       type:        String(p.type   || 'shares'),
       qty:         Number(p.qty)   || 0,
@@ -321,5 +361,5 @@ export function parsePositions(raw) {
     }
     return base;
   });
-  return dedupeBy(mapped, p => p.id);
+  return mapped;
 }

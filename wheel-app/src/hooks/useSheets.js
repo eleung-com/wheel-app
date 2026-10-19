@@ -1,12 +1,22 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { getSheetUrl, getSecret, parseCriteria, parsePositions, parseClosedTrades } from '../lib/utils';
+import { getSheetUrl, getSecret, parseCriteria, parsePositions, parseClosedTrades, idWarning } from '../lib/utils';
 
 export function useSheets(showToast) {
   const { state, dispatch } = useAppContext();
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; });
   const [syncStatus, setSyncStatus] = useState({ state: 'idle', message: '⬡ synced' });
+
+  // ── Part 5A: load guard ──────────────────────────────────────────────────
+  // Every save rewrites the WHOLE sheet from what the app holds. If the sheet
+  // never loaded, the app holds nothing — so one save would wipe every trade.
+  // Saving stays off until one read has come back complete. A later failed
+  // pull doesn't turn it off: the list already loaded is still good.
+  const loadedRef = useRef(false);
+  const [canSave, setCanSave] = useState(false);
+  // Part 5F: a plain-English note about rows with missing / repeated ids.
+  const [idNote, setIdNote] = useState(null);
 
   const icons = { synced: '⬡', syncing: '↻', error: '⚠', idle: '⬡' };
 
@@ -24,6 +34,13 @@ export function useSheets(showToast) {
       let data;
       try { data = JSON.parse(text); } catch (_) { throw new Error(`Non-JSON response: ${text.slice(0, 120)}`); }
       if (data.error) throw new Error(data.error);
+      // 5A: a reply without both lists is not a complete load.
+      if (!Array.isArray(data.positions) || !Array.isArray(data.closedTrades)) {
+        throw new Error('Sheet reply was incomplete');
+      }
+      loadedRef.current = true;
+      setCanSave(true);
+      setIdNote(idWarning(data.positions, data.closedTrades));
       setSync('synced', 'synced');
       return data;
     } catch (e) {
@@ -35,6 +52,12 @@ export function useSheets(showToast) {
 
   // Write via POST with Content-Type: text/plain — avoids CORS preflight and GET URL length limits
   const sheetWriteViaGet = useCallback(async (overrideState) => {
+    // 5A backstop — callers check canSave first; this catches any that don't.
+    if (!loadedRef.current) {
+      setSync('error', 'saving off');
+      showToast('⚠ Not saved — the sheet hasn’t loaded. Tap Retry at the top.', 'err');
+      return false;
+    }
     const s = overrideState || stateRef.current;
     setSync('syncing', 'saving…');
     try {
@@ -98,9 +121,13 @@ export function useSheets(showToast) {
       if (resp && resp.error) throw new Error(resp.error);
       setSync('synced', 'saved ✓');
       showToast('Saved to Google Sheets', 'ok');
+      // Stand-in ids (5F) are in the sheet now.
+      setIdNote(null);
+      return true;
     } catch (e) {
       setSync('error', 'save failed');
       showToast('⚠ Save failed — ' + e.message, 'err');
+      return false;
     }
   }, [showToast]);
 
@@ -111,9 +138,14 @@ export function useSheets(showToast) {
 
     // data.watchlist is deliberately ignored — Notion owns the watchlist.
 
-    if (Array.isArray(data.positions)) {
-      dispatch({ type: 'SET_POSITIONS', payload: parsePositions(data.positions) });
+    // 5A: an empty Positions tab when the app already holds trades is far more
+    // likely a bad read than a real wipe. Keep what's on screen and say so.
+    const parsed = parsePositions(data.positions);
+    if (!parsed.length && stateRef.current.positions.length) {
+      showToast('⚠ Sheet came back empty — kept your current trades. Check the sheet.', 'err');
+      return;
     }
+    dispatch({ type: 'SET_POSITIONS', payload: parsed });
 
     if (Array.isArray(data.closedTrades)) {
       dispatch({ type: 'SET_CLOSED_TRADES', payload: parseClosedTrades(data.closedTrades) });
@@ -126,5 +158,5 @@ export function useSheets(showToast) {
     showToast('Synced from Google Sheets ✓', 'ok');
   }, [sheetRead, dispatch, showToast]);
 
-  return { syncStatus, sheetRead, sheetWriteViaGet, syncFromSheet };
+  return { syncStatus, sheetRead, sheetWriteViaGet, syncFromSheet, canSave, idNote, clearIdNote: () => setIdNote(null) };
 }
