@@ -83,7 +83,16 @@ export default function App() {
 
   const { toast, showToast }          = useToast();
   const { isOpen: marketOpen, marketText } = useMarketStatus();
-  const { syncStatus, sheetRead, sheetWriteViaGet, syncFromSheet } = useSheets(showToast);
+  const { syncStatus, sheetRead, sheetWriteViaGet, syncFromSheet, canSave, idNote, clearIdNote } = useSheets(showToast);
+
+  // Part 5A: every save rewrites the whole sheet, so nothing may be saved
+  // until the sheet has loaded. Checked BEFORE any state change, so the form
+  // stays open with what you typed and nothing on screen pretends it saved.
+  function guardSave() {
+    if (canSave) return true;
+    showToast('⚠ Not saved — the sheet hasn’t loaded. Tap Retry at the top, then save again.', 'err');
+    return false;
+  }
   const { notionSyncWatchlist, notionUpdateWatch }                 = useNotion(showToast);
   const { isScreening, runScreener }                               = useScreener(showToast);
   const runScreenerRef = useRef(runScreener);
@@ -295,6 +304,7 @@ export default function App() {
 
   // ── Position handlers ────────────────────────────────────────────────────
   function handleSavePos(pos) {
+    if (!guardSave()) return;
     let nextPositions;
     if (editPositionId) {
       dispatch({ type: 'UPDATE_POSITION', payload: pos });
@@ -311,6 +321,7 @@ export default function App() {
   }
 
   function handleDeletePos(id) {
+    if (!guardSave()) return;
     dispatch({ type: 'DELETE_POSITION', payload: id });
     setOpenModal(null);
     setEditPositionId(null);
@@ -333,6 +344,7 @@ export default function App() {
 
   // Confirms a close action — logs it, deletes position, adds new one if rolled
   function handleClosePosition(posId, details) {
+    if (!guardSave()) return;
     const pos = state.positions.find(p => p.id === posId);
     if (!pos) return;
 
@@ -394,6 +406,7 @@ export default function App() {
 
   // ── Criteria handler ─────────────────────────────────────────────────────
   function handleSaveCriteria(newCrit) {
+    if (!guardSave()) return;
     dispatch({ type: 'SET_CRITERIA', payload: newCrit });
     const nextState = { ...state, criteria: newCrit };
     sheetWriteViaGet(nextState);
@@ -480,6 +493,20 @@ export default function App() {
         onPull={syncFromSheet}
         onHelp={() => setOpenModal('help')}
       />
+
+      {/* Part 5A / 5F: sheet safety banners */}
+      {!isBooting && !canSave && (
+        <div className="sheet-banner err" role="alert">
+          <span>⚠ Google Sheet didn’t load — saving is off so your trades can’t be overwritten.</span>
+          <button onClick={syncFromSheet}>Retry</button>
+        </div>
+      )}
+      {canSave && idNote && (
+        <div className="sheet-banner warn" role="status">
+          <span>{idNote}</span>
+          <button onClick={clearIdNote} aria-label="Dismiss">✕</button>
+        </div>
+      )}
 
       <TabNav
         activePage={activePage}

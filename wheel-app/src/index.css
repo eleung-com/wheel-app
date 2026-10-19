@@ -700,3 +700,9 @@ details>.wl-sech{cursor:pointer}
 .sx-strip.leaps_review{background:var(--pud);color:var(--pu)}
 .sx-strip.leaps_review.urgent{background:var(--pu);color:#fff}
 .pos-table.leaps{min-width:0} /* Part 4A: 4 columns fit a phone */
+
+/* Part 5A / 5F: sheet safety banners */
+.sheet-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 14px 0;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.4}
+.sheet-banner.err{background:var(--rd);color:var(--r);border:1px solid var(--r)}
+.sheet-banner.warn{background:var(--ad);color:var(--a);border:1px solid var(--a)}
+.sheet-banner button{flex-shrink:0;min-height:36px;padding:6px 14px;border-radius:18px;border:1px solid currentColor;background:transparent;color:inherit;font-size:12px;cursor:pointer}
