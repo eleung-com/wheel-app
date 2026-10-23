@@ -2,14 +2,20 @@ import React, { useState, useMemo } from 'react';
 import StatsPane        from './StatsPane';
 import NewsPane         from './NewsPane';
 import EarningsCalendar from './EarningsCalendar';
+import MarketStrip      from './MarketStrip';
+import MoversPane       from './MoversPane';
 import { useNews } from '../../../hooks/useNews';
+import { useMarketStrip } from '../../../hooks/useMarketStrip';
+import { pickMovers } from '../../../lib/homeFeed';
+import { NO_EARNINGS } from '../../../lib/signalEngine';
 
 const PRIORITY = '🔥 Priority';
 
+// Part 6A (approved 10-23): one scroll, news first — market strip → today's
+// movers → earnings → news → stats. The old Stats / News sub-tabs are gone.
 export default function HomePage({
-  positions, closedTrades, criteria, signals, watchlist, showToast, onShowSignal,
+  positions, closedTrades, criteria, signals, watchlist, showToast, onShowSignal, lastRefresh,
 }) {
-  const [tab, setTab]         = useState('stats');
   const [account, setAccount] = useState('all');
 
   // The news feed follows Dive-In, not the whole watchlist — Priority is the
@@ -20,6 +26,7 @@ export default function HomePage({
   );
 
   const { news, loading, refreshNews } = useNews(priorityTickers, showToast);
+  const strip = useMarketStrip(lastRefresh);
 
   // Any ticker with a still-open row (opening rows get a linkedId once closed).
   const heldTickers = useMemo(() => {
@@ -28,48 +35,39 @@ export default function HomePage({
     return s;
   }, [positions]);
 
+  const movers = useMemo(() => pickMovers(watchlist, heldTickers), [watchlist, heldTickers]);
+  const pricedCount = useMemo(
+    () => watchlist.filter(w => !NO_EARNINGS.has(w.ticker) && typeof w.liveData?.chg1d === 'number').length,
+    [watchlist],
+  );
+
   return (
     <>
-      <div className="subtabs" role="tablist" aria-label="Home sections">
-        <button
-          type="button" role="tab" aria-selected={tab === 'stats'}
-          className={tab === 'stats' ? 'on' : ''}
-          onClick={() => setTab('stats')}
-        >
-          Stats
-        </button>
-        <button
-          type="button" role="tab" aria-selected={tab === 'news'}
-          className={tab === 'news' ? 'on' : ''}
-          onClick={() => setTab('news')}
-        >
-          News
-        </button>
-      </div>
+      <MarketStrip rows={strip.rows} failed={strip.failed} />
 
-      <div className="subpane">
-        {tab === 'stats' ? (
-          <StatsPane
-            positions={positions}
-            closedTrades={closedTrades}
-            criteria={criteria}
-            signals={signals}
-            account={account}
-            onAccount={setAccount}
-            onShowSignal={onShowSignal}
-          />
-        ) : (
-          <>
-            <EarningsCalendar watchlist={watchlist} heldTickers={heldTickers} />
-            <NewsPane
-              news={news}
-              loading={loading}
-              onRefresh={refreshNews}
-              priorityTickers={priorityTickers}
-            />
-          </>
-        )}
+      <MoversPane movers={movers} quietCount={pricedCount - movers.length} priced={pricedCount > 0} />
+
+      <EarningsCalendar watchlist={watchlist} heldTickers={heldTickers} />
+
+      <NewsPane
+        news={news}
+        loading={loading}
+        onRefresh={refreshNews}
+        priorityTickers={priorityTickers}
+      />
+
+      <div className="news-head home-stats-head">
+        <div className="slabel">Your stats</div>
       </div>
+      <StatsPane
+        positions={positions}
+        closedTrades={closedTrades}
+        criteria={criteria}
+        signals={signals}
+        account={account}
+        onAccount={setAccount}
+        onShowSignal={onShowSignal}
+      />
     </>
   );
 }

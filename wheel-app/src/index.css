@@ -706,3 +706,25 @@ details>.wl-sech{cursor:pointer}
 .sheet-banner.err{background:var(--rd);color:var(--r);border:1px solid var(--r)}
 .sheet-banner.warn{background:var(--ad);color:var(--a);border:1px solid var(--a)}
 .sheet-banner button{flex-shrink:0;min-height:36px;padding:6px 14px;border-radius:18px;border:1px solid currentColor;background:transparent;color:inherit;font-size:12px;cursor:pointer}
+
+/* Part 6A: Home — market strip + today's movers */
+.mstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:2px 0 4px}
+.mstrip-i{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:7px 8px;min-width:0}
+.mstrip-l{font-size:9px;letter-spacing:1px;font-weight:700;color:var(--mu)}
+.mstrip-p{font-size:13px;font-weight:800;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mstrip-c{font-size:11px;font-weight:700;color:var(--mu2)}
+.mstrip-c.g{color:var(--g)}.mstrip-c.r{color:var(--r)}
+.movers{margin-bottom:6px}
+.mover{display:block;width:100%;text-align:left;font:inherit;color:inherit;background:var(--s1);border:1px solid var(--b1);border-left:4px solid var(--mu);border-radius:var(--rr);padding:10px 12px;margin-bottom:7px;cursor:pointer}
+.mover.up{border-left-color:var(--g)}.mover.dn{border-left-color:var(--r)}
+.mover-row{display:flex;align-items:baseline;gap:8px}
+.mover-tk{font-weight:800;font-size:15px}
+.mover-px{font-size:12px;color:var(--mu2)}
+.mover-hold{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:9px;background:var(--acd);color:var(--ac)}
+.mover-pct{margin-left:auto;font-weight:800;font-size:15px}
+.mover-pct.g{color:var(--g)}.mover-pct.r{color:var(--r)}
+.mover-why{font-size:13px;line-height:1.4;margin-top:5px}
+.mover-why.none{color:var(--mu);font-size:12px}
+.mover-link{display:inline-block;margin-top:7px;font-size:12px;font-weight:700;color:var(--ac);text-decoration:none}
+.movers-quiet{font-size:11px;color:var(--mu);text-align:center;padding:2px 0 4px}
+.home-stats-head{margin-top:22px}

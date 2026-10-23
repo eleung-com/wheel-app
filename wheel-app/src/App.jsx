@@ -525,6 +525,7 @@ export default function App() {
           watchlist={state.watchlist}
           showToast={showToast}
           onShowSignal={id => { setDetailSignalId(id); setOpenModal('signal-detail'); }}
+          lastRefresh={state.lastRefresh}
         />
       </div>
 
