@@ -29,15 +29,43 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Sheet: positions + criteria (Notion owns the watchlist; the Sheet owns
 // held lots and the screener's saved thresholds) ────────────────────────────
-export async function fetchSheetData(env) {
+// Scan-timeout fix (10-23): Apps Script is often slow on a cold start. The
+// read used to give up after 15 s and take the whole scan down with it
+// ("The operation was aborted due to timeout" three days running). Now: 30 s,
+// and one retry after a short pause for a timeout, a network error or a
+// 404/5xx (a 404 showed up once mid-redeploy). Wrong secret / bad JSON / a
+// script error are not retried — trying again won't change them.
+export const SHEET_READ_TIMEOUT_MS = 30000;
+export const SHEET_READ_TRIES = 2;
+const SHEET_RETRY_PAUSE_MS = 3000;
+
+/** Plain-English version of a fetch failure. */
+export function describeError(e) {
+  if (e && (e.name === 'TimeoutError' || /aborted due to timeout/i.test(e.message || ''))) return 'timed out';
+  return (e && e.message) || String(e);
+}
+
+export async function fetchSheetData(env, { timeoutMs = SHEET_READ_TIMEOUT_MS, tries = SHEET_READ_TRIES, pauseMs = SHEET_RETRY_PAUSE_MS } = {}) {
   if (!env.SHEET_URL) throw new Error('SHEET_URL secret is not set on the worker');
   const url = `${env.SHEET_URL}?secret=${encodeURIComponent(env.APP_SECRET || '')}&action=read`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  if (!r.ok) throw new Error(`sheet read HTTP ${r.status}`);
+  let r, last;
+  for (let i = 1; i <= tries; i++) {
+    try {
+      r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (r.ok) break;
+      last = `HTTP ${r.status}`;
+      if (r.status !== 404 && r.status < 500) break; // not worth retrying
+    } catch (e) {
+      last = describeError(e);
+      r = null;
+    }
+    if (i < tries) await sleep(pauseMs);
+  }
+  if (!r || !r.ok) throw new Error(`Sheet read failed after ${tries} tries (${last})`);
   const text = await r.text();
   let data;
-  try { data = JSON.parse(text); } catch { throw new Error(`sheet read: non-JSON response: ${text.slice(0, 120)}`); }
-  if (data.error) throw new Error(data.error);
+  try { data = JSON.parse(text); } catch { throw new Error(`Sheet read: non-JSON response: ${text.slice(0, 120)}`); }
+  if (data.error) throw new Error(`Sheet read: ${data.error}`);
   return {
     positions: Array.isArray(data.positions) ? parsePositions(data.positions) : [],
     criteria:  parseCriteria(data.criteria && typeof data.criteria === 'object' ? data.criteria : {}),
@@ -185,8 +213,11 @@ export async function runScan(env, now = new Date()) {
   const tx = workerTransport(env);
 
   try {
-    const watchlist = await readWatchlist(env);
-    const { positions, criteria } = await fetchSheetData(env);
+    // Each start-up read names itself, so a crash alert says which one failed.
+    let watchlist, positions, criteria;
+    try { watchlist = await readWatchlist(env); }
+    catch (e) { throw new Error(`Notion watchlist read failed (${describeError(e)})`); }
+    ({ positions, criteria } = await fetchSheetData(env));
 
     // Calendar-only, so it's worked out before (and independently of) the
     // market-data pass — a Yahoo/CBOE outage must not swallow it (Part 2C:
@@ -327,6 +358,6 @@ export async function runScan(env, now = new Date()) {
     return { sigs, counts };
   } catch (e) {
     console.error('[scan] run failed:', e?.message || e);
-    await selfAlertOnce(env, `Scan crashed: ${e?.message || e}`, now);
+    await selfAlertOnce(env, `Scan crashed: ${describeError(e)}`, now);
   }
 }
