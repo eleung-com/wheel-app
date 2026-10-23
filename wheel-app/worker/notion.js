@@ -9,8 +9,13 @@ export const NOTION_DB_ID = '35c400a3-854e-80ff-9b36-fd7ddaa3a850';
 
 export const UUID_RE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 
+// Scan-timeout fix (10-23): Notion calls had no time limit, so a stuck one
+// could hang a scan. 20 s matches what the app itself waits.
+export const NOTION_TIMEOUT_MS = 20000;
+
 export function notionFetch(env, path, init) {
   return fetch(NOTION_ORIGIN + path, {
+    signal: AbortSignal.timeout(NOTION_TIMEOUT_MS),
     ...init,
     headers: {
       Authorization: `Bearer ${env.NOTION_TOKEN}`,
