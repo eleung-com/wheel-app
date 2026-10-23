@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { SECTORS } from '../../../hooks/useNews';
 
 const RANK_LABEL = ['Lead', 'Second', 'Third'];
 
@@ -133,26 +132,6 @@ export default function NewsPane({ news, loading, onRefresh, priorityTickers }) 
         </>
       )}
 
-      <div className="news-head">
-        <div className="slabel">By industry · {SECTORS.length} sectors</div>
-        <span className="news-time">tap to expand</span>
-      </div>
-      {SECTORS.map(s => {
-        const items = news.sectors?.[s.etf] || [];
-        return (
-          <details className="nsector" key={s.etf}>
-            <summary>
-              <span className="netf">{s.etf}</span>
-              {s.name}
-              <span className="narrow">›</span>
-            </summary>
-            <div className="nsector-body">
-              {items.length === 0 && <div className="ntk-none">No recent stories</div>}
-              {items.map((item, i) => <Story key={item.id || i} item={item} />)}
-            </div>
-          </details>
-        );
-      })}
     </>
   );
 }
