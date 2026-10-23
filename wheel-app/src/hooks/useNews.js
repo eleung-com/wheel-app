@@ -2,32 +2,16 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { yahooBase } from '../lib/utils';
 
 /**
- * Market, sector and ticker news for the Home page.
+ * Market and ticker news for the Home page (sector news removed 10-23, El).
  *
  * Everything comes from Yahoo's search endpoint through the worker's /yf proxy.
  * That endpoint returns "stories that mention this symbol", not "stories about
  * this company" — a Domino's piece that name-checks Uber Eats comes back under
  * UBER. rankForTicker below pushes the on-topic ones up; it can't fully fix it.
  *
- * A run is 1 market + 11 sector + N ticker requests, so results are cached in
+ * A run is 1 market + N ticker requests, so results are cached in
  * localStorage for an hour and only re-fetched on demand.
  */
-
-// GICS sectors, each read through its SPDR sector ETF — Yahoo has no sector
-// news endpoint, and the ETF ticker is the closest proxy it does index.
-export const SECTORS = [
-  { etf: 'XLK',  name: 'Technology'             },
-  { etf: 'XLV',  name: 'Health Care'            },
-  { etf: 'XLF',  name: 'Financials'             },
-  { etf: 'XLY',  name: 'Consumer Discretionary' },
-  { etf: 'XLP',  name: 'Consumer Staples'       },
-  { etf: 'XLI',  name: 'Industrials'            },
-  { etf: 'XLE',  name: 'Energy'                 },
-  { etf: 'XLB',  name: 'Materials'              },
-  { etf: 'XLU',  name: 'Utilities'              },
-  { etf: 'XLRE', name: 'Real Estate'            },
-  { etf: 'XLC',  name: 'Communication Services' },
-];
 
 const MARKET_SYMBOL = '^GSPC';
 const CACHE_KEY     = 'wd_news_cache';
@@ -129,25 +113,22 @@ export function useNews(tickers, showToast) {
     const wanted = tickerKey ? tickerKey.split(',') : [];
     const tasks = [
       () => fetchNews(MARKET_SYMBOL, 6),
-      ...SECTORS.map(s => () => fetchNews(s.etf, 3)),
       ...wanted.map(t => () => fetchNews(t, 4)),
     ];
 
     try {
       const results = await pooled(tasks, CONCURRENCY);
       const market  = results[0] || [];
-      const sectors = {};
-      SECTORS.forEach((s, i) => { sectors[s.etf] = results[1 + i] || []; });
       const byTicker = {};
       wanted.forEach((t, i) => {
-        byTicker[t] = rankForTicker(results[1 + SECTORS.length + i] || [], t);
+        byTicker[t] = rankForTicker(results[1 + i] || [], t);
       });
 
-      if (!market.length && !Object.values(sectors).some(v => v.length)) {
+      if (!market.length && !Object.values(byTicker).some(v => v.length)) {
         throw new Error('Yahoo returned no stories');
       }
 
-      const next = { fetchedAt: Date.now(), tickerKey, market, sectors, tickers: byTicker };
+      const next = { fetchedAt: Date.now(), tickerKey, market, tickers: byTicker };
       refreshedThisSession = true;
       setNews(next);
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch { /* quota — fine */ }
