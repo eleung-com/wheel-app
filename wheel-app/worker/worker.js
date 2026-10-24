@@ -19,6 +19,7 @@ import { readWatchlist, readEval, updatePage, UUID_RE } from './notion.js';
 import { saveRun, listRuns, setDecision, getRun, redoClaude, setDiveInOverride, OVERRIDE_KEY } from './stockRuns.js';
 import { runScan } from './scan.js';
 import { runDaily, DAILY_CRON } from './daily.js';
+import { runMovers, MOVERS_CRON } from './movers.js';
 
 import { sendTelegram } from './telegram.js';
 
@@ -262,6 +263,8 @@ export default {
   // its own cron so it gets its own subrequest budget.
   async scheduled(event, env, ctx) {
     if (event && event.cron === DAILY_CRON) ctx.waitUntil(runDaily(env));
+    // Part 6: "why it moved" — own cron, own budget, can't break the scan.
+    else if (event && event.cron === MOVERS_CRON) ctx.waitUntil(runMovers(env));
     else ctx.waitUntil(runScan(env));
   },
 };

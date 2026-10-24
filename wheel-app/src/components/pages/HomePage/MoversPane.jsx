@@ -8,14 +8,14 @@ import { MOVER_PCT } from '../../../lib/homeFeed';
  */
 function Mover({ m }) {
   const [open, setOpen] = useState(false);
-  const up = m.chg > 0;
+  const up = (m.chg ?? 0) > 0;
   return (
     <button type="button" className={`mover ${up ? 'up' : 'dn'}${open ? ' open' : ''}`} onClick={() => setOpen(o => !o)} aria-expanded={open}>
       <div className="mover-row">
         <span className="mover-tk">{m.ticker}</span>
         {m.price != null && <span className="mover-px">${m.price.toFixed(2)}</span>}
         {m.held && <span className="mover-hold">Held</span>}
-        <span className={`mover-pct ${up ? 'g' : 'r'}`}>{up ? '▲' : '▼'} {Math.abs(m.chg).toFixed(1)}%</span>
+        {m.chg != null && <span className={`mover-pct ${up ? 'g' : 'r'}`}>{up ? '▲' : '▼'} {Math.abs(m.chg).toFixed(1)}%</span>}
       </div>
       <div className={`mover-why${m.note ? '' : ' none'}`}>
         {m.note || 'Reason not in yet. It appears here once Claude has looked up the news.'}
@@ -34,7 +34,7 @@ export default function MoversPane({ movers, quietCount, priced }) {
     <div className="movers">
       <div className="news-head">
         <div className="slabel">Today’s movers</div>
-        <span className="news-time">±{MOVER_PCT}% or more · watchlist</span>
+        <span className="news-time">±{MOVER_PCT}% or more today · watchlist</span>
       </div>
       {!priced ? (
         <div className="ecal-empty">Waiting for prices…</div>
