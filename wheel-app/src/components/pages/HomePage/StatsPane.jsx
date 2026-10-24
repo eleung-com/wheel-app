@@ -1,171 +1,111 @@
-import React from 'react';
+import React, { useState } from 'react';
 import HistoryPage from '../HistoryPage/HistoryPage';
-import { dte, formatDateDisplay } from '../../../lib/utils';
+import { formatDateDisplay } from '../../../lib/utils';
+import { bookStats } from '../../../lib/bookStats';
 
-const OPEN_TYPES = new Set(['short_put', 'short_call', 'put_spread']);
-const MONTHS = ['January','February','March','April','May','June',
-                'July','August','September','October','November','December'];
+// Part 6E (Home layout v2, approved 10-24): "your book" — a compact dark panel
+// so your own numbers stand apart from the market prices. Premium at risk was
+// dropped; Performance (charts + trade log) opens in place.
 
-function money(n) {
-  return '$' + Math.round(Math.abs(n)).toLocaleString();
-}
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const money = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
+const moneyK = (n) => (Math.abs(n) >= 10000 ? `$${(Math.abs(n) / 1000).toFixed(1)}k` : money(n));
 
 function greeting(d) {
   const h = d.getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 
-/**
- * Open contracts only — an option row with a linkedId has already been closed,
- * and the close row itself is a separate entry.
- */
-function openOptions(positions, account) {
-  return positions.filter(p =>
-    OPEN_TYPES.has(p.type)
-    && !p.linkedId
-    && (account === 'all' || (p.account || 'Esther') === account)
-  );
+/** Roll / close signals — the positions that need a decision. */
+export function attentionOf(signals) {
+  return (signals || []).filter(s => s.type === 'roll' || s.type === 'close');
 }
 
 export default function StatsPane({
-  positions, closedTrades, criteria, signals, account, onAccount, onShowSignal,
+  positions, closedTrades, criteria, signals, account, onAccount,
 }) {
-  const now  = new Date();
-  const opts = openOptions(positions, account);
-
-  // Premium collected on everything still open.
-  const premAtRisk = opts.reduce((s, p) => s + (p.prem || 0) * (p.qty || 1) * 100, 0);
-  const contracts  = opts.reduce((s, p) => s + (p.qty || 1), 0);
-
-  // Deployed = cash securing the short puts. Shares are excluded: a covered
-  // call needs no fresh capital, and this figure tracks options collateral, not
-  // stock already held. Matches the Positions page's allocation bar.
-  // Short puts secure the full strike; put credit spreads only tie up the width.
-  const secured = opts.reduce((s, p) => {
-    if (p.type === 'short_put') return s + (p.strike || 0) * (p.qty || 1) * 100;
-    if (p.type === 'put_spread' && p.strike != null && p.longStrike != null) {
-      return s + (p.strike - p.longStrike) * (p.qty || 1) * 100;
-    }
-    return s;
-  }, 0);
-  // Part 4B: money in LEAPS = premium paid on open long calls. Counted in
-  // "Capital deployed" and shown on its own line under it.
-  const inLeaps = positions
-    .filter(p => p.type === 'long_call' && !p.linkedId && (account === 'all' || (p.account || 'Esther') === account))
-    .reduce((s, p) => s + (p.prem || 0) * (p.qty || 1) * 100, 0);
-  const capital = account === 'all'
-    ? (criteria.capitalEsther || 0) + (criteria.capitalFam || 0)
-    : account === 'Esther' ? (criteria.capitalEsther || 0) : (criteria.capitalFam || 0);
-  const deployedPct = capital > 0
-    ? Math.round(((secured + inLeaps) / capital) * 100)
-    : null;
-
-  // Realized this calendar month.
-  const monthTrades = (closedTrades || []).filter(t => {
-    if (!t.closeDate) return false;
-    if (account !== 'all' && (t.account || 'Esther') !== account) return false;
-    const d = new Date(t.closeDate);
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  });
-  const realized = monthTrades.reduce((s, t) => s + (t.pnl || 0), 0);
-
-  // Soonest expiry still open.
-  const dated = opts
-    .map(p => ({ ...p, d: dte(p.expiry) }))
-    .filter(p => p.d !== null && p.d >= 0)
-    .sort((a, b) => a.d - b.d);
-  const next = dated[0];
-
-  // Roll and close signals are the ones with a decision attached to them.
-  const attention = (signals || []).filter(s => s.type === 'roll' || s.type === 'close');
+  const [perfOpen, setPerfOpen] = useState(false);
+  const now = new Date();
+  const s = bookStats({ positions, closedTrades, criteria, account, now });
+  const attention = attentionOf(signals);
+  const next = s.next;
 
   return (
-    <>
-      <div>
-        <h2 className="greet">{greeting(now)}, Esther</h2>
-        <p className="greet-sub">
-          {now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
-          {attention.length > 0
-            ? ` · ${attention.length} ${attention.length === 1 ? 'position needs' : 'positions need'} a look`
-            : ' · nothing needs a decision'}
-        </p>
+    <section className="book" aria-label="Your book">
+      <div className="book-top">
+        <div className="book-hi">
+          <b>{greeting(now)}, Esther</b>
+          <span>
+            {now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+            {attention.length > 0
+              ? ` · ${attention.length} ${attention.length === 1 ? 'position needs' : 'positions need'} a look`
+              : ' · nothing needs a decision'}
+          </span>
+        </div>
+        <div className="book-acct" role="group" aria-label="Account">
+          {[['all', 'All'], ['Esther', 'Esther'], ['Fam', 'Fam']].map(([id, label]) => (
+            <button key={id} type="button" className={account === id ? 'on' : ''} aria-pressed={account === id} onClick={() => onAccount(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="acctseg" role="group" aria-label="Account">
-        {[['all', 'All accounts'], ['Esther', 'Esther'], ['Fam', 'Fam']].map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={account === id ? 'on' : ''}
-            aria-pressed={account === id}
-            onClick={() => onAccount(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="statgrid">
-        <div className="stat">
-          <div className="stat-l">Premium at risk</div>
-          <div className="stat-v">{money(premAtRisk)}</div>
-          <div className="stat-s">{contracts} open {contracts === 1 ? 'contract' : 'contracts'}</div>
+      <div className="book-stats">
+        <div className="bs">
+          <div className="bs-l">Capital deployed</div>
+          <div className="bs-v">{s.deployedPct === null ? '—' : `${s.deployedPct}%`}</div>
+          {s.deployedPct !== null && <div className="bs-meter"><i style={{ width: `${Math.min(s.deployedPct, 100)}%` }} /></div>}
+          <div className="bs-s">{s.deployedPct === null ? 'Set capital in Settings' : s.inLeaps > 0 ? `incl. ${moneyK(s.inLeaps)} in LEAPS` : 'cash-secured puts'}</div>
         </div>
-
-        <div className="stat">
-          <div className="stat-l">Capital deployed</div>
-          <div className="stat-v">{deployedPct === null ? '—' : `${deployedPct}%`}</div>
-          {deployedPct === null
-            ? <div className="stat-s">Set capital in Settings</div>
-            : <div className="statmeter"><i style={{ width: `${Math.min(deployedPct, 100)}%` }} /></div>}
-          {inLeaps > 0 && <div className="stat-s">incl. {money(inLeaps)} in LEAPS</div>}
+        <div className="bs">
+          <div className="bs-l">Realized · {MONTHS[now.getMonth()]}</div>
+          <div className={`bs-v${s.realized > 0 ? ' pos' : s.realized < 0 ? ' neg' : ''}`}>{s.realized < 0 ? '−' : s.realized > 0 ? '+' : ''}{money(s.realized)}</div>
+          <div className="bs-s">{s.monthTradeCount} closed {s.monthTradeCount === 1 ? 'trade' : 'trades'}</div>
         </div>
-
-        <div className="stat">
-          <div className="stat-l">Realized · {MONTHS[now.getMonth()].slice(0, 3)}</div>
-          <div className={`stat-v${realized > 0 ? ' g' : realized < 0 ? ' r' : ''}`}>
-            {realized > 0 ? '+' : realized < 0 ? '−' : ''}{money(realized)}
-          </div>
-          <div className="stat-s">{monthTrades.length} closed {monthTrades.length === 1 ? 'trade' : 'trades'}</div>
-        </div>
-
-        <div className="stat">
-          <div className="stat-l">Next expiry</div>
-          <div className="stat-v">{next ? `${next.d}d` : '—'}</div>
-          <div className="stat-s">
+        <div className="bs">
+          <div className="bs-l">Next expiry</div>
+          <div className="bs-v">{next ? `${next.d}d` : '—'}</div>
+          <div className="bs-s">
             {next
               ? `${next.ticker} ${next.type === 'put_spread' ? `$${next.strike}/$${next.longStrike} PCS` : `$${next.strike}${next.type === 'short_put' ? 'P' : 'C'}`} · ${formatDateDisplay(next.expiry)}`
               : 'No open options'}
           </div>
         </div>
+        <div className="bs">
+          <div className="bs-l">Win rate</div>
+          <div className="bs-v">{s.winRate === null ? '—' : `${s.winRate}%`}</div>
+          <div className="bs-s">all time · {s.closedCount} closed</div>
+        </div>
       </div>
 
-      {attention.length > 0 && (
-        <>
-          <div className="slabel">Needs attention</div>
-          <div className="attn">
-            {attention.map(s => (
-              <button
-                type="button"
-                className="attn-row"
-                key={s.id}
-                onClick={() => onShowSignal(s.id)}
-              >
-                <i className={`adot${s.type === 'roll' ? ' hot' : ''}`} />
-                <span className="attn-txt">
-                  <b>{s.ticker}{s.strike ? ` $${s.strike}` : ''}</b> — {s.suggestion}
-                </span>
-                <span className="attn-chev">›</span>
-              </button>
-            ))}
-          </div>
-        </>
+      <button type="button" className="book-more" aria-expanded={perfOpen} onClick={() => setPerfOpen(o => !o)}>
+        {perfOpen ? 'Hide performance details ▴' : 'Performance details ▾'}
+      </button>
+      {perfOpen && (
+        <div className="book-perf">
+          <HistoryPage positions={positions} account={account} />
+        </div>
       )}
+    </section>
+  );
+}
 
-      <div className="slabel">Performance</div>
-      <HistoryPage positions={positions} account={account} />
-    </>
+/** Part 6E: "Needs attention" as its own small card (right column on desktop). */
+export function AttentionCard({ signals, onShowSignal }) {
+  const attention = attentionOf(signals);
+  return (
+    <section className="hcard h-attn">
+      <div className="hcard-h"><h3>Needs attention</h3><small>{attention.length ? 'tap for details' : ''}</small></div>
+      {attention.length === 0
+        ? <div className="hcard-empty">Nothing needs a decision right now.</div>
+        : attention.map(s => (
+          <button type="button" className="attn-row" key={s.id} onClick={() => onShowSignal(s.id)}>
+            <i className={`adot${s.type === 'roll' ? ' hot' : ''}`} />
+            <span className="attn-txt"><b>{s.ticker}{s.strike ? ` $${s.strike}` : ''}</b> — {s.suggestion}</span>
+            <span className="attn-chev">›</span>
+          </button>
+        ))}
+    </section>
   );
 }

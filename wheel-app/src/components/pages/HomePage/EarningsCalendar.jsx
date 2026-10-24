@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 /**
  * Upcoming earnings for the watchlist, at the top of the News tab.
@@ -11,6 +11,10 @@ import React from 'react';
  */
 
 const WINDOW_DAYS = 30;
+// Part 6E: desktop shows the first few dates, then "Show more". On a phone
+// the dates scroll sideways instead (CSS), so all of them render.
+const FIRST = 4;
+const SOON_DAYS = 7; // this week → amber
 
 // Parse only the YYYY-MM-DD prefix by hand — building a Date from a bare
 // date string would shift it across the timezone boundary and can land it in
@@ -21,6 +25,7 @@ function isoDate(s) {
 }
 
 export default function EarningsCalendar({ watchlist, heldTickers }) {
+  const [more, setMore] = useState(false);
   const now     = new Date();
   const today   = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // local midnight
   const horizon = new Date(today);
@@ -43,43 +48,47 @@ export default function EarningsCalendar({ watchlist, heldTickers }) {
   const total = days.reduce((s, g) => s + g.tickers.length, 0);
 
   return (
-    <div className="ecal">
-      <div className="news-head">
-        <div className="slabel">Earnings · Next 30 days</div>
-        {total > 0 && (
-          <span className="news-time">{total} {total === 1 ? 'report' : 'reports'}</span>
-        )}
+    <section className="hcard h-earn">
+      <div className="hcard-h">
+        <h3>Earnings</h3>
+        <small>{total > 0 ? `${total} in the next ${WINDOW_DAYS} days` : ''}</small>
       </div>
 
       {days.length === 0 ? (
-        <div className="ecal-empty">No earnings in the next 30 days.</div>
-      ) : days.map(({ date, tickers }) => {
-        // Held tickers lead the day; the rest fall in alphabetically.
-        const ordered = tickers.slice().sort((a, b) =>
-          (heldTickers.has(b) - heldTickers.has(a)) || a.localeCompare(b));
-
-        return (
-          <div className="ecal-row" key={date.getTime()}>
-            <div className="ecal-date">
-              <div className="ecal-dow">
-                {date.toLocaleString(undefined, { weekday: 'short' }).toUpperCase()}{' '}
-                {date.toLocaleString(undefined, { month: 'short' }).toUpperCase()}
+        <div className="hcard-empty">No earnings in the next {WINDOW_DAYS} days.</div>
+      ) : (
+        <div className={`ecal-list${more ? ' all' : ''}`}>
+          {days.map(({ date, tickers }, i) => {
+            // Held tickers lead the day; the rest fall in alphabetically.
+            const ordered = tickers.slice().sort((a, b) =>
+              (heldTickers.has(b) - heldTickers.has(a)) || a.localeCompare(b));
+            const soon = (date - today) / 86400000 <= SOON_DAYS;
+            return (
+              <div className={`ecal-row${i >= FIRST ? ' ecal-x' : ''}`} key={date.getTime()}>
+                <div className="ecal-date">
+                  <b>{date.getMonth() !== today.getMonth() ? `${date.toLocaleString(undefined, { month: 'short' })} ` : ''}{date.getDate()}</b>{' '}
+                  <span>{date.toLocaleString(undefined, { weekday: 'short' })}</span>
+                </div>
+                <div className="ecal-pills">
+                  {ordered.map(t => {
+                    const held = heldTickers.has(t);
+                    return (
+                      <span key={t} className={`ecal-pill${held ? ' hold' : soon ? ' soon' : ''}`}>
+                        {t}{held && <span className="ecal-hold-l"> · held</span>}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="ecal-dnum">{date.getDate()}</div>
-            </div>
-            <div className="ecal-pills">
-              {ordered.map(t => {
-                const held = heldTickers.has(t);
-                return (
-                  <span key={t} className={`ecal-pill${held ? ' hold' : ''}`}>
-                    {t}{held && <span className="ecal-hold-l"> · hold</span>}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+            );
+          })}
+        </div>
+      )}
+      {days.length > FIRST && (
+        <button type="button" className="hmore ecal-more" onClick={() => setMore(m => !m)}>
+          {more ? 'Show less ▴' : `Show ${days.length - FIRST} more ${days.length - FIRST === 1 ? 'date' : 'dates'} ▾`}
+        </button>
+      )}
+    </section>
   );
 }

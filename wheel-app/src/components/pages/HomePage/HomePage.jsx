@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import StatsPane        from './StatsPane';
+import StatsPane, { AttentionCard } from './StatsPane';
 import NewsPane         from './NewsPane';
 import EarningsCalendar from './EarningsCalendar';
 import MarketStrip      from './MarketStrip';
@@ -41,24 +41,12 @@ export default function HomePage({
     [watchlist],
   );
 
+  // Part 6E (Home layout v2, approved 10-24): your book (dark) → market
+  // chips → two columns on desktop (movers + news | earnings + attention).
+  // On a phone the columns dissolve and CSS `order` stacks the cards:
+  // movers → earnings → needs attention → news.
   return (
-    <>
-      <MarketStrip rows={strip.rows} failed={strip.failed} />
-
-      <MoversPane movers={movers} quietCount={pricedCount - movers.length} priced={pricedCount > 0} />
-
-      <EarningsCalendar watchlist={watchlist} heldTickers={heldTickers} />
-
-      <NewsPane
-        news={news}
-        loading={loading}
-        onRefresh={refreshNews}
-        priorityTickers={priorityTickers}
-      />
-
-      <div className="news-head home-stats-head">
-        <div className="slabel">Your stats</div>
-      </div>
+    <div className="home">
       <StatsPane
         positions={positions}
         closedTrades={closedTrades}
@@ -66,8 +54,19 @@ export default function HomePage({
         signals={signals}
         account={account}
         onAccount={setAccount}
-        onShowSignal={onShowSignal}
       />
-    </>
+      <MarketStrip rows={strip.rows} failed={strip.failed} />
+
+      <div className="home-grid">
+        <div className="home-main">
+          <MoversPane movers={movers} quietCount={pricedCount - movers.length} priced={pricedCount > 0} />
+          <NewsPane news={news} loading={loading} onRefresh={refreshNews} priorityTickers={priorityTickers} />
+        </div>
+        <div className="home-side">
+          <EarningsCalendar watchlist={watchlist} heldTickers={heldTickers} />
+          <AttentionCard signals={signals} onShowSignal={onShowSignal} />
+        </div>
+      </div>
+    </div>
   );
 }
