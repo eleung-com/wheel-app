@@ -55,6 +55,12 @@ export function useNotion(showToast) {
             fmvHigh:  w.fmvHigh ?? null,
             fmvDate:  w.fmvDate || '',
             override: w.override || null,
+            // Part 6: today's "why it moved" note (Mover Summary routine).
+            // Was missing at first, so the cards never got it (fixed 10-24).
+            moveNote:     w.moveNote     || '',
+            moveNoteDate: w.moveNoteDate || '',
+            movePct:      typeof w.movePct === 'number' ? w.movePct : null,
+            moveLink:     w.moveLink     || '',
             addedAt:  w.addedAt || Date.now(),
             liveData: existing?.liveData || null,
           };
