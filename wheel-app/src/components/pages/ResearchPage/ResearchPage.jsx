@@ -35,7 +35,7 @@ function rowTag(h) {
   return 'Prelim';
 }
 
-export default function ResearchPage({ showToast, initialTicker = null }) {
+export default function ResearchPage({ showToast, initialTicker = null, watchlist = [] }) {
   const [ticker, setTicker] = useState('');
   const [status, setStatus] = useState({ running: false, step: null, startedAt: null });
   const [run, setRun] = useState(null);
@@ -226,6 +226,7 @@ export default function ResearchPage({ showToast, initialTicker = null }) {
         onDecide={decide}
         onBack={() => { runId.current++; setRun(null); setSave(null); setClaude(null); }}
         onRerun={() => start(run.ticker)}
+        watchlist={watchlist}
       />
     );
   }
