@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseStrip, pickMovers, nyDate } from './homeFeed';
+import { parseStrip, pickMovers, nyDate, moveNoteFor } from './homeFeed';
 
 describe('Part 6A market strip', () => {
   it('uses the last two daily closes for price + day %', () => {
@@ -44,5 +44,21 @@ describe('Part 6A today’s movers', () => {
   });
   it('nyDate is YYYY-MM-DD', () => {
     expect(nyDate(new Date('2026-10-23T03:00:00Z'))).toBe('2026-10-22'); // 11pm NY the day before
+  });
+});
+
+describe('Part 6D watchlist card move note', () => {
+  const today = '2026-10-23';
+  it('today → shown with its % and link', () => {
+    expect(moveNoteFor({ moveNote: 'Guidance cut', moveNoteDate: today, movePct: -7.2, moveLink: 'https://x' }, today))
+      .toEqual({ text: 'Guidance cut', pct: -7.2, link: 'https://x' });
+  });
+  it('yesterday or empty → nothing', () => {
+    expect(moveNoteFor({ moveNote: 'Old', moveNoteDate: '2026-10-22' }, today)).toBeNull();
+    expect(moveNoteFor({ moveNoteDate: today }, today)).toBeNull();
+    expect(moveNoteFor(null, today)).toBeNull();
+  });
+  it('falls back to the live % when Move % is blank', () => {
+    expect(moveNoteFor({ moveNote: 'x', moveNoteDate: today, liveData: { chg1d: 5.04 } }, today).pct).toBe(5);
   });
 });

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { evalSnippet } from '../../../lib/evalSummary';
 import { NO_EARNINGS } from '../../../lib/signalEngine';
 import { watchlistGroup, wlSortKey, fmvOf, fmvStale, DIVE } from '../../../lib/fairValue';
+import { moveNoteFor } from '../../../lib/homeFeed';
 
 // Part 3W (PRD claude/wheel-app-prd-part3w-watchlist-redesign): what to watch
 // and why. Sections follow the LIVE price vs fair value (FMV Mid), with the
@@ -63,6 +64,7 @@ function Card({ item, open, onToggle, ev, evalsLoading, onSaveNotes, onTrade, on
   useEffect(() => { if (!open) { setMenu(false); setNotes(w.notes || ''); } }, [open, w.notes]);
   const snippet = evalSnippet(ev);
   const earnDays = w.earnings ? daysTo(w.earnings, today) : null;
+  const move = moveNoteFor(w); // Part 6D: today's "why it moved", if any
 
   return (
     <div className={`wl-card wl-${g.group}${open ? ' open' : ''}`}>
@@ -84,6 +86,14 @@ function Card({ item, open, onToggle, ev, evalsLoading, onSaveNotes, onTrade, on
           {fmv && <span className={fmvStale(fmv, today) ? 'warn' : ''}>Fair value {fmv.date ? `from ${mmdd(fmv.date)}` : 'undated'}{fmvStale(fmv, today) ? ' · stale' : ''}</span>}
         </div>
       </button>
+
+      {move && (
+        <div className={`wl-move ${move.pct != null && move.pct < 0 ? 'dn' : 'up'}`}>
+          {move.pct != null && <b>{move.pct < 0 ? '▼' : '▲'} {Math.abs(move.pct).toFixed(1)}%: </b>}
+          {move.text}
+          {move.link && <a href={move.link} target="_blank" rel="noopener noreferrer">Top story →</a>}
+        </div>
+      )}
 
       {open && (
         <div className="wl-more">

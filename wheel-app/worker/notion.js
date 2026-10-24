@@ -111,6 +111,12 @@ export async function readWatchlist(env) {
         fmvMid:  numProp(p, 'FMV Mid'),
         fmvHigh: numProp(p, 'FMV High'),
         fmvDate: dateProp(p, ['FMV date']),
+        // Part 6: "why it moved" one-liner from the Mover Summary routine.
+        // The app shows it only when Move note date is today (New York).
+        moveNote:     plain(p['Move note'] && p['Move note'].rich_text),
+        moveNoteDate: dateProp(p, ['Move note date']),
+        movePct:      numProp(p, 'Move %'),
+        moveLink:     (p['Move link'] && p['Move link'].url) || '',
         // Groups the watchlist cards and the chart's ticker strip.
         sector:   p.sector && p.sector.select ? p.sector.select.name : '',
         addedAt:  Date.parse(page.created_time) || null,
