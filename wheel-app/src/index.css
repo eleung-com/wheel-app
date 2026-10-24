@@ -728,3 +728,10 @@ details>.wl-sech{cursor:pointer}
 .mover-link{display:inline-block;margin-top:7px;font-size:12px;font-weight:700;color:var(--ac);text-decoration:none}
 .movers-quiet{font-size:11px;color:var(--mu);text-align:center;padding:2px 0 4px}
 .home-stats-head{margin-top:22px}
+
+/* Part 6D: watchlist card "why it moved" line */
+.wl-move{margin:0 12px 10px;padding:8px 10px;border-radius:10px;font-size:12.5px;line-height:1.4}
+.wl-move.dn{background:var(--rd)}.wl-move.up{background:var(--gd)}
+.wl-move b{font-weight:800}
+.wl-move.dn b{color:var(--r)}.wl-move.up b{color:var(--g)}
+.wl-move a{display:block;margin-top:4px;font-size:11px;font-weight:700;color:var(--ac);text-decoration:none}

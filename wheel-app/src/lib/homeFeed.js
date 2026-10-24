@@ -58,3 +58,15 @@ export function pickMovers(watchlist, heldTickers = new Set(), today = nyDate())
   }
   return out.sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg));
 }
+
+/**
+ * Part 6D: the move note to show on a Watchlist card, or null.
+ * Shown only on the day it was written for (New York date).
+ */
+export function moveNoteFor(w, today = nyDate()) {
+  if (!w || !w.moveNote) return null;
+  if ((w.moveNoteDate || '').slice(0, 10) !== today) return null;
+  const pct = typeof w.movePct === 'number' ? w.movePct
+    : typeof w.liveData?.chg1d === 'number' ? Math.round(w.liveData.chg1d * 10) / 10 : null;
+  return { text: w.moveNote, pct, link: w.moveLink || null };
+}
