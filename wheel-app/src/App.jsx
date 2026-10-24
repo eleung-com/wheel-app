@@ -542,7 +542,7 @@ export default function App() {
       </div>
 
       <div className={`page${activePage === 'pg-research' ? ' active' : ''}`} id="pg-research">
-        <ResearchPage showToast={showToast} initialTicker={researchTicker} />
+        <ResearchPage showToast={showToast} initialTicker={researchTicker} watchlist={state.watchlist} />
       </div>
 
       <div className={`page${activePage === 'pg-positions' ? ' active' : ''}`} id="pg-positions">

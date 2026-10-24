@@ -66,7 +66,7 @@ export function plainLines(run) {
   if (own && own.points !== null && isNum(r.metrics.operatingPe)) {
     const [, ref] = own.display.split(' vs ').map(Number);
     const diff = ((r.metrics.operatingPe - ref) / ref) * 100;
-    out.push({ tone: own.points === 100 ? 'g' : own.points === 50 ? 'a' : 'r',
+    out.push({ tone: own.points >= 67 ? 'g' : own.points >= 34 ? 'a' : 'r', // v2.7 smooth scale
       text: `Operating P/E ${r.metrics.operatingPe.toFixed(1)} vs own 5-yr median ${ref.toFixed(1)} (${diff <= 0 ? `${Math.abs(diff).toFixed(0)}% cheaper` : `${diff.toFixed(0)}% pricier`})` });
   }
 
@@ -74,7 +74,7 @@ export function plainLines(run) {
   if (peer && peer.points !== null && isNum(r.metrics.operatingPe)) {
     const names = (run.peers?.used || []).filter((p) => isNum(p.opPe)).map((p) => p.ticker).slice(0, 5).join(', ');
     const [, ref] = peer.display.split(' vs ').map(Number);
-    out.push({ tone: peer.points === 100 ? 'g' : peer.points === 50 ? 'a' : 'r',
+    out.push({ tone: peer.points >= 67 ? 'g' : peer.points >= 34 ? 'a' : 'r', // v2.7 smooth scale
       text: `Operating P/E ${r.metrics.operatingPe.toFixed(1)} vs peers ${ref.toFixed(1)}${names ? ` (${names})` : ''}` });
   }
 
