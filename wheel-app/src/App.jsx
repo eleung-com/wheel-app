@@ -574,6 +574,7 @@ export default function App() {
 
       <div className={`page${activePage === 'pg-settings' ? ' active' : ''}`} id="pg-settings">
         <SettingsPage
+          watchlist={state.watchlist}
           criteria={state.criteria}
           onSave={handleSaveCriteria}
           onRefresh={runScreener}

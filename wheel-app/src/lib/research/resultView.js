@@ -2,7 +2,7 @@
 // new result screen. Everything here is fixed rules over the score result —
 // no AI — so the same run always reads the same way.
 
-import { fmvOf, vsMidPct } from '../fairValue';
+import { fmvOf, vsMidPct, fmvStale } from '../fairValue';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -132,4 +132,13 @@ export function leadSplit(text = '') {
   const m = /^(.+?[.!?])(\s+|$)([\s\S]*)$/.exec(String(text).trim());
   if (!m || m[1].length > 220) return { lead: '', rest: String(text) };
   return { lead: m[1], rest: m[3] };
+}
+
+/** v2.8 score input: the watchlist row's fair value for this ticker, or null. */
+export function fairValueInput(ticker, watchlist, now = new Date()) {
+  const row = watchRowFor(ticker, watchlist);
+  const fmv = row ? fmvOf(row) : null;
+  if (!fmv) return null;
+  const today = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  return { mid: fmv.mid, low: fmv.low, high: fmv.high, date: fmv.date, source: `Monday eval${row.ticker !== String(ticker).toUpperCase() ? ` (${row.ticker})` : ''}`, stale: fmvStale(fmv, today) };
 }

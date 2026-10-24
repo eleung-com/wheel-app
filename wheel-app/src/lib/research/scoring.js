@@ -14,6 +14,8 @@ import {
 } from './fundamentals.js';
 
 const GREEN = 'green', YELLOW = 'yellow', RED = 'red', NA = 'na';
+/** Part 8: which rules this score uses — input.rules ('v2.8' for the dry run) or what's live. */
+const rulesOf = (input) => (input && input.rules) || R.LIVE_RULES;
 const round1 = (v) => (isNum(v) ? Math.round(v * 10) / 10 : null);
 
 // ── Individual quality checks ───────────────────────────────────────────────
@@ -173,19 +175,31 @@ function scoreValue(input, opPe, peerList, tags, peerSource) {
 
   if (opPe === null) {
     tags.push({ code: 'no_operating_profit', text: 'No operating profit — no P/E, can’t rank on value' });
-    for (const [id, label] of [['pe_own', nameOwn], ['pe_peers', namePeer], ['peg', namePeg]]) {
+    for (const [id, label] of [[rulesOf(input) === 'v2.8' ? 'fmv' : 'pe_own', rulesOf(input) === 'v2.8' ? 'Price vs fair value' : nameOwn], ['pe_peers', namePeer], ['peg', namePeg]]) {
       parts.push({ id, label, points: null, display: 'n/a', rule: ruleBands });
     }
     return { score: null, opPe: null, parts };
   }
 
+  const v28 = rulesOf(input) === 'v2.8';
+  // v2.8: price vs fair value (FMV Mid) — scored.
+  if (v28) parts.push(fairValuePart(input, tags, ruleBands));
+
   // Own history: last 5 yearly op P/Es, negatives/zero left out (fix #2: median).
+  // v2.8: shown as context only — no points. v2.7: scored.
   const hist = (input.opPeHistory || []).slice(-5).map((h) => h?.opPe).filter((v) => isNum(v) && v > 0);
-  if (hist.length >= R.OWN_PE_MIN_YEARS) {
+  if (!v28) {
+    if (hist.length >= R.OWN_PE_MIN_YEARS) {
+      const med = median(hist);
+      parts.push({ id: 'pe_own', label: nameOwn, points: peBandPoints(opPe, med), display: `${opPe.toFixed(1)} vs ${med.toFixed(1)}`, rule: ruleBands, note: `${hist.length} profitable years in the median` });
+    } else {
+      parts.push({ id: 'pe_own', label: nameOwn, points: null, display: 'n/a', rule: ruleBands, note: `Only ${hist.length} profitable year(s) of history` });
+    }
+  } else if (hist.length >= R.OWN_PE_MIN_YEARS) {
     const med = median(hist);
-    parts.push({ id: 'pe_own', label: nameOwn, points: peBandPoints(opPe, med), display: `${opPe.toFixed(1)} vs ${med.toFixed(1)}`, rule: ruleBands, note: `${hist.length} profitable years in the median` });
+    parts.push({ id: 'pe_own', label: `${nameOwn} · info only`, points: null, info: true, display: `${opPe.toFixed(1)} vs ${med.toFixed(1)}`, rule: 'Shown for context since v2.8 — not scored', note: `${hist.length} profitable years in the median` });
   } else {
-    parts.push({ id: 'pe_own', label: nameOwn, points: null, display: 'n/a', rule: ruleBands, note: `Only ${hist.length} profitable year(s) of history` });
+    parts.push({ id: 'pe_own', label: `${nameOwn} · info only`, points: null, info: true, display: 'n/a', rule: 'Shown for context since v2.8 — not scored', note: `Only ${hist.length} profitable year(s) of history` });
   }
 
   // Peers (fix #7): negative/zero op P/E excluded, median used.
@@ -229,8 +243,35 @@ function scoreValue(input, opPe, peerList, tags, peerSource) {
     parts.push({ id: 'peg', label: namePeg, points, display: peg.toFixed(2), rule: pegRule, note: `Op P/E ${opPe.toFixed(1)} ÷ ${round1(g)}%/yr` });
   }
 
-  const scored = parts.filter((p) => p.points !== null);
+  const scored = parts.filter((p) => p.points !== null && !p.info);
   return { score: scored.length ? mean(scored.map((p) => p.points)) : null, opPe, parts };
+}
+
+/**
+ * v2.8 Value check 1: price ÷ FMV Mid on the P/E-style line.
+ * input.fairValue = { mid, low, high, date, source, stale } (from the watchlist row).
+ */
+function fairValuePart(input, tags, ruleBands) {
+  const base = { id: 'fmv', label: 'Price vs fair value', rule: `Price ÷ fair value (FMV Mid): ${ruleBands}` };
+  const fv = input.fairValue;
+  if (!fv || !isNum(fv.mid) || fv.mid <= 0 || !isNum(input.price)) {
+    tags.push({ code: 'no_fmv', text: 'No fair value yet — Value uses peers + PEG only' });
+    return { ...base, points: null, display: 'n/a', note: 'Fills on the Monday eval' };
+  }
+  const ratio = input.price / fv.mid;
+  if (ratio < R.FMV_SANITY.min || ratio > R.FMV_SANITY.max) {
+    tags.push({ code: 'fmv_broken', text: `Fair value $${fv.mid.toFixed(2)} looks wrong vs price — left out` });
+    return { ...base, points: null, display: 'n/a', note: 'Fair value outside 0.2×–5× the price' };
+  }
+  if (fv.stale) tags.push({ code: 'fmv_stale', text: `Fair value is stale (from ${fv.date || 'unknown date'})` });
+  const pct = Math.round((ratio - 1) * 1000) / 10;
+  return {
+    ...base,
+    points: lerpPoints(ratio, R.FMV_SCALE.fullAt, R.FMV_SCALE.zeroAt),
+    display: `$${input.price.toFixed(2)} vs $${fv.mid.toFixed(2)}`,
+    note: `${Math.abs(pct)}% ${pct <= 0 ? 'under' : 'over'} fair value${fv.date ? ` · from ${fv.date}` : ''}${fv.source ? ` · ${fv.source}` : ''}`,
+    ratio, pct,
+  };
 }
 
 /** 3-yr compound op-income growth: TTM now vs TTM 3 years ago, else fiscal years. */
@@ -292,6 +333,7 @@ export function verdictFor(investmentScore, qualityScore) {
  * @param {object} input.peers                   { source: 'auto'|'claude', list: [{ ticker, opPe, debtToEquity }] }
  * @param {object|null} input.analystTarget      { value, source, asOf }
  * @param {object|null} input.beatRate           { beats, total, stale } — null = not known yet
+ * @param {object|null} [input.fairValue]       v2.8: { mid, low, high, date, source, stale } — watchlist FMV
  */
 export function scoreStock(input) {
   const tags = [];
@@ -319,7 +361,7 @@ export function scoreStock(input) {
 
   return {
     ticker: input.ticker,
-    version: R.SCORING_VERSION,
+    version: rulesOf(input),
     scoreType: stage === 'final' ? 'Final' : 'Preliminary',
     peerSource: input.peers?.source || null,
     investmentScore,

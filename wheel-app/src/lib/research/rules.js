@@ -6,7 +6,13 @@
 // Source of every number: PRD "Stock Research & Trade Ranker" v2.6, §6A and
 // §6A-BUILD, plus the stock-watchlist-evaluator thresholds it builds on.
 
-export const SCORING_VERSION = 'v2.7'; // v2.7 (10-04): smooth value scale, <3 peers = n/a, upside full at +50%
+// Part 8 (10-24): v2.8 is built but NOT live until El reviews the dry run
+// (PRD step 8C → 8D). LIVE_RULES decides what real runs use; the dry run asks
+// for 'v2.8' explicitly. Step 8D flips this one line to 'v2.8'.
+export const LIVE_RULES = 'v2.7';
+export const SCORING_VERSION = LIVE_RULES;
+// v2.8: Value check 1 = price vs fair value (FMV Mid); own 5-yr P/E is info only
+// v2.7 (10-04): smooth value scale, <3 peers = n/a, upside full at +50%
 // v2.6 (10-03): auto-peer outlier rule
 
 // ── Investment Score ─────────────────────────────────────────────────────────
@@ -70,6 +76,15 @@ export const ALTMAN_DANGER = 1.8;
 //   25%+ cheaper (≤ 0.75×) = 100 · equal (1.0×) = 50 · 25%+ dearer (≥ 1.25×) = 0
 //   straight line in between (e.g. 10% cheaper = 70).
 export const PE_SCALE = { fullAt: 0.75, zeroAt: 1.25 };
+// v2.8 (El, 10-24 — PRD Part 8, Option C): Value check 1 is now price vs fair
+// value (FMV Mid from the Monday eval / after-earnings routine), same shape as
+// the P/E scale: price ÷ FMV Mid ≤ 0.75 = 100 · 1.0 = 50 · ≥ 1.25 = 0.
+// Own 5-yr P/E stays on screen as context but earns no points (it punished
+// companies that re-rated by growing). Needs operating profit like the other
+// Value checks (El, Q3: "need some operating profit").
+export const FMV_SCALE = { fullAt: 0.75, zeroAt: 1.25 };
+// A fair value outside 0.2×–5× the price is treated as broken (n/a + tag).
+export const FMV_SANITY = { min: 0.2, max: 5 };
 // Need at least this many positive yearly op P/Es to form an own-history median.
 export const OWN_PE_MIN_YEARS = 2;
 // Fix #7 / v2.7 (El, 10-04): fewer than this many usable peers → the peer
