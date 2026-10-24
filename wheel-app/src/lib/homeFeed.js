@@ -36,27 +36,31 @@ export function nyDate(d = new Date()) {
 }
 
 /**
- * Watchlist stocks that moved ±5% or more today, biggest move first.
+ * Today's movers: watchlist stocks that moved ±5% or more today, biggest first,
+ * PLUS any stock with a Claude move note dated today (El, 10-24: Home and the
+ * Watchlist card must match — a stock that was −6% at 10 AM and got a note
+ * stays here even if it's back to −4% by 2 PM).
  * Index ETFs are left out (they live in the market strip).
- * A Claude move note (Part 6C/6D) is attached only when it's dated today.
  */
 export function pickMovers(watchlist, heldTickers = new Set(), today = nyDate()) {
   const out = [];
   for (const w of watchlist || []) {
     if (!w || NO_EARNINGS.has(w.ticker)) continue;
-    const chg = w.liveData && typeof w.liveData.chg1d === 'number' ? w.liveData.chg1d : null;
-    if (chg == null || Math.abs(chg) < MOVER_PCT) continue;
-    const noteToday = w.moveNote && (w.moveNoteDate || '').slice(0, 10) === today;
+    const live = w.liveData && typeof w.liveData.chg1d === 'number' ? w.liveData.chg1d : null;
+    const note = moveNoteFor(w, today);
+    const bigMove = live != null && Math.abs(live) >= MOVER_PCT;
+    if (!bigMove && !note) continue;
+    const chg = live != null ? live : note.pct;
     out.push({
       ticker: w.ticker,
-      price:  w.liveData.price ?? null,
-      chg:    Math.round(chg * 10) / 10,
+      price:  w.liveData?.price ?? null,
+      chg:    chg != null ? Math.round(chg * 10) / 10 : null,
       held:   heldTickers.has(w.ticker),
-      note:   noteToday ? w.moveNote : null,
-      link:   noteToday ? (w.moveLink || null) : null,
+      note:   note ? note.text : null,
+      link:   note ? note.link : null,
     });
   }
-  return out.sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg));
+  return out.sort((a, b) => Math.abs(b.chg ?? 0) - Math.abs(a.chg ?? 0));
 }
 
 /**

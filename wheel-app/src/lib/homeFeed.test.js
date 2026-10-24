@@ -62,3 +62,20 @@ describe('Part 6D watchlist card move note', () => {
     expect(moveNoteFor({ moveNote: 'x', moveNoteDate: today, liveData: { chg1d: 5.04 } }, today).pct).toBe(5);
   });
 });
+
+describe('Home and Watchlist match (10-24)', () => {
+  const today = '2026-10-23';
+  it('a stock with a note today shows on Home even if the live move is now under 5%', () => {
+    const wl = [{ ticker: 'GEV', liveData: { price: 815, chg1d: -1.5 }, moveNote: 'test', moveNoteDate: today, movePct: -6 }];
+    const m = pickMovers(wl, new Set(), today);
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({ ticker: 'GEV', note: 'test', chg: -1.5 });
+  });
+  it('note today but no live price yet → uses Move %', () => {
+    const m = pickMovers([{ ticker: 'GEV', moveNote: 'x', moveNoteDate: today, movePct: -6 }], new Set(), today);
+    expect(m[0].chg).toBe(-6);
+  });
+  it('old note + small move → not shown', () => {
+    expect(pickMovers([{ ticker: 'GEV', liveData: { chg1d: -1 }, moveNote: 'x', moveNoteDate: '2026-10-01' }], new Set(), today)).toHaveLength(0);
+  });
+});
