@@ -31,19 +31,19 @@ function Mover({ m }) {
 
 export default function MoversPane({ movers, quietCount, priced }) {
   return (
-    <div className="movers">
-      <div className="news-head">
-        <div className="slabel">Today’s movers</div>
-        <span className="news-time">±{MOVER_PCT}% or more today · watchlist</span>
+    <section className="hcard h-movers">
+      <div className="hcard-h">
+        <h3>Today’s movers</h3>
+        <small>±{MOVER_PCT}% or more today · watchlist</small>
       </div>
       {!priced ? (
-        <div className="ecal-empty">Waiting for prices…</div>
+        <div className="hcard-empty">Waiting for prices…</div>
       ) : movers.length === 0 ? (
-        <div className="ecal-empty">Nothing on your watchlist moved {MOVER_PCT}% or more today.</div>
+        <div className="hcard-empty">Nothing on your watchlist moved {MOVER_PCT}% or more today.</div>
       ) : movers.map(m => <Mover key={m.ticker} m={m} />)}
       {priced && movers.length > 0 && quietCount > 0 && (
         <div className="movers-quiet">{quietCount} other watchlist stock{quietCount === 1 ? '' : 's'} moved less than {MOVER_PCT}%</div>
       )}
-    </div>
+    </section>
   );
 }

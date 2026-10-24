@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 
-const RANK_LABEL = ['Lead', 'Second', 'Third'];
 
 function ago(ts) {
   if (!ts) return '';
@@ -70,68 +69,61 @@ function Story({ item, ticker, headingLevel: H = 'div' }) {
   );
 }
 
-export default function NewsPane({ news, loading, onRefresh, priorityTickers }) {
-  if (!news) {
-    return (
-      <div className="news-empty">
-        {loading ? 'Pulling headlines…' : 'No headlines yet — tap refresh.'}
-        {!loading && (
-          <button type="button" className="nrefresh" onClick={onRefresh}>Refresh</button>
-        )}
-      </div>
-    );
-  }
+// Part 6E (Home layout v2): one card, "Your tickers" / "Market" tabs, the
+// first SHOW stories then "Show all". Two columns on desktop (CSS).
+const SHOW = 5;
 
-  const top = (news.market || []).slice(0, 3);
+export default function NewsPane({ news, loading, onRefresh, priorityTickers }) {
+  const [tab, setTab] = useState('mine');
+  const [all, setAll] = useState(false);
+
+  const mine = news ? priorityTickers
+    .map(t => ({ t, item: (news.tickers?.[t] || [])[0] }))
+    .filter(x => x.item) : [];
+  const market = news ? (news.market || []) : [];
+  const useTab = tab === 'mine' && !mine.length && market.length ? 'mkt' : tab;
+  const list = useTab === 'mine' ? mine : market.map(item => ({ t: null, item }));
+  const shown = all ? list : list.slice(0, SHOW);
 
   return (
-    <>
-      <div className="news-head">
-        <div className="slabel">Top 3 · market</div>
+    <section className="hcard h-news">
+      <div className="hcard-h">
+        <h3>News</h3>
         <button type="button" className="nrefresh" onClick={onRefresh} disabled={loading}>
-          {loading ? 'refreshing…' : `refreshed ${ago(news.fetchedAt)}`}
+          {loading ? 'refreshing…' : news ? `refreshed ${ago(news.fetchedAt)}` : 'refresh'}
         </button>
       </div>
-
-      {top.length === 0 && <div className="news-empty">Yahoo returned nothing for the market.</div>}
-      {top.map((item, i) => (
-        <div className="nlead" key={item.id || i}>
-          <div className="nrank">{RANK_LABEL[i]}</div>
-          <Story item={item} />
-        </div>
-      ))}
-
-      {priorityTickers.length > 0 && (
+      {!news ? (
+        <div className="hcard-empty">{loading ? 'Pulling headlines…' : 'No headlines yet — tap refresh.'}</div>
+      ) : (
         <>
-          <div className="news-head">
-            <div className="slabel">Your tickers</div>
-            <span className="news-time">🔥 Priority</span>
+          <div className="ntabs" role="tablist">
+            <button type="button" role="tab" aria-selected={useTab === 'mine'} className={useTab === 'mine' ? 'on' : ''} onClick={() => { setTab('mine'); setAll(false); }}>
+              Your tickers{mine.length ? ` · ${mine.length}` : ''}
+            </button>
+            <button type="button" role="tab" aria-selected={useTab === 'mkt'} className={useTab === 'mkt' ? 'on' : ''} onClick={() => { setTab('mkt'); setAll(false); }}>
+              Market
+            </button>
           </div>
-          {priorityTickers.map(t => {
-            const item = (news.tickers?.[t] || [])[0];
-            if (!item) {
-              return (
-                <div className="ntkrow" key={t}>
-                  <span className="ntk hot">{t}</span>
-                  <span className="ntk-none">No recent stories</span>
-                </div>
-              );
-            }
-            return (
-              <div className="ntkrow" key={t}>
-                <span className="ntk hot">{t}</span>
+          {list.length === 0 && <div className="hcard-empty">{useTab === 'mine' ? 'No recent stories on your 🔥 Priority tickers.' : 'Yahoo returned nothing for the market.'}</div>}
+          <div className="ngrid">
+            {shown.map(({ t, item }, i) => (
+              <div className="ntkrow" key={(t || '') + (item.id || i)}>
+                <span className={`ntk${t ? ' hot' : ''}`}>{t || 'MKT'}</span>
                 <div className="ntk-body">
-                  <Story item={item} ticker={t} />
-                  {!item.onTopic && (
-                    <span className="nflag">⚠ mentions {t}, may not be about it</span>
-                  )}
+                  <Story item={item} ticker={t || undefined} />
+                  {t && !item.onTopic && <span className="nflag">⚠ mentions {t}, may not be about it</span>}
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
+          {list.length > SHOW && (
+            <button type="button" className="hmore" onClick={() => setAll(a => !a)}>
+              {all ? 'Show less ▴' : `Show all ${list.length} ▾`}
+            </button>
+          )}
         </>
       )}
-
-    </>
+    </section>
   );
 }
