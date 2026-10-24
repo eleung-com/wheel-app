@@ -30,7 +30,8 @@ const goodYears = [
 ];
 
 /** Build an input; `opPe` sets the price so the current operating P/E equals it. */
-function company({ q = quarters(healthyQ), opPe = 20, upsidePct = 50, ...rest } = {}) {
+// v2.8: fvRatio = price ÷ FMV Mid (0.7 = 30% under fair value → full points).
+function company({ q = quarters(healthyQ), opPe = 20, upsidePct = 50, fvRatio = 0.7, ...rest } = {}) {
   const oi = ttm(q, 'operatingIncome');
   const price = oi > 0 ? (opPe * oi) / SHARES : 50;
   return {
@@ -46,6 +47,8 @@ function company({ q = quarters(healthyQ), opPe = 20, upsidePct = 50, ...rest } 
     peers: { source: 'claude', list: [{ ticker: 'A', opPe: 28, debtToEquity: 0.5 }, { ticker: 'B', opPe: 30, debtToEquity: 0.6 }, { ticker: 'C', opPe: 32, debtToEquity: 0.4 }] },
     analystTarget: { value: price * (1 + upsidePct / 100), source: 'FMP', asOf: '2026-10-01' },
     beatRate: { beats: 8, total: 8, stale: false },
+    fairValue: fvRatio == null ? null : { mid: price / fvRatio, date: '2026-10-19', source: 'Monday eval' },
+    rules: 'v2.8', // Part 8: tests target the new rules; see the v2.7 block below
     ...rest,
   };
 }
@@ -67,7 +70,7 @@ describe('baseline healthy company', () => {
     expect(r.verdict).toBe('Worth investing');
   });
   it('stamps the rules version and score type', () => {
-    expect(r.version).toBe(SCORING_VERSION);
+    expect(r.version).toBe('v2.8');
     expect(r.scoreType).toBe('Final');
   });
   it('is deterministic — same input, same output', () => {
@@ -300,17 +303,52 @@ describe('target upside scale', () => {
 });
 
 describe('value scale', () => {
-  it('v2.7: P/E vs reference is a straight line — 25%+ cheaper 100 · equal 50 · 25%+ dearer 0', () => {
-    // own 5-yr median is 30
-    const pts = (opPe) => part(scoreStock(company({ opPe })), 'pe_own').points;
-    expect(pts(20)).toBe(100);   // 0.67× → capped at 100
-    expect(pts(22.5)).toBe(100); // exactly 0.75×
-    expect(pts(27)).toBe(70);    // 10% cheaper
-    expect(pts(29.7)).toBe(52);  // 1% cheaper — no longer a full 100
-    expect(pts(30)).toBe(50);    // equal
-    expect(pts(33)).toBe(30);    // 10% dearer
-    expect(pts(37.5)).toBe(0);   // 1.25×
-    expect(pts(45)).toBe(0);
+  it('v2.7 still live until the switch: own 5-yr P/E scored, no fair-value check', () => {
+    const r = scoreStock(company({ rules: undefined, opPe: 27 }));
+    expect(r.version).toBe(SCORING_VERSION);
+    expect(part(r, 'pe_own').points).toBe(70); // 10% cheaper than its 30 median
+    expect(part(r, 'fmv')).toBeUndefined();
+  });
+  it('v2.8: price vs fair value is a straight line — 25%+ under 100 · at fair 50 · 25%+ over 0', () => {
+    const pts = (fvRatio) => part(scoreStock(company({ fvRatio })), 'fmv').points;
+    expect(pts(0.67)).toBe(100); // capped
+    expect(pts(0.75)).toBe(100);
+    expect(pts(0.9)).toBe(70);   // 10% under fair value
+    expect(pts(0.99)).toBe(52);
+    expect(pts(1)).toBe(50);
+    expect(pts(1.0365)).toBe(43); // GOOGL 10-24: $320.21 vs $308.93
+    expect(pts(1.1)).toBe(30);
+    expect(pts(1.25)).toBe(0);
+    expect(pts(1.6)).toBe(0);
+  });
+  it('v2.8: own 5-yr P/E is shown but earns no points (re-rated growers are not punished)', () => {
+    const cheapHist = scoreStock(company({ opPe: 20, fvRatio: 0.9 }));
+    const pricyHist = scoreStock(company({ opPe: 45, fvRatio: 0.9 })); // 1.5× its own history
+    expect(part(pricyHist, 'pe_own')).toMatchObject({ points: null, info: true, display: '45.0 vs 30.0' });
+    expect(part(pricyHist, 'fmv').points).toBe(part(cheapHist, 'fmv').points); // same fair-value points
+  });
+  it('v2.8: no fair value → n/a + tag, Value from peers + PEG only', () => {
+    const r = scoreStock(company({ fvRatio: null }));
+    expect(part(r, 'fmv').points).toBeNull();
+    expect(hasTag(r, 'no_fmv')).toBe(true);
+    expect(r.value.score).not.toBeNull();
+  });
+  it('v2.8: broken fair value (outside 0.2×–5× price) → n/a + tag', () => {
+    const r = scoreStock(company({ fvRatio: 8 }));
+    expect(part(r, 'fmv').points).toBeNull();
+    expect(hasTag(r, 'fmv_broken')).toBe(true);
+  });
+  it('v2.8: stale fair value is still used, tagged', () => {
+    const base = company();
+    const r = scoreStock({ ...base, fairValue: { ...base.fairValue, stale: true } });
+    expect(part(r, 'fmv').points).toBe(100);
+    expect(hasTag(r, 'fmv_stale')).toBe(true);
+  });
+  it('v2.8 (Q3): no operating profit → Value stays n/a even with a fair value', () => {
+    const lossQ = quarters(healthyQ).map((x) => ({ ...x, operatingIncome: -5 }));
+    const r = scoreStock(company({ q: lossQ }));
+    expect(r.value.score).toBeNull();
+    expect(part(r, 'fmv').points).toBeNull();
   });
   it('v2.7: PEG straight line — ≤0.5 = 100 · ≥2 = 0; no growth = 0', () => {
     // Flat op income for 16 quarters then a jump → modest 3-yr growth.

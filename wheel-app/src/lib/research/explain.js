@@ -62,11 +62,18 @@ export function plainLines(run) {
     out.push({ tone: tone(fcf.color), text: `Free cash flow: ${fcf.display}` });
   }
 
+  // v2.8: price vs fair value — the scored Value check.
+  const fv = partOf(r, 'fmv');
+  if (fv && fv.points !== null && isNum(fv.pct)) {
+    out.push({ tone: fv.points >= 67 ? 'g' : fv.points >= 34 ? 'a' : 'r',
+      text: `Price ${fv.display.replace(' vs ', ' vs fair value ')} (${Math.abs(fv.pct)}% ${fv.pct <= 0 ? 'under' : 'over'})` });
+  }
+
   const own = partOf(r, 'pe_own');
-  if (own && own.points !== null && isNum(r.metrics.operatingPe)) {
+  if (own && (own.points !== null || (own.info && own.display !== 'n/a')) && isNum(r.metrics.operatingPe)) {
     const [, ref] = own.display.split(' vs ').map(Number);
     const diff = ((r.metrics.operatingPe - ref) / ref) * 100;
-    out.push({ tone: own.points >= 67 ? 'g' : own.points >= 34 ? 'a' : 'r', // v2.7 smooth scale
+    out.push({ tone: own.info ? 'n' : own.points >= 67 ? 'g' : own.points >= 34 ? 'a' : 'r', // v2.8: info only → neutral
       text: `Operating P/E ${r.metrics.operatingPe.toFixed(1)} vs own 5-yr median ${ref.toFixed(1)} (${diff <= 0 ? `${Math.abs(diff).toFixed(0)}% cheaper` : `${diff.toFixed(0)}% pricier`})` });
   }
 

@@ -4,6 +4,7 @@
 // Same steps as pressing Run / "Tap for Final" on the Research tab.
 
 import { runPreliminary, rescoreFinal } from './run.js';
+import { fairValueInput } from './resultView.js';
 import { researchTransport } from './researchTransport.js';
 import { saveRun, loadRuns } from './runStore.js';
 import { claudeState, claudeInputs, SCORE_STALE_DAYS } from './runRecord.js';
@@ -55,7 +56,7 @@ export async function runAutoResearch(watchlist, isIndex, { onDone } = {}) {
   for (const p of plan) {
     markTried(p.ticker, now);
     try {
-      const res = await runPreliminary(researchTransport, p.ticker);
+      const res = await runPreliminary(researchTransport, p.ticker, { fairValue: fairValueInput(p.ticker, watchlist) }); // v2.8
       if (p.kind === 'finish') {
         if (!res.result) throw new Error('no score');
         const final = await rescoreFinal(researchTransport, res, claudeInputs(p.row));

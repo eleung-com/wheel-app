@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import CriteriaPage   from '../CriteriaPage/CriteriaPage';
 import StrategiesTab  from '../ToolsPage/StrategiesTab';
+import ScoringPreview from './ScoringPreview';
 
 /**
  * Settings absorbed the old Tools tab so both navs can carry the same five
@@ -11,9 +12,10 @@ import StrategiesTab  from '../ToolsPage/StrategiesTab';
 const SUBTABS = [
   { id: 'criteria',   label: 'Criteria'   },
   { id: 'strategies', label: 'Strategies' },
+  { id: 'scoring',    label: 'Scoring preview' }, // Part 8C
 ];
 
-export default function SettingsPage({ criteria, onSave, onRefresh, onPull, onAddPosition }) {
+export default function SettingsPage({ criteria, onSave, onRefresh, onPull, onAddPosition, watchlist = [] }) {
   const [active, setActive] = useState('criteria');
 
   return (
@@ -43,6 +45,7 @@ export default function SettingsPage({ criteria, onSave, onRefresh, onPull, onAd
           />
         )}
         {active === 'strategies' && <StrategiesTab onAddPosition={onAddPosition} />}
+        {active === 'scoring' && <ScoringPreview watchlist={watchlist} />}
       </div>
     </div>
   );

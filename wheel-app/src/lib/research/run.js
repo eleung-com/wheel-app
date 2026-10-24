@@ -18,12 +18,12 @@ import { scoreStock } from './scoring.js';
  *   result is null when the company can't be scored (non-SEC filer, no price…);
  *   bundle.dataTags says why.
  */
-export async function runPreliminary(transport, ticker, { now = Date.now(), onStep = () => {} } = {}) {
+export async function runPreliminary(transport, ticker, { now = Date.now(), onStep = () => {}, fairValue = null, rules = null } = {}) {
   const t = String(ticker || '').trim().toUpperCase();
   const ranAt = new Date(now).toISOString();
   onStep('company');
   const bundle = await fetchCompanyBundle(transport, t, { now });
-  if (!bundle.input) return { ticker: t, stage: 'preliminary', ranAt, bundle, peers: null, result: null };
+  if (!bundle.input) return { ticker: t, stage: 'preliminary', ranAt, bundle, peers: null, result: null, fairValue };
 
   onStep('peers');
   const candidates = await fetchAutoPeerTickers(transport, t);
@@ -34,9 +34,11 @@ export async function runPreliminary(transport, ticker, { now = Date.now(), onSt
     stage: 'preliminary',
     peers: { source: 'auto', list: peers.used },
     beatRate: null,
+    fairValue, // v2.8: watchlist FMV (null → the fair-value check is n/a)
+    ...(rules ? { rules } : {}), // Part 8C dry run forces 'v2.8'
   });
   result.tags.unshift(...bundle.dataTags);
-  return { ticker: t, stage: 'preliminary', ranAt, bundle, peers, result };
+  return { ticker: t, stage: 'preliminary', ranAt, bundle, peers, result, fairValue, rules };
 }
 
 /**
@@ -56,6 +58,8 @@ export async function rescoreFinal(transport, run, { peerTickers = [], analystTa
   const result = scoreStock({
     ...run.bundle.input,
     analystTarget: target,
+    fairValue: run.fairValue ?? null, // v2.8: same FMV the Preliminary used
+    ...(run.rules ? { rules: run.rules } : {}),
     stage: 'final',
     peers: { source: 'claude', list: peers.used },
     beatRate,

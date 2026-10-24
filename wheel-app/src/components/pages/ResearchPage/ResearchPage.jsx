@@ -4,6 +4,7 @@ import { researchTransport } from '../../../lib/research/researchTransport';
 import { saveRun, loadRuns, loadRun, saveDecision, redoClaude } from '../../../lib/research/runStore';
 import { runStamp, claudeState, claudeInputs } from '../../../lib/research/runRecord';
 import ResearchResult from './ResearchResult';
+import { fairValueInput } from '../../../lib/research/resultView';
 
 // Research tab — "Run a stock" (PRD §6A-BUILD, P1.4–P1.6).
 // Type a ticker → the app pulls SEC / Yahoo / FMP / Finnhub through the Worker
@@ -36,6 +37,10 @@ function rowTag(h) {
 }
 
 export default function ResearchPage({ showToast, initialTicker = null, watchlist = [] }) {
+  // v2.8: the score reads fair value from the watchlist; a ref so callbacks
+  // always see the latest rows without re-creating themselves.
+  const watchlistRef = useRef(watchlist);
+  useEffect(() => { watchlistRef.current = watchlist; }, [watchlist]);
   const [ticker, setTicker] = useState('');
   const [status, setStatus] = useState({ running: false, step: null, startedAt: null });
   const [run, setRun] = useState(null);
@@ -104,7 +109,7 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
     if (!run?.result) return; // no-score run: show the write-up, nothing to re-score
     setFinalizing(true);
     try {
-      const final = await rescoreFinal(researchTransport, run, claudeInputs(row));
+      const final = await rescoreFinal(researchTransport, { ...run, fairValue: run.fairValue ?? fairValueInput(run.ticker, watchlistRef.current) }, claudeInputs(row));
       if (id !== runId.current) return;
       setRun(final);
       const out = await saveRun(final, { pageId: row.pageId });
@@ -172,6 +177,7 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
     setStatus({ running: true, step: 'company', startedAt: Date.now() });
     try {
       const res = await runPreliminary(researchTransport, t, {
+        fairValue: fairValueInput(t, watchlistRef.current), // v2.8
         onStep: (step) => { if (id === runId.current) setStatus((s) => ({ ...s, step })); },
       });
       if (id !== runId.current) return; // a newer run started
