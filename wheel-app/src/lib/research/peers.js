@@ -12,9 +12,9 @@
 //     of the P/E median (scoring.js does the P/E filtering).
 //   • Other share classes of the company itself are never its peers (GOOG ≠ peer of GOOGL).
 
-import { lookupCik, fetchPriceHistory, splitFactorAfter, fetchShares } from './companyData.js';
+import { lookupCik, fetchPriceHistory, splitFactorAfter, fetchShares, fetchOiEstimate } from './companyData.js';
 import {
-  US_GAAP, factsFromConcept, flowSeries, instantSeries, debtAt,
+  US_GAAP, factsFromConcept, flowSeries, instantSeries, debtAt, operatingIncomeStale,
 } from './secClean.js';
 
 export const MAX_PEERS = 6;
@@ -84,8 +84,16 @@ async function peerMetrics(transport, ticker, { now = Date.now() } = {}) {
     (grouped[j.kind][j.item] ||= []).push(factsFromConcept(bodies[i], 'USD').facts);
   });
 
+  // 10-24: no / stale operating-income tag (ETN, COHR) → pre-tax + interest.
+  let oiLists = grouped.flows.operatingIncome || [];
+  let oiEstimated = false;
+  if (operatingIncomeStale(oiLists, now)) {
+    const est = await fetchOiEstimate(transport, id.cik, 'USD');
+    if (est.facts.length) { oiLists = [est.facts]; oiEstimated = true; }
+  }
+
   // Operating income, last 12 months: the newest 4 quarters, which must be recent and contiguous.
-  const oiQuarters = [...flowSeries(grouped.flows.operatingIncome || []).quarters.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const oiQuarters = [...flowSeries(oiLists).quarters.entries()].sort(([a], [b]) => a.localeCompare(b));
   const last4 = oiQuarters.slice(-4);
   if (last4.length < 4) return { ...base, reason: 'No quarterly US-GAAP operating income' };
   const spanDays = (Date.parse(last4[3][0]) - Date.parse(last4[0][0])) / 86400000;
@@ -122,6 +130,7 @@ async function peerMetrics(transport, ticker, { now = Date.now() } = {}) {
     operatingIncomeTtm: oiTtm,
     opPe: oiTtm > 0 ? marketCap / oiTtm : null,
     debtToEquity,
+    oiEstimated, // 10-24: operating income = pre-tax + interest (no OI tag)
     reason: oiTtm > 0 ? null : 'Operating loss — left out of the P/E median',
   };
 }

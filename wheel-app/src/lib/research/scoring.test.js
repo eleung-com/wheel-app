@@ -303,9 +303,11 @@ describe('target upside scale', () => {
 });
 
 describe('value scale', () => {
-  it('v2.7 still live until the switch: own 5-yr P/E scored, no fair-value check', () => {
-    const r = scoreStock(company({ rules: undefined, opPe: 27 }));
-    expect(r.version).toBe(SCORING_VERSION);
+  it('v2.8 is live (10-24); v2.7 still available on request: own 5-yr P/E scored, no fair-value check', () => {
+    expect(SCORING_VERSION).toBe('v2.8');
+    expect(scoreStock(company({ rules: undefined })).version).toBe('v2.8');
+    const r = scoreStock(company({ rules: 'v2.7', opPe: 27 }));
+    expect(r.version).toBe('v2.7');
     expect(part(r, 'pe_own').points).toBe(70); // 10% cheaper than its 30 median
     expect(part(r, 'fmv')).toBeUndefined();
   });

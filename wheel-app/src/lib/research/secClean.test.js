@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   flowSeries, instantSeries, debtAt, debtSplitAt, shareSeries, buildFinancials, quartersFromYears,
-  factsFromConcept, conceptList, US_GAAP, reportingUnit,
+  factsFromConcept, conceptList, US_GAAP, reportingUnit, operatingIncomeStale, estimateOperatingIncome,
 } from './secClean.js';
 
 // Fact builders shaped like SEC companyconcept rows.
@@ -229,5 +229,30 @@ describe('quartersFromYears', () => {
     expect(q).toHaveLength(8);
     expect(q.slice(-4).reduce((s, x) => s + x.revenue, 0)).toBe(480);
     expect(q.every((x) => x.synthetic)).toBe(true);
+  });
+});
+
+describe('10-24 operating-income fallback (COHR, ETN)', () => {
+  const f = (start, end, val, filed = end) => ({ start, end, val, form: '10-Q', filed });
+  const now = Date.parse('2026-10-24');
+  it('stale when the newest operating-income period is older than ~200 days (Eaton stopped in 2019)', () => {
+    expect(operatingIncomeStale([[f('2019-01-01', '2019-12-31', 3675e6)]], now)).toBe(true);
+    expect(operatingIncomeStale([], now)).toBe(true);
+    expect(operatingIncomeStale([[f('2026-04-01', '2026-06-30', 100)]], now)).toBe(false);
+  });
+  it('estimate = pre-tax + interest for the same period; pre-tax alone when interest is missing', () => {
+    const pre = [[f('2026-04-01', '2026-06-30', 1144e6), f('2026-01-01', '2026-03-31', 1107e6)]];
+    const intr = [[f('2026-04-01', '2026-06-30', 201e6)]];
+    const est = estimateOperatingIncome(pre, intr);
+    const byEnd = Object.fromEntries(est.facts.map((x) => [x.end, x.val]));
+    expect(byEnd['2026-06-30']).toBe(1345e6);
+    expect(byEnd['2026-03-31']).toBe(1107e6);
+    expect(est.withInterest).toBe(1);
+    expect(est.preTaxOnly).toBe(1);
+    expect(est.facts.every((x) => x.estimated)).toBe(true);
+  });
+  it('negative interest tags (reported as a negative number) still add back', () => {
+    const est = estimateOperatingIncome([[f('2026-04-01', '2026-06-30', 100)]], [[f('2026-04-01', '2026-06-30', -20)]]);
+    expect(est.facts[0].val).toBe(120);
   });
 });
