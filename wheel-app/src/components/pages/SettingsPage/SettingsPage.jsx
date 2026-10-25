@@ -20,6 +20,7 @@ export default function SettingsPage({ criteria, onSave, onRefresh, onPull, onAd
 
   return (
     <div>
+      <div className="greet">Settings</div>
       <div className="subtabs" role="tablist" aria-label="Settings sections">
         {SUBTABS.map(t => (
           <button

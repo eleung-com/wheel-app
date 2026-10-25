@@ -7,6 +7,9 @@ import ResearchResult from './ResearchResult';
 import SavedSummary from './SavedSummary';
 import { cacheRun, cachedRun } from '../../../lib/research/runCache';
 import { fairValueInput } from '../../../lib/research/resultView';
+import StockList from '../StocksPage/StockList';
+import WatchPanel from './WatchPanel';
+import { cleanQuery, searchAction } from '../../../lib/stocksList';
 
 // Research tab — "Run a stock" (PRD §6A-BUILD, P1.4–P1.6).
 // Type a ticker → the app pulls SEC / Yahoo / FMP / Finnhub through the Worker
@@ -38,7 +41,14 @@ function rowTag(h) {
   return 'Prelim';
 }
 
-export default function ResearchPage({ showToast, initialTicker = null, watchlist = [] }) {
+// Part 9D (approved 10-25): this is now the Stocks tab — watchlist list +
+// search on top; a stock opens its last SAVED run (no re-run); only the search
+// box's Research button and "Re-run with fresh data" start a new run.
+export default function ResearchPage({
+  showToast, openRequest = null, watchlist = [], scores = null, positions = [],
+  evals = {}, evalsLoading = false, onSaveNotes, onOverride, onTrade,
+  isActive = false, onSyncNotion, onModalOpenChange,
+}) {
   // v2.8: the score reads fair value from the watchlist; a ref so callbacks
   // always see the latest rows without re-creating themselves.
   const watchlistRef = useRef(watchlist);
@@ -58,6 +68,7 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
   // device's cache; summary = only what Notion saved (other device).
   const [fromSaved, setFromSaved] = useState(false);
   const [summary, setSummary] = useState(null); // { row, writeup, loading }
+  const [opening, setOpening] = useState(null); // ticker being opened
   const runId = useRef(0);
   const finalizedFor = useRef(null); // `${pageId}|${claudeWritten}` already re-scored
 
@@ -69,14 +80,23 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
 
   useEffect(() => { refreshRecent(); }, [refreshRecent]);
 
-  // Part 3W: "Research" on a Watchlist card → this tab with the ticker typed
-  // in, ready to Run (not started automatically).
+  // Part 9D: another tab (Signals) asked to open a stock here.
   useEffect(() => {
-    if (!initialTicker?.ticker || status.running) return;
-    runId.current++;
-    setRun(null); setSave(null); setClaude(null); setError(null);
-    setTicker(initialTicker.ticker);
-  }, [initialTicker]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!openRequest?.ticker || status.running) return;
+    openTicker(openRequest.ticker);
+  }, [openRequest]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-pull Notion whenever the tab is opened (notes / FMV change upstream).
+  useEffect(() => { if (isActive) onSyncNotion?.(); }, [isActive, onSyncNotion]);
+  // A stock page holds a notes draft — pause background watchlist syncs meanwhile.
+  const detailOpen = !!(run || summary);
+  useEffect(() => { onModalOpenChange?.(detailOpen); }, [detailOpen, onModalOpenChange]);
+
+  const heldTickers = React.useMemo(() => {
+    const s = new Set();
+    for (const p of positions || []) if (!p.linkedId) s.add(p.ticker);
+    return s;
+  }, [positions]);
 
   useEffect(() => {
     if (!status.running) return undefined;
@@ -212,7 +232,7 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
   }
 
   // ── Part 9C: open a past run as saved — never re-runs ─────────────────────
-  async function openSaved(h) {
+  async function openSaved(h, knownHistory = null) {
     const id = ++runId.current;
     finalizedFor.current = null;
     setError(null);
@@ -222,22 +242,51 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
       setRun(cached);
       setFromSaved(true);
       setSummary(null);
-      setSave({ state: 'saved', pageId: h.pageId, history: [h] });
+      setSave({ state: 'saved', pageId: h.pageId, history: knownHistory || [h] });
       setClaude({ row: h, writeup: [] }); // the poll effect loads the write-up once
-      loadRuns({ ticker: h.ticker }).then((history) => { if (id === runId.current) setSave((s) => ({ ...s, history })); }).catch(() => {});
+      if (!knownHistory) loadRuns({ ticker: h.ticker }).then((history) => { if (id === runId.current) setSave((s) => ({ ...s, history })); }).catch(() => {});
       return;
     }
     // Another device's run: show what Notion saved.
     setRun(null);
     setFromSaved(false);
-    setSave({ state: 'saved', pageId: h.pageId, history: [h] });
+    setSave({ state: 'saved', pageId: h.pageId, history: knownHistory || [h] });
     setSummary({ row: h, writeup: [], loading: true });
+    if (!knownHistory) loadRuns({ ticker: h.ticker }).then((history) => { if (id === runId.current) setSave((s) => ({ ...s, history })); }).catch(() => {});
     try {
       const { run: row, writeup } = await loadRun(h.pageId);
       if (id === runId.current) setSummary({ row: { ...h, ...row }, writeup, loading: false });
     } catch {
       if (id === runId.current) setSummary((x) => (x ? { ...x, loading: false } : x));
     }
+  }
+
+  // Part 9D: tap a stock → its latest saved run (or "no research yet").
+  async function openTicker(raw) {
+    const t = cleanQuery(raw);
+    if (!t) return;
+    const id = ++runId.current;
+    setError(null);
+    setOpening(t);
+    try {
+      const rows = await loadRuns({ ticker: t, limit: 10 });
+      if (id !== runId.current) return;
+      if (rows.length) {
+        await openSaved(rows[0], rows);
+      } else {
+        setRun(null); setFromSaved(false); setSave(null); setClaude(null);
+        setSummary({ row: { ticker: t }, none: true, writeup: [], loading: false });
+      }
+    } catch (e) {
+      if (id === runId.current) setError(`Couldn’t open ${t}: ${String(e.message || e).slice(0, 100)}`);
+    } finally {
+      setOpening((o) => (o === t ? null : o));
+    }
+  }
+
+  function backToList() {
+    runId.current++;
+    setRun(null); setSave(null); setClaude(null); setFromSaved(false); setSummary(null);
   }
 
   async function decide(d) {
@@ -260,6 +309,14 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
     }
   }
 
+  const panelFor = (tk) => {
+    const row = watchlist.find((w) => w.ticker === tk) || null;
+    return (
+      <WatchPanel ticker={tk} row={row} ev={evals[tk]} evalsLoading={evalsLoading}
+        onSaveNotes={onSaveNotes} onOverride={onOverride} />
+    );
+  };
+
   if (run && !status.running) {
     return (
       <ResearchResult
@@ -271,17 +328,20 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
         onRedoClaude={redo}
         onRetrySave={() => persist(run, runId.current)}
         onDecide={decide}
-        onBack={() => { runId.current++; setRun(null); setSave(null); setClaude(null); setFromSaved(false); }}
+        onBack={backToList}
         onRerun={() => start(run.ticker)}
         watchlist={watchlist}
         fromSaved={fromSaved}
+        notesPanel={panelFor(run.ticker)}
+        onTrade={onTrade}
+        onOpenRun={(h, rows) => openSaved(h, rows)}
       />
     );
   }
 
   if (summary && !status.running) {
     const h = summary.row;
-    const canFinish = claudeState(h) === 'done' && h.scoreType !== 'Final';
+    const canFinish = !summary.none && claudeState(h) === 'done' && h.scoreType !== 'Final';
     return (
       <SavedSummary
         row={h}
@@ -292,20 +352,32 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
         onDecide={decide}
         onRerun={() => start(h.ticker)}
         onFinish={canFinish ? () => start(h.ticker, { finishPageId: h.pageId }) : null}
-        onBack={() => { runId.current++; setSummary(null); setSave(null); }}
+        onBack={backToList}
+        none={!!summary.none}
+        notesPanel={panelFor(h.ticker)}
+        onTrade={onTrade}
+        onOpenRun={(x, rows) => openSaved(x, rows)}
       />
     );
   }
 
+  const action = searchAction(ticker, watchlist);
+  const busy = status.running || !!opening;
+  function submit(e) {
+    e.preventDefault();
+    if (action === 'open') openTicker(ticker);
+    else start(ticker);
+  }
+
   return (
     <div>
-      <div className="greet">Research</div>
-      <div className="greet-sub">Score any US stock. Claude adds peers and the story in a few minutes.</div>
+      <div className="greet">Stocks</div>
+      <div className="greet-sub">Your watchlist, and research on any US stock. Tap a stock to see its saved research.</div>
 
-      <form className="rs-runbox" onSubmit={(e) => { e.preventDefault(); start(ticker); }}>
+      <form className="rs-runbox" onSubmit={submit}>
         <input
           className="minput rs-input"
-          placeholder="Ticker, e.g. UBER"
+          placeholder="Search your stocks, or type any ticker to research it…"
           value={ticker}
           onChange={(e) => setTicker(e.target.value.toUpperCase())}
           autoCapitalize="characters"
@@ -313,11 +385,10 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
           spellCheck={false}
           inputMode="text"
           maxLength={10}
-          disabled={status.running}
-          aria-label="Ticker"
+          aria-label="Search or research a ticker"
         />
-        <button type="submit" className="btn-p rs-run" disabled={status.running || !ticker.trim()}>
-          {status.running ? <span className="spinner" /> : 'Run'}
+        <button type="submit" className="btn-p rs-run" disabled={busy || !action}>
+          {status.running ? <span className="spinner" /> : action === 'open' ? 'Open' : 'Research'}
         </button>
       </form>
 
@@ -326,27 +397,33 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
           <span className="spinner a" />{STEP_TEXT[status.step] || 'Working…'} <span className="rs-muted">{elapsed}s · usually 10–25s</span>
         </div>
       )}
+      {opening && !status.running && <div className="rs-progress" role="status"><span className="spinner a" />Opening {opening}…</div>}
       {error && <div className="rs-error" role="alert">{error}</div>}
 
-      <div className="slabel">Recent runs · tap to open as saved</div>
-      <div className="rs-hist">
-        {recent.rows === null && !recent.error && <div className="rs-muted rs-hist-empty">Loading…</div>}
-        {recent.error && !recent.rows && <div className="rs-muted rs-hist-empty">Couldn’t load from Notion: {recent.error}</div>}
-        {recent.rows?.length === 0 && <div className="rs-muted rs-hist-empty">No runs yet. Type a ticker above.</div>}
-        {(recent.rows || []).map((h) => {
-          const tag = rowTag(h);
-          const finish = tag === 'Tap for Final'; // opens as saved; Final updates from there
-          return (
-            <button type="button" key={h.pageId} className="rs-hrow" disabled={status.running}
-              onClick={() => openSaved(h)}>
-              <b>{h.ticker}</b>
-              <span className="rs-muted">{runStamp(h.runAt)}</span>
-              <span className={`rs-hv ${VERDICT_TONE[h.verdict] || 'n'}`}>{h.investmentScore ?? '—'} · {h.verdict || '—'}</span>
-              <span className={`rs-hd${finish ? ' go' : ''}`}>{tag}</span>
-            </button>
-          );
-        })}
-      </div>
+      <StockList watchlist={watchlist} scores={scores} query={ticker} heldTickers={heldTickers}
+        onOpen={openTicker} onResearch={(t) => start(t)} busy={busy} />
+
+      <details className="stk-recent">
+        <summary className="slabel">Recent research · tap to open as saved</summary>
+        <div className="rs-hist">
+          {recent.rows === null && !recent.error && <div className="rs-muted rs-hist-empty">Loading…</div>}
+          {recent.error && !recent.rows && <div className="rs-muted rs-hist-empty">Couldn’t load from Notion: {recent.error}</div>}
+          {recent.rows?.length === 0 && <div className="rs-muted rs-hist-empty">No runs yet. Type a ticker above.</div>}
+          {(recent.rows || []).map((h) => {
+            const tag = rowTag(h);
+            const finish = tag === 'Tap for Final'; // opens as saved; Final updates from there
+            return (
+              <button type="button" key={h.pageId} className="rs-hrow" disabled={busy}
+                onClick={() => openSaved(h)}>
+                <b>{h.ticker}</b>
+                <span className="rs-muted">{runStamp(h.runAt)}</span>
+                <span className={`rs-hv ${VERDICT_TONE[h.verdict] || 'n'}`}>{h.investmentScore ?? '—'} · {h.verdict || '—'}</span>
+                <span className={`rs-hd${finish ? ' go' : ''}`}>{tag}</span>
+              </button>
+            );
+          })}
+        </div>
+      </details>
     </div>
   );
 }

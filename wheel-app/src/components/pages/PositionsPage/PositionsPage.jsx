@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import HistoryPage from '../HistoryPage/HistoryPage';
 import { ACCOUNTS } from '../../../lib/utils';
 import SharesTable from './SharesTable';
 import LeapsTable from './LeapsTable';
@@ -57,7 +58,7 @@ function MissingSharesBanner({ positions, onAdd }) {
   );
 }
 
-export default function PositionsPage({ positions, watchlist, criteria, onSelectOptPos, onEditPos, onShowShareGroup, onAddAssignmentShares }) {
+function OpenPositions({ positions, watchlist, criteria, onSelectOptPos, onEditPos, onShowShareGroup, onAddAssignmentShares }) {
   // Group shares by ticker
   const shareGroups = {};
   for (const pos of positions.filter(p => p.type === 'shares' && !p.linkedId)) {
@@ -159,6 +160,23 @@ export default function PositionsPage({ positions, watchlist, criteria, onSelect
           onShowGroup={onShowShareGroup}
         />
       </div>
+    </div>
+  );
+}
+
+// Part 9E (approved 10-25): Positions = Open | History & performance. The
+// charts + trade log moved here from Home's "Performance details".
+export default function PositionsPage({ subRequest = null, ...props }) {
+  const [sub, setSub] = useState('open');
+  useEffect(() => { if (subRequest?.sub) setSub(subRequest.sub); }, [subRequest]);
+  return (
+    <div>
+      <div className="rs2-tabs pos-sub" role="tablist">
+        {[['open', 'Open'], ['hist', 'History & performance']].map(([k, label]) => (
+          <button key={k} type="button" role="tab" aria-selected={sub === k} className={sub === k ? 'on' : ''} onClick={() => setSub(k)}>{label}</button>
+        ))}
+      </div>
+      {sub === 'open' ? <OpenPositions {...props} /> : <HistoryPage positions={props.positions} />}
     </div>
   );
 }

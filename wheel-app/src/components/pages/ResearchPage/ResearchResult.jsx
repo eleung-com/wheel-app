@@ -5,6 +5,7 @@ import { plainLines, chartSeries, money } from '../../../lib/research/explain';
 import { rejectedBefore, runStamp, claudeState, CLAUDE_TIMEOUT_MIN, scoreAllowsPriority } from '../../../lib/research/runRecord';
 import { fairValueView, summaryOf, pillarLines, strengthsAndWatchouts, writeupTabs, leadSplit, watchRowFor } from '../../../lib/research/resultView';
 import { dte } from '../../../lib/utils';
+import StockTabs from './StockTabs';
 
 // Result screen for one "Run a stock". Part 7 (10-24) redesign: answer first
 // (verdict + fair value + actions), one-paragraph summary, 3 score cards,
@@ -77,7 +78,7 @@ function RejectedBanner({ row }) {
   );
 }
 
-function History({ save }) {
+export function History({ save, onOpen }) {
   const rows = save?.history || [];
   return (
     <>
@@ -86,12 +87,13 @@ function History({ save }) {
         {save?.state === 'saving' && <div className="rs-muted rs-hist-empty">Loading…</div>}
         {save?.state === 'error' && <div className="rs-muted rs-hist-empty">Unavailable until this run is saved.</div>}
         {save?.state === 'saved' && rows.map((h) => (
-          <div key={h.pageId} className={`rs-hrow static${h.pageId === save.pageId ? ' cur' : ''}`}>
+          <button type="button" key={h.pageId} className={`rs-hrow${h.pageId === save.pageId || !onOpen ? ' static' : ''}${h.pageId === save.pageId ? ' cur' : ''}`}
+            disabled={h.pageId === save.pageId || !onOpen} onClick={() => onOpen?.(h, rows)}>
             <b>{fmtDate(h.runAt)}</b>
             <span className="rs-muted">{h.version || ''}</span>
             <span className={`rs-hv ${VERDICT_TONE[h.verdict] || 'n'}`}>{h.investmentScore ?? '—'} · {h.verdict || '—'}</span>
-            <span className="rs-hd">{h.decision === 'Priority' ? 'Priority' : h.decision === 'Watch' ? 'Watch' : h.decision === 'Reject' ? 'Skipped' : h.pageId === save.pageId ? 'This run' : ''}</span>
-          </div>
+            <span className="rs-hd">{h.pageId === save.pageId ? 'This run' : h.decision === 'Priority' ? 'Priority' : h.decision === 'Watch' ? 'Watch' : h.decision === 'Reject' ? 'Skipped' : 'Open'}</span>
+          </button>
         ))}
       </div>
     </>
@@ -101,7 +103,7 @@ function History({ save }) {
 // Part 2B: Priority / Watch / Skip write the ONE field — Dive-In on the
 // watchlist. Skip is the old Reject (reason required, kept in the reject log).
 // Priority only when the score is Worth investing or Maybe.
-export function Actions({ ticker, save, current, verdict, onDecide, onRerun, running }) {
+export function Actions({ ticker, save, current, verdict, onDecide, onRerun, running, onTrade }) {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [busy, setBusy] = useState(null);
   const ready = save?.state === 'saved' && !!save.pageId;
@@ -143,6 +145,7 @@ export function Actions({ ticker, save, current, verdict, onDecide, onRerun, run
           aria-pressed={decision === 'Reject'} onClick={() => setRejectOpen(true)}>
           {decision === 'Reject' ? '✕ Skipped' : 'Skip'}
         </button>
+        {onTrade && <button type="button" className="btn-s" onClick={() => onTrade(ticker)}>Trade</button>}
         <button type="button" className="btn-s rs-rerun" onClick={onRerun} disabled={running}>↻ Re-run with fresh data</button>
       </div>
       <RejectModal
@@ -250,7 +253,8 @@ function ClaudeSection({ claude, save, finalizing, onRedo }) {
     </section>
   );
 }
-export default function ResearchResult({ run, onBack, onRerun, running, save, onRetrySave, onDecide, claude, finalizing, onRedoClaude, watchlist = [], fromSaved = false }) {
+export default function ResearchResult({ run, onBack, onRerun, running, save, onRetrySave, onDecide, claude, finalizing, onRedoClaude, watchlist = [], fromSaved = false, notesPanel = null, onTrade = null, onOpenRun = null }) {
+  const [tab, setTab] = useState('overview');
   const r = run.result;
   const b = run.bundle;
   const name = b?.name || run.ticker;
@@ -258,12 +262,12 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
   const tagsShown = r ? r.tags : b?.dataTags || [];
   const current = save?.history?.find((h) => h.pageId === save.pageId) || null;
   const prevReject = save?.state === 'saved' ? rejectedBefore(save.history, save.pageId) : null;
-  const actions = <Actions ticker={run.ticker} save={save} current={current} verdict={current?.verdict ?? r?.verdict ?? 'No score'} onDecide={onDecide} onRerun={onRerun} running={running} />;
+  const actions = <Actions ticker={run.ticker} save={save} current={current} verdict={current?.verdict ?? r?.verdict ?? 'No score'} onDecide={onDecide} onRerun={onRerun} running={running} onTrade={onTrade} />;
 
   if (!r) {
     return (
       <div>
-        <button type="button" className="rs-back" onClick={onBack}>‹ Research</button>
+        <button type="button" className="rs-back" onClick={onBack}>‹ Stocks</button>
         <div className="rs-head" style={{ '--vt': 'var(--mu)' }}>
           <div className="rs-tk">{run.ticker}</div>
           <div className="rs-name">{name}</div>
@@ -275,8 +279,9 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
         <div className="slabel">Why</div>
         <div className="rs-pills">{tagsShown.map((t) => <span key={t.code} className="cpill warn">{t.text}</span>)}</div>
         <ClaudeSection claude={claude} save={save} finalizing={false} onRedo={onRedoClaude} />
-        <History save={save} />
+        <History save={save} onOpen={onOpenRun} />
         {actions}
+        {notesPanel}
       </div>
     );
   }
@@ -306,7 +311,7 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
 
   return (
     <div className="rs2">
-      <button type="button" className="rs-back" onClick={onBack}>‹ Research</button>
+      <button type="button" className="rs-back" onClick={onBack}>‹ Stocks</button>
 
       {/* 1. Answer first: verdict + fair value + your call */}
       <section className="rs2-card rs2-hero">
@@ -362,6 +367,9 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
       </section>
       <RejectedBanner row={prevReject} />
 
+      <StockTabs tab={tab} onTab={setTab} />
+
+      {tab === 'overview' && <>
       {/* 2. The 3 scores — tap for the checks */}
       <div className="rs2-pillars">
         <Pillar label="Quality" score={r.quality.score} weight={r.weightsUsed.quality} line={pl.quality}>
@@ -416,11 +424,14 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
         </section>
       </div>
 
+      <div className="rs-note">Market cap {money(r.metrics.marketCap)} · operating P/E {r.metrics.operatingPe?.toFixed(1) ?? '—'} · reported P/E {r.metrics.reportedPe?.toFixed(1) ?? '—'}</div>
+      </>}
+
       {/* 4. Claude's read */}
-      <ClaudeSection claude={claude} save={save} finalizing={finalizing} onRedo={onRedoClaude} />
+      {tab === 'claude' && <ClaudeSection claude={claude} save={save} finalizing={finalizing} onRedo={onRedoClaude} />}
 
       {/* 5. Peers — one comparison table */}
-      <section className="rs2-card">
+      {tab === 'peers' && <section className="rs2-card">
         <div className="rs2-h">How it compares · {run.peers?.source === 'claude' ? 'peers picked by Claude' : 'Finnhub auto-peers'}</div>
         {peersUsed.length === 0 ? <div className="rs-muted">None usable — waiting on Claude’s peers.</div> : (
           <div className="rs2-tbl">
@@ -443,10 +454,11 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
             {run.peers.skipped.map((x) => <div key={x.ticker}><b>{x.ticker}</b> — {x.reason}</div>)}
           </details>
         )}
-      </section>
+      </section>}
 
       {/* 6. Charts side by side */}
-      {series && (
+      {tab === 'charts' && !series && <section className="rs2-card"><div className="rs-muted">No chart data on this run.</div></section>}
+      {tab === 'charts' && series && (
         <section className="rs2-card">
           <div className="rs2-h">Last {series.labels.length} {periodWord}</div>
           <div className="rs2-charts">
@@ -464,8 +476,7 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
         </section>
       )}
 
-      <History save={save} />
-      <div className="rs-note">Market cap {money(r.metrics.marketCap)} · operating P/E {r.metrics.operatingPe?.toFixed(1) ?? '—'} · reported P/E {r.metrics.reportedPe?.toFixed(1) ?? '—'}</div>
+      {tab === 'notes' && <>{notesPanel}<History save={save} onOpen={onOpenRun} /></>}
     </div>
   );
 }

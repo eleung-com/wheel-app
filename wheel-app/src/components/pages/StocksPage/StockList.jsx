@@ -1,12 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { evalSnippet } from '../../../lib/evalSummary';
+import React, { useMemo, useState } from 'react';
 import { NO_EARNINGS } from '../../../lib/signalEngine';
-import { watchlistGroup, wlSortKey, fmvOf, fmvStale, DIVE } from '../../../lib/fairValue';
+import { fmvOf, fmvStale } from '../../../lib/fairValue';
 import { moveNoteFor } from '../../../lib/homeFeed';
+import { groupStocks, filterGroups, cleanQuery, searchAction } from '../../../lib/stocksList';
 
-// Part 3W (PRD claude/wheel-app-prd-part3w-watchlist-redesign): what to watch
-// and why. Sections follow the LIVE price vs fair value (FMV Mid), with the
-// same rule the daily Worker job uses for Dive-In (src/lib/fairValue.js).
+// Part 9D (approved 10-25): the Stocks tab list — Watchlist sections + search.
+// Tapping a card opens the stock page with its last SAVED run (no re-run).
 
 const GROUPS = {
   ready: { name: 'Ready · Priority',          what: 'Good company, price at or under fair value. The Signals tab looks for trades here.' },
@@ -17,7 +16,7 @@ const GROUPS = {
   idx:   { name: 'Indexes',                   what: 'No score or fair value. LEAPS on XSP live in Signals.' },
 };
 const CHIPS = [['all', 'All'], ['ready', 'Ready'], ['close', 'Close'], ['wait', 'Waiting'], ['todo', 'Needs a step'], ['skip', 'Skip']];
-const FOLDED = new Set(['skip', 'idx']);
+const FOLDED = ['skip', 'idx'];
 
 const todayIso = () => {
   const d = new Date();
@@ -29,7 +28,7 @@ const mmdd = (iso) => (iso ? `${iso.slice(5, 7)}/${iso.slice(8, 10)}` : '');
 const verdictTone = (v) => (v === 'Worth investing' ? 'g' : v === 'Maybe' ? 'a' : v ? 'r' : 'n');
 const verdictShort = (v) => (v === 'Worth investing' ? 'Worth' : v || 'Unscored');
 
-function FairBar({ fmv, price }) {
+export function FairBar({ fmv, price }) {
   const lowEnd = fmv.low ?? fmv.mid * 0.85;
   const highEnd = fmv.high ?? fmv.mid * 1.3;
   const lo = Math.min(lowEnd * 0.9, (price || lowEnd) * 0.97);
@@ -56,23 +55,19 @@ function FairBar({ fmv, price }) {
   );
 }
 
-function Card({ item, open, onToggle, ev, evalsLoading, onSaveNotes, onTrade, onResearch, onOverride, today }) {
+function Card({ item, held, onOpen, today, disabled }) {
   const { w, g, score, price } = item;
   const fmv = fmvOf(w);
-  const [notes, setNotes] = useState(w.notes || '');
-  const [menu, setMenu] = useState(false);
-  useEffect(() => { if (!open) { setMenu(false); setNotes(w.notes || ''); } }, [open, w.notes]);
-  const snippet = evalSnippet(ev);
   const earnDays = w.earnings ? daysTo(w.earnings, today) : null;
   const move = moveNoteFor(w); // Part 6D: today's "why it moved", if any
-
   return (
-    <div className={`wl-card wl-${g.group}${open ? ' open' : ''}`}>
-      <button type="button" className="wl-head" onClick={onToggle} aria-expanded={open}>
+    <div className={`wl-card wl-${g.group}`}>
+      <button type="button" className="wl-head" onClick={() => onOpen(w.ticker)} disabled={disabled}>
         <div className="wl-top">
           <span className="wl-tk">{w.ticker}</span>
           <span className={`wl-pill ${verdictTone(score?.verdict)}`}>{score?.score ?? '—'} · {verdictShort(score?.verdict)}</span>
           {g.tag && <span className="wl-pill you">{g.tag}</span>}
+          {held && <span className="wl-pill held">You hold</span>}
           <span className="wl-px">{price != null ? money(price) : '—'}</span>
         </div>
         <div className="wl-why">{g.why}</div>
@@ -84,9 +79,9 @@ function Card({ item, open, onToggle, ev, evalsLoading, onSaveNotes, onTrade, on
             </span>
           )}
           {fmv && <span className={fmvStale(fmv, today) ? 'warn' : ''}>Fair value {fmv.date ? `from ${mmdd(fmv.date)}` : 'undated'}{fmvStale(fmv, today) ? ' · stale' : ''}</span>}
+          {score?.runAt && <span>Researched {mmdd(String(score.runAt).slice(0, 10))}</span>}
         </div>
       </button>
-
       {move && (
         <div className={`wl-move ${move.pct != null && move.pct < 0 ? 'dn' : 'up'}`}>
           {move.pct != null && <b>{move.pct < 0 ? '▼' : '▲'} {Math.abs(move.pct).toFixed(1)}%: </b>}
@@ -94,92 +89,42 @@ function Card({ item, open, onToggle, ev, evalsLoading, onSaveNotes, onTrade, on
           {move.link && <a href={move.link} target="_blank" rel="noopener noreferrer">Top story →</a>}
         </div>
       )}
-
-      {open && (
-        <div className="wl-more">
-          {score?.quality != null && (
-            <div className="wl-qvu">
-              <div><b>{score.quality}</b><small>Quality</small></div>
-              <div><b>{score.value ?? 'n/a'}</b><small>Value</small></div>
-              <div><b>{score.upside ?? 'n/a'}</b><small>Upside</small></div>
-            </div>
-          )}
-          <div className="wl-eval">{snippet || (ev === undefined && evalsLoading ? 'Loading evaluation…' : 'No evaluation in Notion yet')}</div>
-          <label className="wl-notes-l" htmlFor={`wl-notes-${w.ticker}`}>My notes</label>
-          <textarea
-            id={`wl-notes-${w.ticker}`}
-            className="wl-notes"
-            value={notes}
-            placeholder="Add a note (saved to Notion)…"
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={() => { if (notes !== (w.notes || '')) onSaveNotes(w.ticker, notes); }}
-          />
-          <div className="wl-acts">
-            <button type="button" className="wl-trade" onClick={() => onTrade(w.ticker)}>Trade</button>
-            <button type="button" onClick={() => onResearch(w.ticker)}>Research</button>
-            <button type="button" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>Override</button>
-          </div>
-          {menu && (
-            <div className="wl-ovr" role="group" aria-label="Override Dive-In">
-              {[DIVE.PRIORITY, DIVE.WATCH, DIVE.SKIP].map((d) => (
-                <button type="button" key={d} className={w.override === d ? 'on' : ''}
-                  onClick={() => { setMenu(false); onOverride(w.ticker, d); }}>{d}</button>
-              ))}
-              <button type="button" disabled={!w.override} onClick={() => { setMenu(false); onOverride(w.ticker, null); }}>Automatic</button>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
-export default function WatchlistPage({
-  watchlist, isActive, evals = {}, evalsLoading, scores = null,
-  onSaveNotes, onSyncNotion, onModalOpenChange, onTrade, onResearch, onOverride,
-}) {
+export default function StockList({ watchlist, scores, query, heldTickers, onOpen, onResearch, busy }) {
   const [filter, setFilter] = useState('all');
-  const [openTicker, setOpenTicker] = useState(null);
   const today = todayIso();
-
-  // Re-pull Notion whenever the tab is opened (notes / FMV change upstream).
-  useEffect(() => { if (isActive) onSyncNotion?.(); }, [isActive, onSyncNotion]);
-  // An open card holds an unsaved notes draft — pause background syncs meanwhile.
-  useEffect(() => { onModalOpenChange?.(openTicker != null); }, [openTicker, onModalOpenChange]);
-
-  const byGroup = useMemo(() => {
-    const out = Object.fromEntries(Object.keys(GROUPS).map((k) => [k, []]));
-    for (const w of watchlist) {
-      const score = scores ? scores[w.ticker] || null : null;
-      const price = w.liveData?.price ?? null;
-      const g = watchlistGroup({ row: w, score, price, isIndex: NO_EARNINGS.has(w.ticker), override: w.override });
-      out[g.group].push({ w, g, score, price, pct: g.pct });
-    }
-    for (const k of ['ready', 'close', 'wait']) out[k].sort((a, b) => wlSortKey(a) - wlSortKey(b));
-    for (const k of ['todo', 'skip', 'idx']) out[k].sort((a, b) => a.w.ticker.localeCompare(b.w.ticker));
-    return out;
-  }, [watchlist, scores]);
-
+  const all = useMemo(() => groupStocks(watchlist, scores, (t) => NO_EARNINGS.has(t)), [watchlist, scores]);
+  const byGroup = useMemo(() => filterGroups(all, query), [all, query]);
+  const q = cleanQuery(query);
+  const action = searchAction(q, watchlist);
   const stocks = watchlist.filter((w) => !NO_EARNINGS.has(w.ticker)).length;
-  const count = (k) => (k === 'all' ? stocks : byGroup[k].length);
+  const count = (k) => (k === 'all' ? (q ? Object.values(byGroup).flat().length : stocks) : byGroup[k].length);
   const shown = (k) => filter === 'all' || filter === k;
+  const any = Object.values(byGroup).some((xs) => xs.length);
 
   const renderCards = (k) => (
     <div className="wl-grid">
       {byGroup[k].map((item) => (
-        <Card key={item.w.ticker} item={item} today={today}
-          open={openTicker === item.w.ticker}
-          onToggle={() => setOpenTicker((t) => (t === item.w.ticker ? null : item.w.ticker))}
-          ev={evals[item.w.ticker]} evalsLoading={evalsLoading}
-          onSaveNotes={onSaveNotes} onTrade={onTrade} onResearch={onResearch} onOverride={onOverride} />
+        <Card key={item.w.ticker} item={item} today={today} held={heldTickers?.has(item.w.ticker)} onOpen={onOpen} disabled={busy} />
       ))}
     </div>
   );
 
   return (
     <div className="wl-page">
-      <h1 className="wl-h1">Watchlist</h1>
       {scores == null && <div className="wl-note">Loading scores… sections update when they arrive.</div>}
+
+      {action === 'research' && (
+        <div className="stk-new">
+          <span><b>{q}</b> isn’t on your watchlist.</span>
+          <button type="button" className="btn-p" onClick={() => onResearch(q)} disabled={busy}>Research {q}</button>
+          <small>Runs the full research (about 20 s) and saves it. To follow it here, add it in TradingView.</small>
+        </div>
+      )}
+
       <div className="wl-chips" role="tablist">
         {CHIPS.map(([k, label]) => (
           <button type="button" key={k} role="tab" aria-selected={filter === k}
@@ -196,9 +141,9 @@ export default function WatchlistPage({
         </section>
       ))}
 
-      {[...FOLDED].map((k) => (shown(k) || (k === 'idx' && filter === 'all')) && byGroup[k].length > 0 && (
+      {FOLDED.map((k) => (shown(k) || (k === 'idx' && filter === 'all')) && byGroup[k].length > 0 && (
         <section key={k} className={`wl-sec wl-${k}`}>
-          <details open={filter === k}>
+          <details open={filter === k || !!q}>
             <summary className="wl-sech"><h2>{GROUPS[k].name} · {byGroup[k].length} ▸</h2><span>{GROUPS[k].what}</span></summary>
             {k === 'skip' ? renderCards(k) : (
               <div className="wl-rows">
@@ -216,6 +161,7 @@ export default function WatchlistPage({
       ))}
 
       {!watchlist.length && <div className="wl-empty">No watchlist tickers yet.</div>}
+      {watchlist.length > 0 && q && !any && action !== 'research' && <div className="wl-empty">Nothing matches “{q}”.</div>}
     </div>
   );
 }

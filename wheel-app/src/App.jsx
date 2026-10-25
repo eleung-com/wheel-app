@@ -9,6 +9,7 @@ import { useScreener }    from './hooks/useScreener';
 import useEvals           from './hooks/useEvals';
 import { isConfigured, LS_SESSION_KEY, parseCriteria, parsePositions, parseClosedTrades } from './lib/utils';
 import { sortByDiveIn } from './lib/watchlistOrder';
+import { PAGE_ALIAS } from './lib/nav';
 
 import AuthGate    from './components/AuthGate/AuthGate';
 import BootScreen  from './components/BootScreen/BootScreen';
@@ -23,7 +24,6 @@ import SignalsPage   from './components/pages/SignalsPage/SignalsPage';
 import ResearchPage  from './components/pages/ResearchPage/ResearchPage';
 import PositionsPage from './components/pages/PositionsPage/PositionsPage';
 import { sharesFromAssignment, applyCalledAway } from './lib/assignment';
-import WatchlistPage from './components/pages/WatchlistPage/WatchlistPage';
 import SettingsPage  from './components/pages/SettingsPage/SettingsPage';
 
 import ModalOverlay           from './components/modals/ModalOverlay';
@@ -61,7 +61,11 @@ export default function App() {
   const [isBooting, setIsBooting] = useState(() => getInitialAuthState() === 'booting');
 
   // Navigation
-  const [activePage, setActivePage] = useState('pg-home');
+  const [activePage, setActivePageRaw] = useState('pg-home');
+  const setActivePage = useCallback((id) => setActivePageRaw(PAGE_ALIAS[id] || id), []);
+  // Part 9D/9E: ask the Stocks tab to open a stock; ask Positions for a sub-tab.
+  const [stockRequest, setStockRequest] = useState(null);
+  const [posSubRequest, setPosSubRequest] = useState(null);
 
   // Modal state
   const [openModal,         setOpenModal]         = useState(null);
@@ -73,7 +77,6 @@ export default function App() {
   const [addPosType,        setAddPosType]        = useState(null);
   // Part 3W: Watchlist "Trade" → Log a trade, filled in.
   const [tradePrefill,      setTradePrefill]      = useState(null);
-  const [researchTicker,    setResearchTicker]    = useState(null);
   // Signal detail
   const [detailSignalId,    setDetailSignalId]    = useState(null);
 
@@ -123,7 +126,7 @@ export default function App() {
   // not empty `evals` and re-fetch on every return.
   const [watchlistSeen, setWatchlistSeen] = useState(false);
   useEffect(() => {
-    if (activePage === 'pg-watchlist') setWatchlistSeen(true);
+    if (activePage === 'pg-stocks') setWatchlistSeen(true);
   }, [activePage]);
 
   const watchEvalTargets = useMemo(
@@ -475,9 +478,12 @@ export default function App() {
     setOpenModal('pos');
   }
 
-  function handleWatchResearch(ticker) {
-    setResearchTicker({ ticker, at: Date.now() });
-    setActivePage('pg-research');
+  // Part 9D: Signals → "View X in Stocks" opens the stock page (saved run).
+  function handleOpenStock(ticker) {
+    setOpenModal(null);
+    setDetailSignalId(null);
+    setStockRequest({ ticker, at: Date.now() });
+    setActivePage('pg-stocks');
   }
 
   async function handleWatchOverride(ticker, diveIn) {
@@ -521,6 +527,8 @@ export default function App() {
         onRefresh={handleHeaderRefresh}
         onPull={syncFromSheet}
         onHelp={() => setOpenModal('help')}
+        onSettings={() => setActivePage(activePage === 'pg-settings' ? 'pg-home' : 'pg-settings')}
+        settingsOn={activePage === 'pg-settings'}
       />
 
       {/* Part 5A / 5F: sheet safety banners */}
@@ -555,6 +563,7 @@ export default function App() {
           showToast={showToast}
           onShowSignal={id => { setDetailSignalId(id); setOpenModal('signal-detail'); }}
           lastRefresh={state.lastRefresh}
+          onOpenPerformance={() => { setPosSubRequest({ sub: 'hist', at: Date.now() }); setActivePage('pg-positions'); }}
         />
       </div>
 
@@ -570,12 +579,27 @@ export default function App() {
         />
       </div>
 
-      <div className={`page${activePage === 'pg-research' ? ' active' : ''}`} id="pg-research">
-        <ResearchPage showToast={showToast} initialTicker={researchTicker} watchlist={state.watchlist} />
+      <div className={`page${activePage === 'pg-stocks' ? ' active' : ''}`} id="pg-stocks">
+        <ResearchPage
+          showToast={showToast}
+          openRequest={stockRequest}
+          watchlist={state.watchlist}
+          scores={state.scores}
+          positions={state.positions}
+          evals={watchEvals}
+          evalsLoading={watchEvalsLoading}
+          onSaveNotes={handleUpdateWatchNotes}
+          onOverride={handleWatchOverride}
+          onTrade={handleWatchTrade}
+          isActive={activePage === 'pg-stocks'}
+          onSyncNotion={syncNotionWatchlist}
+          onModalOpenChange={handleWatchModalOpenChange}
+        />
       </div>
 
       <div className={`page${activePage === 'pg-positions' ? ' active' : ''}`} id="pg-positions">
         <PositionsPage
+          subRequest={posSubRequest}
           onAddAssignmentShares={handleAddAssignmentShares}
           positions={state.positions}
           watchlist={state.watchlist}
@@ -583,22 +607,6 @@ export default function App() {
           onSelectOptPos={handleSelectOptPos}
           onEditPos={handleEditPos}
           onShowShareGroup={handleShowShareGroup}
-        />
-      </div>
-
-      <div className={`page${activePage === 'pg-watchlist' ? ' active' : ''}`} id="pg-watchlist">
-        <WatchlistPage
-          watchlist={state.watchlist}
-          isActive={activePage === 'pg-watchlist'}
-          evals={watchEvals}
-          evalsLoading={watchEvalsLoading}
-          onSaveNotes={handleUpdateWatchNotes}
-          onSyncNotion={syncNotionWatchlist}
-          onModalOpenChange={handleWatchModalOpenChange}
-          scores={state.scores}
-          onTrade={handleWatchTrade}
-          onResearch={handleWatchResearch}
-          onOverride={handleWatchOverride}
         />
       </div>
 
@@ -675,6 +683,7 @@ export default function App() {
           loading={evalsLoading}
           onClose={() => { setOpenModal(null); setDetailSignalId(null); }}
           onTrade={handleSignalTrade}
+          onOpenStock={handleOpenStock}
         />
       </ModalOverlay>
 

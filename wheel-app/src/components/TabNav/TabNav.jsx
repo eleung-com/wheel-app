@@ -4,7 +4,7 @@ import { NAV_ITEMS, navBadges } from '../../lib/nav';
 const BADGE_CLASS = {
   'pg-signals':   'g',
   'pg-positions': 'b',
-  'pg-watchlist': 'p',
+  'pg-stocks':    'p',
 };
 
 export default function TabNav({ activePage, onSwitch, positions, watchlist, signals = [] }) {
