@@ -9,7 +9,7 @@
 // Part 8 (10-24): v2.8 is built but NOT live until El reviews the dry run
 // (PRD step 8C → 8D). LIVE_RULES decides what real runs use; the dry run asks
 // for 'v2.8' explicitly. Step 8D flips this one line to 'v2.8'.
-export const LIVE_RULES = 'v2.7';
+export const LIVE_RULES = 'v2.8'; // switched 10-24 after El reviewed the dry run
 export const SCORING_VERSION = LIVE_RULES;
 // v2.8: Value check 1 = price vs fair value (FMV Mid); own 5-yr P/E is info only
 // v2.7 (10-04): smooth value scale, <3 peers = n/a, upside full at +50%

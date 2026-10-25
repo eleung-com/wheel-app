@@ -15,7 +15,7 @@
 
 import {
   US_GAAP, IFRS, factsFromConcept, reportingUnit, shareFactsFromConcept, shareSeries,
-  buildFinancials, quartersFromYears,
+  buildFinancials, quartersFromYears, operatingIncomeStale, estimateOperatingIncome, OI_FALLBACK,
 } from './secClean.js';
 
 const CONCURRENCY = 5; // SEC allows 10 requests/sec; stay well under
@@ -84,6 +84,16 @@ async function fetchTaxonomy(transport, cik, taxonomy, set) {
     bucket[j.prio] = facts;
   });
   return { raw, unit, found: bodies.some(Boolean) };
+}
+
+/** Fetch the fallback concepts and build estimated operating-income facts. */
+export async function fetchOiEstimate(transport, cik, unit = 'USD') {
+  const get = (label) => getJson(transport.sec, `/api/xbrl/companyconcept/CIK${cik}/us-gaap/${label}.json`);
+  const [pre, intr] = await Promise.all([
+    Promise.all(OI_FALLBACK.pretax.map(get)),
+    Promise.all(OI_FALLBACK.interest.map(get)),
+  ]);
+  return estimateOperatingIncome(pre.map((b) => factsFromConcept(b, unit).facts), intr.map((b) => factsFromConcept(b, unit).facts));
 }
 
 export async function fetchShares(transport, cik) {
@@ -215,6 +225,18 @@ export async function fetchCompanyBundle(transport, ticker, { withTarget = true,
   if (!fin) {
     dataTags.push({ code: 'no_sec_financials', text: 'SEC has no usable financials for this company' });
     return { ok: false, ticker: t, name: id.name, input: null, financials: null, price: px, dataTags, meta };
+  }
+  // 10-24: operating income untagged / stale (COHR, ETN) → estimate it from
+  // pre-tax income + interest expense, for every period.
+  if (taxonomy === 'us-gaap' && operatingIncomeStale(tax.raw.flows.operatingIncome, now)) {
+    const est = await fetchOiEstimate(transport, id.cik, tax.unit || 'USD');
+    if (est.facts.length) {
+      const fin2 = buildFinancials({ ...tax.raw, flows: { ...tax.raw.flows, operatingIncome: [est.facts] } });
+      if (fin2) {
+        fin = fin2;
+        dataTags.push({ code: 'oi_estimated', text: `Operating income estimated as pre-tax income + interest${est.preTaxOnly && !est.withInterest ? ' (no interest data — pre-tax only, so it reads low)' : ''}: the company doesn’t report an operating-income line` });
+      }
+    }
   }
   meta.taxonomy = taxonomy;
   meta.currency = tax.unit || 'USD';

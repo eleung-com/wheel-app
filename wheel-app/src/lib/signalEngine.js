@@ -414,7 +414,11 @@ export function buildSignals(watchlist, positions, criteria, qmap, strikeMap = {
           runPageId: sc.pageId,
           ...notionOf(w.ticker),
           chks: [{ l: `Score ${sc.score != null ? Math.round(sc.score) : '—'} · Not worth it`, ok: false }],
-          suggestion: 'No trade cards while it scores below 55. Move to Watch, or keep Priority.',
+          // Part 8F: say whether it's the business or the price holding it down.
+          suggestion: (sc.quality != null && sc.quality < 50
+            ? 'Business quality is under 50. '
+            : sc.value != null && sc.value < 34 ? 'Mostly price: it’s well above fair value. ' : '')
+            + 'No trade cards while it scores below 55. Move to Watch, or keep Priority.',
           ts: now,
         });
       }

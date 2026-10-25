@@ -24,4 +24,18 @@ describe('planAutoRuns (Part 4D)', () => {
   it('nothing to do when all fresh + Final', () => {
     expect(planAutoRuns([{ ticker: 'ADBE' }], runs, isIndex, { now })).toEqual([]);
   });
+  it('Part 8D: runs under older rules are re-scored (after new + finish), in place', () => {
+    const r2 = [{ ticker: 'ADBE', investmentScore: 73, status: 'Final', claudeWritten: ago(1), runAt: ago(1), version: 'v2.7', pageId: 'a1' }];
+    const plan = planAutoRuns([{ ticker: 'ADBE' }], r2, isIndex, { now });
+    expect(plan).toEqual([{ ticker: 'ADBE', kind: 'rescore', row: r2[0] }]);
+  });
+  it('Part 8E: Not worth it + Quality ≥ 50 + price at/under fair value → rescue', () => {
+    const r3 = [{ ticker: 'AMD', investmentScore: 44, verdict: 'Not worth it', quality: 70, status: 'Final', runAt: ago(5), version: 'v2.8', pageId: 'm1' }];
+    const under = [{ ticker: 'AMD', fmvMid: 150, liveData: { price: 140 } }];
+    const over = [{ ticker: 'AMD', fmvMid: 150, liveData: { price: 200 } }];
+    expect(planAutoRuns(under, r3, isIndex, { now })[0].kind).toBe('rescue');
+    expect(planAutoRuns(over, r3, isIndex, { now })).toEqual([]);
+    const weak = [{ ...r3[0], quality: 40 }];
+    expect(planAutoRuns(under, weak, isIndex, { now })).toEqual([]); // low quality: price can't save it
+  });
 });

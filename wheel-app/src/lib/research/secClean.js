@@ -406,3 +406,45 @@ export function quartersFromYears(annual, maxYears = 5) {
   }
   return out;
 }
+
+// ── Operating-income fallback (10-24: COHR, ETN) ─────────────────────────────
+// Some large filers stopped tagging us-gaap:OperatingIncomeLoss (Eaton after
+// 2019, Coherent after mid-2024) because their income statement has no
+// "operating income" subtotal. Without it there's no operating P/E, so Value
+// was n/a. Fallback: operating income ≈ pre-tax income + interest expense
+// (EBIT). Used only when the real tag is missing or stale, and then for EVERY
+// period, so growth compares like with like. Tagged on the run.
+export const OI_FALLBACK = {
+  pretax: ['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest',
+    'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments',
+    'IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic'],
+  interest: ['InterestExpenseNonoperating', 'InterestExpense', 'InterestExpenseDebt'],
+};
+export const OI_STALE_DAYS = 200; // newest period older than this → the tag was dropped
+
+/** True when the operating-income facts are missing or stopped ~2 quarters+ ago. */
+export function operatingIncomeStale(oiFactLists, now = Date.now()) {
+  const s = flowSeries(oiFactLists || []);
+  const ends = [...s.quarters.keys(), ...s.years.keys()].sort();
+  if (!ends.length) return true;
+  return (now - Date.parse(ends.at(-1))) / 86400000 > OI_STALE_DAYS;
+}
+
+/**
+ * Synthetic operating-income facts: pre-tax income + interest expense for the
+ * same period (start + end). A period with no interest fact uses pre-tax alone
+ * (understates, never overstates, for a borrower). Returns ONE fact list.
+ * @returns {{ facts: object[], withInterest: number, preTaxOnly: number }}
+ */
+export function estimateOperatingIncome(pretaxLists, interestLists) {
+  const pre = mergeByPeriod(pretaxLists || []).filter((f) => f.start);
+  const intr = new Map(mergeByPeriod(interestLists || []).filter((f) => f.start).map((f) => [`${f.start}|${f.end}`, f]));
+  let withInterest = 0, preTaxOnly = 0;
+  const facts = pre.map((f) => {
+    const i = intr.get(`${f.start}|${f.end}`);
+    if (i) withInterest++; else preTaxOnly++;
+    const { _prio, ...rest } = f;
+    return { ...rest, val: f.val + (i ? Math.abs(i.val) : 0), estimated: true };
+  });
+  return { facts, withInterest, preTaxOnly };
+}
