@@ -14,7 +14,7 @@ const PRIORITY = '🔥 Priority';
 // Part 6A (approved 10-23): one scroll, news first — market strip → today's
 // movers → earnings → news → stats. The old Stats / News sub-tabs are gone.
 export default function HomePage({
-  positions, closedTrades, criteria, signals, watchlist, showToast, onShowSignal, lastRefresh,
+  positions, closedTrades, criteria, signals, watchlist, showToast, onShowSignal, lastRefresh, onOpenPerformance,
 }) {
   const [account, setAccount] = useState('all');
 
@@ -54,6 +54,7 @@ export default function HomePage({
         signals={signals}
         account={account}
         onAccount={setAccount}
+        onOpenPerformance={onOpenPerformance}
       />
       <MarketStrip rows={strip.rows} failed={strip.failed} />
 

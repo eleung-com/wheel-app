@@ -113,7 +113,7 @@ export function watchlistGroup({ row = {}, score = null, price = null, isIndex =
   }
   const verdict = score && score.verdict && score.verdict !== 'No score' ? score.verdict : null;
   if (verdict && !GOOD.has(verdict)) return { group: 'skip', pct, why: `Score ${score.score ?? '—'} · ${verdict}`, tag: null };
-  if (!verdict) return { group: 'todo', pct, why: 'No app score yet — run it in Research', tag: null };
+  if (!verdict) return { group: 'todo', pct, why: 'No app score yet — tap to research it', tag: null };
   if (!fmv) return { group: 'todo', pct, why: 'Fair value not set yet — fills on the Monday run', tag: null };
   if (!p) {
     const g = row.diveIn === DIVE.PRIORITY ? 'ready' : 'wait';

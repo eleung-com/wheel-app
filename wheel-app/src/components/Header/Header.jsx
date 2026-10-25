@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Header({ marketOpen, marketText, syncStatus, isScreening, onRefresh, onPull, onHelp }) {
+export default function Header({ marketOpen, marketText, syncStatus, isScreening, onRefresh, onPull, onHelp, onSettings, settingsOn }) {
   return (
     <div className="hdr">
       <div>
@@ -21,6 +21,9 @@ export default function Header({ marketOpen, marketText, syncStatus, isScreening
           {isScreening ? <span className="spinner"></span> : '↻'}
         </div>
         <div className="ibtn" onClick={onHelp}>?</div>
+        {onSettings && (
+          <button type="button" className={`ibtn gear${settingsOn ? ' on' : ''}`} onClick={onSettings} title="Settings" aria-label="Settings" aria-pressed={!!settingsOn}>⚙</button>
+        )}
       </div>
     </div>
   );

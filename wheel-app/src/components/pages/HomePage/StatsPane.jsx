@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import HistoryPage from '../HistoryPage/HistoryPage';
+import React from 'react';
 import { formatDateDisplay } from '../../../lib/utils';
 import { bookStats } from '../../../lib/bookStats';
 
@@ -22,9 +21,8 @@ export function attentionOf(signals) {
 }
 
 export default function StatsPane({
-  positions, closedTrades, criteria, signals, account, onAccount,
+  positions, closedTrades, criteria, signals, account, onAccount, onOpenPerformance,
 }) {
-  const [perfOpen, setPerfOpen] = useState(false);
   const now = new Date();
   const s = bookStats({ positions, closedTrades, criteria, account, now });
   const attention = attentionOf(signals);
@@ -79,13 +77,9 @@ export default function StatsPane({
         </div>
       </div>
 
-      <button type="button" className="book-more" aria-expanded={perfOpen} onClick={() => setPerfOpen(o => !o)}>
-        {perfOpen ? 'Hide performance details ▴' : 'Performance details ▾'}
-      </button>
-      {perfOpen && (
-        <div className="book-perf">
-          <HistoryPage positions={positions} account={account} />
-        </div>
+      {/* Part 9E: charts + trade log moved to Positions → History & performance. */}
+      {onOpenPerformance && (
+        <button type="button" className="book-more" onClick={onOpenPerformance}>Performance details ›</button>
       )}
     </section>
   );

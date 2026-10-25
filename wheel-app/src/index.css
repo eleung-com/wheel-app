@@ -941,3 +941,27 @@ details>.wl-sech{cursor:pointer}
 .rs2-sum-scores b{font-size:22px;font-weight:800}
 .rs2-sum-sec{margin-bottom:12px;font-size:13.5px;line-height:1.6}
 .rs2-sum-sec p{margin:0 0 6px}
+
+/* ── Part 9D/9E: Stocks tab, stock-page tabs, Positions sub-tabs, ⚙ ───────── */
+.ibtn.gear{font-family:var(--sans);font-size:17px;padding:0}
+.ibtn.gear.on{color:var(--tx);border-color:var(--tx);background:var(--s3)}
+.wl-pill.held{background:var(--acd2,var(--s3));color:var(--ac)}
+.wl-head:disabled{cursor:wait;opacity:.7}
+.stk-new{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;background:var(--s1);border:1px dashed var(--b2,var(--b1));border-radius:var(--rr);padding:12px;margin:4px 0 10px;font-size:13px}
+.stk-new .btn-p{width:auto;margin:0;padding:8px 14px;min-height:38px}
+.stk-new small{flex-basis:100%;color:var(--mu2);font-size:11px}
+.stk-tabs{margin:12px 0 10px}
+.stk-recent{margin-top:18px}
+.stk-recent>summary{cursor:pointer;list-style:none}
+.stk-recent>summary::-webkit-details-marker{display:none}
+.stk-recent>summary::after{content:' ▸'}
+.stk-recent[open]>summary::after{content:' ▾'}
+.stk-dive{display:flex;flex-direction:column;gap:6px;font-size:12px;margin-bottom:10px}
+.stk-dive .wl-ovr{margin:0}
+.pos-sub{margin-bottom:12px}
+.rs-hrow.static:disabled,.rs-hrow.cur:disabled{opacity:1}
+.rs-input::placeholder{text-transform:none;font-weight:500;font-size:13px;letter-spacing:0}
+@media (max-width: 640px){
+  .rs2-acts .rs-actions{flex-wrap:wrap}
+  .rs2-acts .rs-actions .rs-rerun{flex:1 0 100%;min-height:32px;padding:4px}
+}

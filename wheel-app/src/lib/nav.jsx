@@ -7,11 +7,12 @@ import React from 'react';
 export const NAV_ITEMS = [
   { id: 'pg-home',      label: 'Home',      icon: 'home'      },
   { id: 'pg-signals',   label: 'Signals',   icon: 'signals'   },
-  { id: 'pg-research',  label: 'Research',  icon: 'research'  },
+  { id: 'pg-stocks',    label: 'Stocks',    icon: 'watchlist' },
   { id: 'pg-positions', label: 'Positions', icon: 'positions' },
-  { id: 'pg-watchlist', label: 'Watchlist', icon: 'watchlist' },
-  { id: 'pg-settings',  label: 'Settings',  icon: 'settings'  },
 ];
+// Part 9E (approved 10-25): Research + Watchlist became Stocks; Settings moved
+// to the ⚙ in the header. Old page ids land on their new home.
+export const PAGE_ALIAS = { 'pg-research': 'pg-stocks', 'pg-watchlist': 'pg-stocks' };
 
 const ACTIVE_TYPES = new Set(['short_put', 'short_call', 'put_spread']);
 
@@ -20,7 +21,7 @@ export function navBadges({ positions = [], watchlist = [], signals = [] }) {
     // Partial "watching" cards aren't actionable, so they don't earn a badge.
     'pg-signals':   signals.filter(s => s.type !== 'csp_wait').length,
     'pg-positions': positions.filter(p => ACTIVE_TYPES.has(p.type) && !p.linkedId).length,
-    'pg-watchlist': watchlist.length,
+    'pg-stocks':    watchlist.length,
   };
 }
 

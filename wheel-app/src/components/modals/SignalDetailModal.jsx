@@ -1,7 +1,7 @@
 import React from 'react';
 import EvalBody from '../pages/SignalsPage/EvalBody';
 
-export default function SignalDetailModal({ signalId, signals, positions, onClose, onTrade, evaluation, loading }) {
+export default function SignalDetailModal({ signalId, signals, positions, onClose, onTrade, evaluation, loading, onOpenStock }) {
   const s = signals.find(sig => sig.id === signalId);
   if (!s) return null;
 
@@ -151,6 +151,7 @@ export default function SignalDetailModal({ signalId, signals, positions, onClos
         // Part 4C: log the suggested contract (the order itself is placed in Fidelity).
         <button className="btn-p" onClick={() => onTrade(s)}>Log this trade</button>
       )}
+      {onOpenStock && <button className="btn-s" onClick={() => onOpenStock(s.ticker)}>View {s.ticker} in Stocks ›</button>}
       <button className="btn-s" onClick={onClose}>Close</button>
     </>
   );
