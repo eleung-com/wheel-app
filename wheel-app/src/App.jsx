@@ -22,6 +22,7 @@ import HomePage      from './components/pages/HomePage/HomePage';
 import SignalsPage   from './components/pages/SignalsPage/SignalsPage';
 import ResearchPage  from './components/pages/ResearchPage/ResearchPage';
 import PositionsPage from './components/pages/PositionsPage/PositionsPage';
+import { sharesFromAssignment, applyCalledAway } from './lib/assignment';
 import WatchlistPage from './components/pages/WatchlistPage/WatchlistPage';
 import SettingsPage  from './components/pages/SettingsPage/SettingsPage';
 
@@ -348,6 +349,13 @@ export default function App() {
     const pos = state.positions.find(p => p.id === posId);
     if (!pos) return;
 
+    // Part 9B: an assigned put leaves you holding the shares — add them as a
+    // lot (linked from the close row like an exercised LEAPS).
+    if (details.closeType === 'assigned' && !details.newPosition && (details.sharesAcquired || 0) > 0) {
+      const lot = sharesFromAssignment({ ...pos, ...details, ticker: pos.ticker, account: pos.account, enteredAt: details.closeDate });
+      if (lot) details = { ...details, newPosition: lot };
+    }
+
     // New row appended to positions for the close action — original row is kept intact
     const closeEntry = {
       id:           Date.now(),
@@ -399,9 +407,30 @@ export default function App() {
       nextPositions = [...nextPositions, details.newPosition];
     }
 
+    // Part 9B: covered call assigned → the shares are called away (oldest lot first).
+    if (details.closeType === 'assigned' && (details.sharesAcquired || 0) < 0) {
+      const out = applyCalledAway(nextPositions, { ticker: pos.ticker, qty: -details.sharesAcquired, account: pos.account || 'Esther', closeId: closeEntry.id });
+      nextPositions = out.positions;
+      dispatch({ type: 'SET_POSITIONS', payload: nextPositions });
+      if (out.shortBy > 0) showToast(`⚠ Called away ${-details.sharesAcquired} ${pos.ticker} but only ${out.removed} were in the app — check Fidelity`, 'err');
+    }
+
     setOpenModal(null);
     setClosePositionId(null);
     sheetWriteViaGet({ ...state, positions: nextPositions, closedTrades: nextClosedTrades });
+  }
+
+  // Part 9B: an assignment made before shares were added automatically —
+  // one tap adds its shares lot and links it from the close row.
+  function handleAddAssignmentShares(closeId) {
+    if (!guardSave()) return;
+    const close = state.positions.find(p => p.id === closeId);
+    const lot = close && sharesFromAssignment(close);
+    if (!lot) return;
+    const nextPositions = [...state.positions.map(p => (p.id === closeId ? { ...p, rolledToId: lot.id } : p)), lot];
+    dispatch({ type: 'SET_POSITIONS', payload: nextPositions });
+    sheetWriteViaGet({ ...state, positions: nextPositions });
+    showToast(`Added ${lot.qty} ${lot.ticker} @ $${lot.cost.toFixed(2)}`, 'ok');
   }
 
   // ── Criteria handler ─────────────────────────────────────────────────────
@@ -547,6 +576,7 @@ export default function App() {
 
       <div className={`page${activePage === 'pg-positions' ? ' active' : ''}`} id="pg-positions">
         <PositionsPage
+          onAddAssignmentShares={handleAddAssignmentShares}
           positions={state.positions}
           watchlist={state.watchlist}
           criteria={state.criteria}

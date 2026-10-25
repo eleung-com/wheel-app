@@ -2,6 +2,7 @@ import React from 'react';
 import { ACCOUNTS } from '../../../lib/utils';
 import SharesTable from './SharesTable';
 import LeapsTable from './LeapsTable';
+import { assignmentsMissingShares, sharesFromAssignment } from '../../../lib/assignment';
 import OptionsTable from './OptionsTable';
 
 function fmt(n) {
@@ -35,7 +36,28 @@ function CapitalBar({ label, total, allocated }) {
   );
 }
 
-export default function PositionsPage({ positions, watchlist, criteria, onSelectOptPos, onEditPos, onShowShareGroup }) {
+// Part 9B: assignments recorded before shares were added automatically.
+function MissingSharesBanner({ positions, onAdd }) {
+  const missing = assignmentsMissingShares(positions);
+  if (!missing.length || !onAdd) return null;
+  return (
+    <div className="sheet-banner warn" role="status" style={{ margin: '0 0 12px' }}>
+      <span>
+        {missing.length === 1 ? '1 assignment has' : `${missing.length} assignments have`} no shares in the app yet.
+        {missing.map(c => {
+          const lot = sharesFromAssignment(c);
+          return (
+            <button key={c.id} type="button" style={{ marginLeft: 8, marginTop: 4 }} onClick={() => onAdd(c.id)}>
+              Add {lot.qty} {lot.ticker} @ ${lot.cost.toFixed(2)}
+            </button>
+          );
+        })}
+      </span>
+    </div>
+  );
+}
+
+export default function PositionsPage({ positions, watchlist, criteria, onSelectOptPos, onEditPos, onShowShareGroup, onAddAssignmentShares }) {
   // Group shares by ticker
   const shareGroups = {};
   for (const pos of positions.filter(p => p.type === 'shares' && !p.linkedId)) {
@@ -106,6 +128,7 @@ export default function PositionsPage({ positions, watchlist, criteria, onSelect
 
   return (
     <div>
+      <MissingSharesBanner positions={positions} onAdd={onAddAssignmentShares} />
       {showCapital && (
         <div style={{ marginBottom: 12 }}>
           {criteria.capitalEsther > 0 && <CapitalBar label="Esther" total={criteria.capitalEsther} allocated={capitalByAccount['Esther'] || 0} />}

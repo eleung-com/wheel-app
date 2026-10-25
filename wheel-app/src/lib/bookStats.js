@@ -45,8 +45,9 @@ export function bookStats({ positions = [], closedTrades = [], criteria = {}, ac
   positions.forEach(p => { byId[p.id] = p; });
   const closes = positions.filter(p => CLOSE_TYPES.has(p.type))
     .filter(e => account === 'all' || (byId[e.linkedId]?.account || e.account || 'Esther') === account);
-  const scoreable = closes.filter(e => e.type !== 'assigned' && e.type !== 'exercised');
-  const wins = scoreable.filter(e => e.pnl != null && e.pnl > 0).length;
+  // Part 9A: assigned = not a win; exercised LEAPS left out.
+  const scoreable = closes.filter(e => e.type !== 'exercised');
+  const wins = scoreable.filter(e => e.type !== 'assigned' && e.pnl != null && e.pnl > 0).length;
   const winRate = scoreable.length ? Math.round((wins / scoreable.length) * 100) : null;
 
   return {

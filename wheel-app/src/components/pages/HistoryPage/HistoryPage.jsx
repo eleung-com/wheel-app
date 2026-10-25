@@ -22,8 +22,11 @@ function fmtDollar(n) {
 }
 
 function calcStats(entries) {
-  const scoreable = entries.filter(e => e.type !== 'assigned' && e.type !== 'exercised');
-  const wins      = scoreable.filter(e => e.pnl != null && e.pnl > 0);
+  // Part 9A (El, 10-25): an assigned trade counts as NOT a win. Exercised LEAPS
+  // stay out (turning a call into shares is neither a win nor a loss).
+  const scoreable = entries.filter(e => e.type !== 'exercised');
+  const isWin = (e) => e.type !== 'assigned' && e.pnl != null && e.pnl > 0;
+  const wins      = scoreable.filter(isWin);
   const totalPnl  = entries.reduce((s, e) => s + (e.pnl ?? 0), 0);
   // LEAPS (long_call) premium is money paid, not collected — left out of "premium".
   const totalPrem = entries.reduce((s, e) => s + (e.posType === 'long_call' ? 0 : (e.prem ?? 0) * (e.qty ?? 1) * 100), 0);

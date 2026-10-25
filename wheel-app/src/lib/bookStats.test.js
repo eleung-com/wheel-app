@@ -29,8 +29,8 @@ describe('Part 6E book stats', () => {
     expect(s.next.ticker).toBe('UBER');
     expect(s.next.d).toBe(dte(iso(6))); // same day count the app shows elsewhere
   });
-  it('win rate skips assignments', () => {
-    expect(s.winRate).toBe(50); // QQQ win, SMH loss, AMD assigned not scored
+  it('win rate: assigned counts as not a win (Part 9A)', () => {
+    expect(s.winRate).toBe(33); // QQQ win · SMH loss · AMD assigned = not a win → 1 of 3
     expect(s.closedCount).toBe(3);
   });
   it('account filter', () => {
