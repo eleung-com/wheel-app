@@ -25,6 +25,30 @@ export function mean(values) {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 }
 
+const DAY = 86400000;
+/** Quarter ends 80–100 days apart = next quarter. Synthetic (yearly-only) quarters are back-to-back by construction. */
+export function nextQuarter(a, b) {
+  if (a?.synthetic || b?.synthetic) return !!(a?.synthetic && b?.synthetic);
+  const ta = Date.parse(String(a?.end ?? '').slice(0, 10)), tb = Date.parse(String(b?.end ?? '').slice(0, 10));
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return true; // no real dates (hand-built series) → can't tell, assume back-to-back
+  const d = (tb - ta) / DAY;
+  return d >= 80 && d <= 100;
+}
+
+/** True when quarters[from..last] has no missing quarter. */
+export function consecutiveFrom(quarters, from) {
+  for (let i = Math.max(from, 0); i < quarters.length - 1; i++) if (!nextQuarter(quarters[i], quarters[i + 1])) return false;
+  return true;
+}
+
+/** Part 10B: how many quarters, counting back from the newest, are back-to-back. */
+export function consecutiveRun(quarters = []) {
+  if (!quarters.length) return 0;
+  let n = 1;
+  for (let i = quarters.length - 1; i > 0 && nextQuarter(quarters[i - 1], quarters[i]); i--) n++;
+  return n;
+}
+
 /**
  * Sum of `field` over 4 quarters ending `offset` quarters before the latest.
  * offset 0 = last twelve months (TTM), offset 4 = the twelve months before that.
@@ -33,6 +57,10 @@ export function mean(values) {
 export function ttm(quarters, field, offset = 0) {
   const end = quarters.length - offset;
   if (end < 4) return null;
+  // Part 10A: the window AND every quarter after it must be back-to-back, so
+  // "12 months" is really 12 months and "a year earlier" is really a year
+  // earlier. A gap (e.g. SPCX: no Q4 2025) → null, never a mixed sum.
+  if (!consecutiveFrom(quarters, end - 4)) return null;
   let sum = 0;
   for (let i = end - 4; i < end; i++) {
     const v = quarters[i]?.[field];

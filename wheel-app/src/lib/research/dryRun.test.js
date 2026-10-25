@@ -27,3 +27,16 @@ describe('Part 8C dry run', () => {
     expect(legacyV27(r2).value).toBe(63);
   });
 });
+
+import { quarterGaps, savedVsFresh } from './dryRun';
+describe('Part 10A score check', () => {
+  const q = ['2025-03-31', '2025-06-30', '2025-09-30', '2026-03-31', '2026-06-30'].map((end) => ({ end }));
+  it('names the missing quarter', () => {
+    expect(quarterGaps(q)).toEqual(['2025-09 → 2026-03']);
+    expect(quarterGaps(q.slice(3))).toEqual([]);
+  });
+  it('compares the saved score with the fresh one', () => {
+    const row = savedVsFresh('SPCX', { score: 65, verdict: 'Maybe', value: 0 }, { bundle: { input: { quarters: q } }, result: { investmentScore: 70, verdict: 'Maybe', value: { score: null }, metrics: {} } });
+    expect(row).toMatchObject({ oldScore: 65, newScore: 70, flip: false, gaps: ['2025-09 → 2026-03'] });
+  });
+});
