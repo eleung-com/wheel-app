@@ -4,7 +4,7 @@ import { loadRuns } from '../../../lib/research/runStore';
 import { researchTransport } from '../../../lib/research/researchTransport';
 import { NO_EARNINGS } from '../../../lib/signalEngine';
 
-// Part 8C: preview the Value change (v2.7 → v2.8) on the whole watchlist.
+// Part 8C → 10A: re-score the watchlist and compare with the score saved in Notion.
 // Re-scores in memory only — nothing is saved, Dive-In and Signals don't change.
 const TONE = { 'Worth investing': 'var(--g)', Maybe: 'var(--a)', 'Not worth it': 'var(--r)' };
 
@@ -28,15 +28,15 @@ export default function ScoringPreview({ watchlist }) {
 
   const running = prog && prog.t;
   const flips = rows.filter((r) => r.flip).length;
-  const sorted = [...rows].sort((a, b) => (b.flip - a.flip) || ((b.newScore ?? -1) - (b.oldScore ?? -1)) - ((a.newScore ?? -1) - (a.oldScore ?? -1)));
+  const sorted = [...rows].sort((a, b) => (b.flip - a.flip) || ((b.gaps?.length ? 1 : 0) - (a.gaps?.length ? 1 : 0)) || ((b.newScore ?? -1) - (b.oldScore ?? -1)) - ((a.newScore ?? -1) - (a.oldScore ?? -1)));
 
   return (
     <div className="sp">
-      <div className="slabel">Value change preview · v2.7 → v2.8</div>
+      <div className="slabel">Score check · saved vs fresh</div>
       <p className="sp-p">
-        Re-scores every watchlist stock that has a score, twice from the same fresh data: the current rule (own 5-year P/E)
-        and the new one (price vs fair value). <b>Nothing is saved</b>, and Dive-In, Signals and alerts stay as they are.
-        Takes about 10–20 seconds per stock.
+        Re-scores every watchlist stock that has a score with today’s rules and fresh data, next to the score saved in Notion.
+        The last column shows stocks with a <b>missing quarter</b> — the ones the 12-month fix (Part 10A) changes.
+        <b>Nothing is saved</b>; Dive-In, Signals and alerts stay as they are. About 10–20 seconds per stock.
       </p>
       <div className="sp-acts">
         {!running
@@ -48,12 +48,12 @@ export default function ScoringPreview({ watchlist }) {
       {rows.length > 0 && (
         <div className="sp-tbl">
           <table>
-            <thead><tr><th>Ticker</th><th className="num">Value</th><th className="num">Score</th><th>Verdict</th><th className="sp-fv">Fair value</th></tr></thead>
+            <thead><tr><th>Ticker</th><th className="num">Value</th><th className="num">Score</th><th>Verdict</th><th className="sp-fv">Quarters</th></tr></thead>
             <tbody>
               {sorted.map((r) => r.error ? (
                 <tr key={r.ticker}><td>{r.ticker}</td><td colSpan={4} className="sp-muted">Couldn’t run: {r.error}</td></tr>
               ) : (
-                <tr key={r.ticker} className={r.flip ? 'flip' : ''}>
+                <tr key={r.ticker} className={r.flip || r.gaps?.length ? 'flip' : ''}>
                   <td><b>{r.ticker}</b></td>
                   <td className="num">{r.oldValue ?? '—'} → <b>{r.newValue ?? '—'}</b></td>
                   <td className="num">{r.oldScore ?? '—'} → <b>{r.newScore ?? '—'}</b></td>

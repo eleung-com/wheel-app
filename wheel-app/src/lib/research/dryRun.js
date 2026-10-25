@@ -7,6 +7,7 @@ import { verdictFor } from './scoring.js';
 import { runPreliminary, rescoreFinal } from './run.js';
 import { claudeInputs, scoreMap } from './runRecord.js';
 import { fairValueInput } from './resultView.js';
+import { nextQuarter } from './fundamentals.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const lerp = (v, fullAt, zeroAt) => Math.round(Math.max(0, Math.min(100, ((zeroAt - v) / (zeroAt - fullAt)) * 100)));
@@ -47,6 +48,29 @@ export function compareRow(ticker, r) {
   };
 }
 
+/** Part 10A: gaps among the newest 12 quarters ("no quarter between 2025-09-30 and 2026-03-31"). */
+export function quarterGaps(quarters = []) {
+  const q = quarters.slice(-12), out = [];
+  for (let i = 1; i < q.length; i++) if (!nextQuarter(q[i - 1], q[i])) out.push(`${String(q[i - 1].end).slice(0, 7)} → ${String(q[i].end).slice(0, 7)}`);
+  return out;
+}
+
+/** Part 10A: the score saved in Notion vs a fresh re-score with today's rules. */
+export function savedVsFresh(ticker, saved, res) {
+  const r = res?.result || null;
+  const gaps = quarterGaps(res?.bundle?.input?.quarters || []);
+  const oldVerdict = saved?.verdict || 'No score', newVerdict = r?.verdict || 'No score';
+  return {
+    ticker,
+    oldScore: saved?.score ?? null, oldVerdict, oldValue: saved?.value ?? null,
+    newScore: r?.investmentScore ?? null, newVerdict, newValue: r?.value?.score ?? null,
+    opPe: r?.metrics?.operatingPe ?? null,
+    gaps,
+    fmvNote: gaps.length ? `Missing quarter: ${gaps.join(', ')}` : 'No missing quarters',
+    flip: oldVerdict !== newVerdict,
+  };
+}
+
 /**
  * Re-score the watchlist in memory. Uses Claude's saved peers/target/beat rate
  * when the latest run has them (so it matches a Final), else Preliminary.
@@ -65,7 +89,7 @@ export async function runDryRun({ transport, watchlist, runs, isIndex, onRow, on
       let res = await runPreliminary(transport, t, { fairValue: fairValueInput(t, watchlist), rules: 'v2.8' });
       const row = latest[t];
       if (res.result && row?.claudeWritten) res = await rescoreFinal(transport, res, claudeInputs(row));
-      onRow(compareRow(t, res.result));
+      onRow(savedVsFresh(t, scores[t], res));
     } catch (e) {
       onRow({ ticker: t, error: String(e?.message || e).slice(0, 80) });
     }

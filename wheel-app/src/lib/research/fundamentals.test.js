@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { median, mean, ttm, pctChange, cagr, negativeFcfStreak, piotroski, altmanZ } from './fundamentals.js';
+import { median, mean, ttm, consecutiveRun, nextQuarter, pctChange, cagr, negativeFcfStreak, piotroski, altmanZ } from './fundamentals.js';
 
 describe('median / mean', () => {
   it('median ignores one wild year where the average would not (fix #2, VST)', () => {
@@ -26,6 +26,25 @@ describe('ttm', () => {
   });
   it('treats 0 as a real value', () => {
     expect(ttm([0, 0, 0, 0].map((revenue) => ({ revenue })), 'revenue')).toBe(0);
+  });
+  // Part 10A (SPCX): Q4 2025 missing → the newest 4 aren't 12 months.
+  const dated = (ends) => ends.map((end, i) => ({ end, operatingIncome: [27, -970, 823, -1943, -143, 2790][i] }));
+  const spcx = dated(['2025-03-31', '2025-06-30', '2025-09-30', '2026-03-31', '2026-06-30', '2026-09-30']);
+  it('refuses to add quarters across a gap', () => {
+    expect(ttm(spcx, 'operatingIncome')).toBeNull();
+    const full = dated(['2025-09-30', '2025-12-31', '2026-03-31', '2026-06-30']);
+    expect(ttm(full, 'operatingIncome')).toBe(27 - 970 + 823 - 1943);
+  });
+  it('a year-earlier window must also connect to today', () => {
+    const q8 = ['2024-09-30', '2024-12-31', '2025-03-31', '2025-06-30', '2025-12-31', '2026-03-31', '2026-06-30', '2026-09-30']
+      .map((end) => ({ end, revenue: 1 }));
+    expect(ttm(q8, 'revenue')).toBe(4);       // newest 4 are back-to-back
+    expect(ttm(q8, 'revenue', 4)).toBeNull(); // but Q3 2025 is missing between the two years
+  });
+  it('counts back-to-back quarters from the newest', () => {
+    expect(consecutiveRun(spcx)).toBe(3);
+    expect(consecutiveRun([])).toBe(0);
+    expect(nextQuarter({ end: '2025-12-31#1', synthetic: true }, { end: '2025-12-31#2', synthetic: true })).toBe(true);
   });
 });
 
