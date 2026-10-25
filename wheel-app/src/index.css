@@ -931,3 +931,13 @@ details>.wl-sech{cursor:pointer}
 .sp-tbl tr.flip td{background:var(--ad)}
 .sp-muted{color:var(--mu);font-size:11.5px}
 @media (max-width:560px){.sp-fv{display:none}}
+
+/* Part 9C: saved runs */
+.rs2-saved{background:var(--bld);color:var(--bl)}
+.rs2-note{font-size:12.5px;line-height:1.5;color:var(--mu2);margin-top:12px;padding-top:12px;border-top:1px solid var(--b1)}
+.rs2-sum-scores{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.rs2-sum-scores div{background:var(--s2);border-radius:10px;padding:8px 10px}
+.rs2-sum-scores span{display:block;font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:var(--mu);font-weight:700}
+.rs2-sum-scores b{font-size:22px;font-weight:800}
+.rs2-sum-sec{margin-bottom:12px;font-size:13.5px;line-height:1.6}
+.rs2-sum-sec p{margin:0 0 6px}
