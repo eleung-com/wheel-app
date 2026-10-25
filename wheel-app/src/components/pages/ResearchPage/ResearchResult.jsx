@@ -101,7 +101,7 @@ function History({ save }) {
 // Part 2B: Priority / Watch / Skip write the ONE field — Dive-In on the
 // watchlist. Skip is the old Reject (reason required, kept in the reject log).
 // Priority only when the score is Worth investing or Maybe.
-function Actions({ ticker, save, current, verdict, onDecide, onRerun, running }) {
+export function Actions({ ticker, save, current, verdict, onDecide, onRerun, running }) {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [busy, setBusy] = useState(null);
   const ready = save?.state === 'saved' && !!save.pageId;
@@ -143,7 +143,7 @@ function Actions({ ticker, save, current, verdict, onDecide, onRerun, running })
           aria-pressed={decision === 'Reject'} onClick={() => setRejectOpen(true)}>
           {decision === 'Reject' ? '✕ Skipped' : 'Skip'}
         </button>
-        <button type="button" className="btn-s rs-rerun" onClick={onRerun} disabled={running}>↻ Re-run</button>
+        <button type="button" className="btn-s rs-rerun" onClick={onRerun} disabled={running}>↻ Re-run with fresh data</button>
       </div>
       <RejectModal
         open={rejectOpen}
@@ -250,7 +250,7 @@ function ClaudeSection({ claude, save, finalizing, onRedo }) {
     </section>
   );
 }
-export default function ResearchResult({ run, onBack, onRerun, running, save, onRetrySave, onDecide, claude, finalizing, onRedoClaude, watchlist = [] }) {
+export default function ResearchResult({ run, onBack, onRerun, running, save, onRetrySave, onDecide, claude, finalizing, onRedoClaude, watchlist = [], fromSaved = false }) {
   const r = run.result;
   const b = run.bundle;
   const name = b?.name || run.ticker;
@@ -316,6 +316,7 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
             <div className="rs-name">{name}</div>
             <div className="rs-meta">
               <span className={`stbdg ${r.scoreType === 'Final' ? 'final' : 'prelim'}`}>{r.scoreType === 'Final' ? 'Final' : 'Preliminary · auto peers'}</span>
+              {fromSaved && <span className="stbdg rs2-saved">Saved run · not re-run</span>}
               <span>Run {new Date(run.ranAt).toLocaleString([], { month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit' })}</span>
               <span>· rules {r.version}</span>
               {latestQ && <span>· SEC data to {latestQ}</span>}

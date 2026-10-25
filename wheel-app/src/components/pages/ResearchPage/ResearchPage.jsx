@@ -4,6 +4,8 @@ import { researchTransport } from '../../../lib/research/researchTransport';
 import { saveRun, loadRuns, loadRun, saveDecision, redoClaude } from '../../../lib/research/runStore';
 import { runStamp, claudeState, claudeInputs } from '../../../lib/research/runRecord';
 import ResearchResult from './ResearchResult';
+import SavedSummary from './SavedSummary';
+import { cacheRun, cachedRun } from '../../../lib/research/runCache';
 import { fairValueInput } from '../../../lib/research/resultView';
 
 // Research tab — "Run a stock" (PRD §6A-BUILD, P1.4–P1.6).
@@ -52,6 +54,10 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
   const [claude, setClaude] = useState(null);
   const [finalizing, setFinalizing] = useState(false);
   const [recent, setRecent] = useState({ rows: null, error: null });
+  // Part 9C: a past run opened as saved. fromSaved = full data from this
+  // device's cache; summary = only what Notion saved (other device).
+  const [fromSaved, setFromSaved] = useState(false);
+  const [summary, setSummary] = useState(null); // { row, writeup, loading }
   const runId = useRef(0);
   const finalizedFor = useRef(null); // `${pageId}|${claudeWritten}` already re-scored
 
@@ -91,6 +97,7 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
       if (id !== runId.current) return;
       setSave({ state: 'saved', pageId: out.pageId, history: out.history });
       setClaude({ row: out.history.find((h) => h.pageId === out.pageId) || null, writeup: [] });
+      cacheRun(out.pageId, res); // 9C: open it later without re-running
       refreshRecent();
     } catch (e) {
       if (id !== runId.current) return;
@@ -113,6 +120,7 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
       if (id !== runId.current) return;
       setRun(final);
       const out = await saveRun(final, { pageId: row.pageId });
+      cacheRun(row.pageId, final);
       if (id !== runId.current) return;
       setSave((s) => ({ ...s, history: out.history }));
       setClaude((c) => ({ ...c, row: { ...c.row, status: 'Final', scoreType: 'Final' } }));
@@ -170,6 +178,8 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
     if (!TICKER_RE.test(t)) { setError('Enter a US ticker, e.g. UBER'); return; }
     const id = ++runId.current;
     finalizedFor.current = null;
+    setFromSaved(false);
+    setSummary(null);
     setError(null);
     setElapsed(0);
     setSave(null);
@@ -201,16 +211,47 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
     }
   }
 
+  // ── Part 9C: open a past run as saved — never re-runs ─────────────────────
+  async function openSaved(h) {
+    const id = ++runId.current;
+    finalizedFor.current = null;
+    setError(null);
+    const cached = cachedRun(h.pageId);
+    if (cached) {
+      // Full data on this device: the normal result screen, as saved.
+      setRun(cached);
+      setFromSaved(true);
+      setSummary(null);
+      setSave({ state: 'saved', pageId: h.pageId, history: [h] });
+      setClaude({ row: h, writeup: [] }); // the poll effect loads the write-up once
+      loadRuns({ ticker: h.ticker }).then((history) => { if (id === runId.current) setSave((s) => ({ ...s, history })); }).catch(() => {});
+      return;
+    }
+    // Another device's run: show what Notion saved.
+    setRun(null);
+    setFromSaved(false);
+    setSave({ state: 'saved', pageId: h.pageId, history: [h] });
+    setSummary({ row: h, writeup: [], loading: true });
+    try {
+      const { run: row, writeup } = await loadRun(h.pageId);
+      if (id === runId.current) setSummary({ row: { ...h, ...row }, writeup, loading: false });
+    } catch {
+      if (id === runId.current) setSummary((x) => (x ? { ...x, loading: false } : x));
+    }
+  }
+
   async function decide(d) {
     if (!save?.pageId) return false;
     try {
       const row = await saveDecision(save.pageId, d);
       mergeHistoryRow(row);
+      setSummary((x) => (x && x.row.pageId === row.pageId ? { ...x, row: { ...x.row, ...row } } : x));
       refreshRecent();
       const pend = row?.diveIn?.pending ? ' — add it in TradingView; Dive-In updates after the sync' : ' — Dive-In updated';
-      if (d.decision === 'Priority') showToast?.(`${run.ticker} → 🔥 Priority${pend}`, '');
-      else if (d.decision === 'Watch') showToast?.(`${run.ticker} → 👀 Watch${pend}`, '');
-      else if (d.decision === 'Reject') showToast?.(`${run.ticker} skipped — logged in Notion${row?.diveIn?.applied ? ', Dive-In set to Skip' : ''}`, '');
+      const tk = run?.ticker || summary?.row?.ticker || '';
+      if (d.decision === 'Priority') showToast?.(`${tk} → 🔥 Priority${pend}`, '');
+      else if (d.decision === 'Watch') showToast?.(`${tk} → 👀 Watch${pend}`, '');
+      else if (d.decision === 'Reject') showToast?.(`${tk} skipped — logged in Notion${row?.diveIn?.applied ? ', Dive-In set to Skip' : ''}`, '');
       else showToast?.('Decision cleared', '');
       return true;
     } catch (e) {
@@ -230,9 +271,28 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
         onRedoClaude={redo}
         onRetrySave={() => persist(run, runId.current)}
         onDecide={decide}
-        onBack={() => { runId.current++; setRun(null); setSave(null); setClaude(null); }}
+        onBack={() => { runId.current++; setRun(null); setSave(null); setClaude(null); setFromSaved(false); }}
         onRerun={() => start(run.ticker)}
         watchlist={watchlist}
+        fromSaved={fromSaved}
+      />
+    );
+  }
+
+  if (summary && !status.running) {
+    const h = summary.row;
+    const canFinish = claudeState(h) === 'done' && h.scoreType !== 'Final';
+    return (
+      <SavedSummary
+        row={h}
+        writeup={summary.writeup}
+        loading={summary.loading}
+        save={save}
+        running={status.running}
+        onDecide={decide}
+        onRerun={() => start(h.ticker)}
+        onFinish={canFinish ? () => start(h.ticker, { finishPageId: h.pageId }) : null}
+        onBack={() => { runId.current++; setSummary(null); setSave(null); }}
       />
     );
   }
@@ -268,17 +328,17 @@ export default function ResearchPage({ showToast, initialTicker = null, watchlis
       )}
       {error && <div className="rs-error" role="alert">{error}</div>}
 
-      <div className="slabel">Recent runs · tap to run again</div>
+      <div className="slabel">Recent runs · tap to open as saved</div>
       <div className="rs-hist">
         {recent.rows === null && !recent.error && <div className="rs-muted rs-hist-empty">Loading…</div>}
         {recent.error && !recent.rows && <div className="rs-muted rs-hist-empty">Couldn’t load from Notion: {recent.error}</div>}
         {recent.rows?.length === 0 && <div className="rs-muted rs-hist-empty">No runs yet. Type a ticker above.</div>}
         {(recent.rows || []).map((h) => {
           const tag = rowTag(h);
-          const finish = tag === 'Tap for Final';
+          const finish = tag === 'Tap for Final'; // opens as saved; Final updates from there
           return (
             <button type="button" key={h.pageId} className="rs-hrow" disabled={status.running}
-              onClick={() => start(h.ticker, finish ? { finishPageId: h.pageId } : {})}>
+              onClick={() => openSaved(h)}>
               <b>{h.ticker}</b>
               <span className="rs-muted">{runStamp(h.runAt)}</span>
               <span className={`rs-hv ${VERDICT_TONE[h.verdict] || 'n'}`}>{h.investmentScore ?? '—'} · {h.verdict || '—'}</span>
