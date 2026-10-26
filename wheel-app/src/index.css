@@ -965,3 +965,47 @@ details>.wl-sech{cursor:pointer}
   .rs2-acts .rs-actions{flex-wrap:wrap}
   .rs2-acts .rs-actions .rs-rerun{flex:1 0 100%;min-height:32px;padding:4px}
 }
+
+/* ── Part 10F: Stocks list as rows (layout A, El 10-25) ───────────────────── */
+.stk-rows{display:grid;gap:2px;margin-top:8px}
+.stk-thead,.stk-rowbtn{display:grid;grid-template-columns:minmax(150px,1.4fr) 104px 88px minmax(170px,1.6fr) 118px 96px;gap:12px;align-items:center}
+.stk-thead{padding:0 12px 4px}
+.stk-thead span{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mu)}
+.stk-thead .r,.stk-c-px,.stk-c-earn{text-align:right}
+.stk-row{border-radius:10px;border:1px solid transparent}
+.stk-row:nth-child(even){background:var(--s1)}
+.stk-row:hover{border-color:var(--b1)}
+.stk-rowbtn{all:unset;box-sizing:border-box;display:grid;grid-template-columns:minmax(150px,1.4fr) 104px 88px minmax(170px,1.6fr) 118px 96px;gap:12px;align-items:center;width:100%;padding:9px 12px;cursor:pointer;min-height:44px}
+.stk-rowbtn:focus-visible{outline:2px solid var(--ac);outline-offset:-2px;border-radius:10px}
+.stk-rowbtn:disabled{cursor:wait;opacity:.7}
+.stk-c-tk{display:flex;flex-wrap:wrap;gap:4px 7px;align-items:center;min-width:0}
+.stk-c-tk .wl-tk{font-size:15px}
+.stk-held{font-size:10.5px;font-weight:700;color:var(--ac);white-space:nowrap}
+.wl-pill.new{background:var(--bld);color:var(--bl)}
+.stk-c-px{font-weight:600;font-variant-numeric:tabular-nums}
+.stk-c-vs{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;min-width:0}
+.stk-pct{font-size:12.5px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stk-pct.g{color:var(--g)} .stk-pct.a{color:var(--a)} .stk-pct.r{color:var(--r)}
+.stk-meter{position:relative;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--gd) 0 55%,var(--ad) 55% 67%,var(--rd) 67%);min-width:50px}
+.stk-meter i{position:absolute;top:-3px;width:2px;height:12px;background:var(--tx);border-radius:1px;transform:translateX(-1px)}
+.stk-meter b{position:absolute;top:-1px;left:55%;width:1px;height:8px;background:var(--mu)}
+.stk-why{font-size:12px;color:var(--mu2);grid-column:1/-1}
+.stk-c-pe{font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stk-c-pe small{color:var(--mu);font-size:11.5px}
+.stk-earn{font-size:11.5px;font-weight:700;color:var(--r);white-space:nowrap}
+.stk-dim{color:var(--mu)}
+.stk-move{font-size:12px;color:var(--mu2);padding:0 12px 9px;line-height:1.4}
+.stk-move.dn b{color:var(--r)} .stk-move.up b{color:var(--g)}
+.stk-move a{color:var(--ac);font-weight:600}
+.rs2-new{background:var(--bld);color:var(--bl)}
+@media (max-width:760px){
+  .stk-thead{display:none}
+  .stk-rowbtn{grid-template-columns:1fr auto;gap:5px 10px;padding:10px 12px}
+  .stk-c-score{order:3}
+  .stk-c-px{order:2}
+  .stk-c-tk{order:1}
+  .stk-c-vs{order:5;grid-column:1/-1}
+  .stk-c-pe{order:4;text-align:right}
+  .stk-c-earn{order:6;grid-column:1/-1;text-align:left}
+  .stk-c-earn:has(.stk-dim){display:none}
+}

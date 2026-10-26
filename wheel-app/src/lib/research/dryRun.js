@@ -86,7 +86,7 @@ export async function runDryRun({ transport, watchlist, runs, isIndex, onRow, on
     const t = tickers[i];
     onProgress(i, tickers.length, t);
     try {
-      let res = await runPreliminary(transport, t, { fairValue: fairValueInput(t, watchlist), rules: 'v2.8' });
+      let res = await runPreliminary(transport, t, { fairValue: fairValueInput(t, watchlist), rules: R.LIVE_RULES });
       const row = latest[t];
       if (res.result && row?.claudeWritten) res = await rescoreFinal(transport, res, claudeInputs(row));
       onRow(savedVsFresh(t, scores[t], res));

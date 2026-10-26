@@ -52,6 +52,7 @@ export default function SavedSummary({ row, none = false, writeup, loading, save
             <div className="rs-meta">
               <span className={`stbdg ${row.scoreType === 'Final' ? 'final' : 'prelim'}`}>{row.scoreType === 'Final' ? 'Final' : 'Preliminary'}</span>
               <span className="stbdg rs2-saved">Saved run · not re-run</span>
+              {row.newListing && <span className="stbdg rs2-new">New listing</span>}
               <span>{runStamp(row.runAt)}</span>{row.version && <span>· rules {row.version}</span>}
             </div>
           </div>
@@ -63,6 +64,7 @@ export default function SavedSummary({ row, none = false, writeup, loading, save
             {[['Quality', row.quality], ['Value', row.value], ['Upside', row.upside]].map(([l, v]) => (
               <div key={l}><span>{l}</span><b style={{ color: toneOf(v) }}>{v ?? 'n/a'}</b></div>
             ))}
+            <div title="Context only — not scored"><span>P/E · fwd</span><b>{row.operatingPe != null ? row.operatingPe.toFixed(1) : '—'} · {row.forwardEpsClaude > 0 && row.price ? (row.price / row.forwardEpsClaude).toFixed(1) : '—'}</b></div>
           </div>
         </div>
         {onFinish && (

@@ -42,8 +42,12 @@ export function plainLines(run) {
   } else {
     const q = fin.quarters;
     let up = 0, n = 0;
-    for (let i = 4; i < q.length; i++) {
-      if (isNum(q[i].revenue) && isNum(q[i - 4].revenue)) { n++; if (q[i].revenue > q[i - 4].revenue) up++; }
+    // Part 10A: compare with the quarter that really ended a year earlier (not 4 rows back — rows can skip a quarter).
+    const ms = (x) => Date.parse(String(x?.end ?? '').slice(0, 10));
+    const dated = q.length && Number.isFinite(ms(q[0]));
+    for (let i = dated ? 1 : 4; i < q.length; i++) {
+      const prev = dated ? q.find((x) => Math.abs((ms(q[i]) - ms(x)) / 864e5 - 365) <= 20) : q[i - 4];
+      if (prev && isNum(q[i].revenue) && isNum(prev.revenue)) { n++; if (q[i].revenue > prev.revenue) up++; }
     }
     if (n) out.push({ tone: tone(colorOf(r, 'revenue_growth')), text: `Revenue up year over year in ${up} of the last ${n} quarters` });
   }

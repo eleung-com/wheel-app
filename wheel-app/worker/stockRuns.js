@@ -86,6 +86,11 @@ export function parseRunPage(page) {
     moatType: sel('Moat type'),
     moatStrength: sel('Moat strength'),
     oneTimeItems: !!(p['One-time items flag'] && p['One-time items flag'].checkbox),
+    // Part 10D/E: P/E context
+    operatingPe: n('Operating P/E'),
+    newListing: !!(p['New listing'] && p['New listing'].checkbox),
+    forwardEpsClaude: n('Forward EPS (Claude)'),
+    forwardEpsSource: t('Forward EPS source'),
   };
 }
 
@@ -134,6 +139,8 @@ function scoreProps(rec, status) {
     'Score type': { select: { name: rec.scoreType } },
     'Scoring version': { rich_text: text(rec.version) },
     'Price at run': { number: rec.price },
+    'Operating P/E': { number: rec.operatingPe ?? null },
+    'New listing': { checkbox: !!rec.newListing },
   };
   if (status) props.Status = { select: { name: status } };
   if (rec.peersAuto) props['Peers (auto)'] = { rich_text: text(rec.peersAuto) };

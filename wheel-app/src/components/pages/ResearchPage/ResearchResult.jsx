@@ -322,6 +322,7 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
             <div className="rs-meta">
               <span className={`stbdg ${r.scoreType === 'Final' ? 'final' : 'prelim'}`}>{r.scoreType === 'Final' ? 'Final' : 'Preliminary · auto peers'}</span>
               {fromSaved && <span className="stbdg rs2-saved">Saved run · not re-run</span>}
+              {r.newListing && <span className="stbdg rs2-new" title="Under 2 years of SEC data — verdict capped at Maybe">New listing</span>}
               <span>Run {new Date(run.ranAt).toLocaleString([], { month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit' })}</span>
               <span>· rules {r.version}</span>
               {latestQ && <span>· SEC data to {latestQ}</span>}
@@ -392,6 +393,12 @@ export default function ResearchResult({ run, onBack, onRerun, running, save, on
           </CheckRow>
         </Pillar>
         <Pillar label="Value" score={r.value.score} weight={r.weightsUsed.value} line={pl.value}>
+          <CheckRow tone="n" name="P/E for context · not scored"
+            value={`${r.metrics.trailingPe != null ? r.metrics.trailingPe.toFixed(1) : r.metrics.trailingLoss ? 'loss' : '—'} · ${r.metrics.forwardPe != null ? r.metrics.forwardPe.toFixed(1) : r.metrics.forwardLoss ? 'loss' : '—'} fwd`} pts="info">
+            <b>Trailing:</b> operating P/E{r.metrics.trailingBasis ? ` (${r.metrics.trailingBasis})` : ''}{r.metrics.trailingLoss ? ' — operating loss, no P/E' : ''}.
+            <br /><b>Forward:</b> price ÷ analysts’ expected EPS for next year{r.metrics.forwardSource ? ` · ${r.metrics.forwardSource}` : ' · fills in after Claude’s research'}.
+            <br />Context only — Yahoo/Fidelity “P/E” uses net income, so it can differ.
+          </CheckRow>
           {r.value.parts.map((p) => (
             <CheckRow key={p.id} tone={p.points == null ? 'n' : p.points >= 67 ? 'g' : p.points >= 34 ? 'a' : 'r'}
               name={p.label} value={p.display} pts={p.points ?? '—'}>

@@ -9,8 +9,10 @@
 // Part 8 (10-24): v2.8 is built but NOT live until El reviews the dry run
 // (PRD step 8C → 8D). LIVE_RULES decides what real runs use; the dry run asks
 // for 'v2.8' explicitly. Step 8D flips this one line to 'v2.8'.
-export const LIVE_RULES = 'v2.8'; // switched 10-24 after El reviewed the dry run
+export const LIVE_RULES = 'v2.9'; // Part 10 (10-25): 12-month fix, new listings. v2.8 switched 10-24
 export const SCORING_VERSION = LIVE_RULES;
+// v2.9: 12-month sums never span a missing quarter; new listings (<8 back-to-back
+//       quarters) compare same quarters a year earlier, P/E info only, verdict capped at Maybe
 // v2.8: Value check 1 = price vs fair value (FMV Mid); own 5-yr P/E is info only
 // v2.7 (10-04): smooth value scale, <3 peers = n/a, upside full at +50%
 // v2.6 (10-03): auto-peer outlier rule
@@ -28,6 +30,8 @@ export const VERDICT = {
   NO_DATA: 'No score',
 };
 export const CUTOFFS = { worth: 75, maybe: 55 };
+// Part 10: fewer back-to-back quarters than this = new listing (about 2 years).
+export const NEW_LISTING_QUARTERS = 8;
 
 // Fix #1: quality under this → "Not worth it" whatever value and upside say.
 export const QUALITY_FLOOR = 50;

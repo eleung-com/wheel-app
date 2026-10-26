@@ -55,38 +55,56 @@ export function FairBar({ fmv, price }) {
   );
 }
 
-function Card({ item, held, onOpen, today, disabled }) {
+const pe1 = (v) => (v == null ? '—' : v >= 1000 ? `${Math.round(v / 100) / 10}k` : v >= 100 ? String(Math.round(v)) : v.toFixed(1));
+
+/** Part 10D: P/E for context — trailing scaled to today's price, forward from Claude's EPS. */
+export function peContext(score, price) {
+  const trailing = score?.operatingPe != null && score?.priceAtRun > 0 && price != null
+    ? score.operatingPe * (price / score.priceAtRun) : score?.operatingPe ?? null;
+  const forward = score?.forwardEps > 0 && price != null ? price / score.forwardEps : null;
+  return { trailing, forward };
+}
+
+/** Part 10F (El picked layout A, 10-25): one row per stock. */
+function Row({ item, held, onOpen, today, disabled }) {
   const { w, g, score, price } = item;
   const fmv = fmvOf(w);
   const earnDays = w.earnings ? daysTo(w.earnings, today) : null;
-  const move = moveNoteFor(w); // Part 6D: today's "why it moved", if any
+  const soon = earnDays != null && earnDays >= 0 && earnDays <= 14;
+  const move = moveNoteFor(w);
+  const stale = fmv && fmvStale(fmv, today);
+  const { trailing, forward } = peContext(score, price);
+  const pct = g.pct;
+  const pos = pct == null ? null : Math.max(3, Math.min(97, 55 + pct * 1.2)); // fair value sits at 55%
   return (
-    <div className={`wl-card wl-${g.group}`}>
-      <button type="button" className="wl-head" onClick={() => onOpen(w.ticker)} disabled={disabled}>
-        <div className="wl-top">
+    <div className={`stk-row wl-${g.group}`}>
+      <button type="button" className="stk-rowbtn" onClick={() => onOpen(w.ticker)} disabled={disabled} aria-label={`Open ${w.ticker}`}>
+        <span className="stk-c-tk">
           <span className="wl-tk">{w.ticker}</span>
-          <span className={`wl-pill ${verdictTone(score?.verdict)}`}>{score?.score ?? '—'} · {verdictShort(score?.verdict)}</span>
+          {held && <span className="stk-held">● You hold</span>}
           {g.tag && <span className="wl-pill you">{g.tag}</span>}
-          {held && <span className="wl-pill held">You hold</span>}
-          <span className="wl-px">{price != null ? money(price) : '—'}</span>
-        </div>
-        <div className="wl-why">{g.why}</div>
-        {fmv ? <FairBar fmv={fmv} price={price} /> : null}
-        <div className="wl-meta">
-          {earnDays != null && earnDays >= 0 && (
-            <span className={earnDays <= 14 ? 'warn' : ''}>
-              {earnDays <= 14 ? `Earnings in ${earnDays}d` : `Earnings ${mmdd(w.earnings)} · ${earnDays}d`}
-            </span>
-          )}
-          {fmv && <span className={fmvStale(fmv, today) ? 'warn' : ''}>Fair value {fmv.date ? `from ${mmdd(fmv.date)}` : 'undated'}{fmvStale(fmv, today) ? ' · stale' : ''}</span>}
-          {score?.runAt && <span>Researched {mmdd(String(score.runAt).slice(0, 10))}</span>}
-        </div>
+          {score?.newListing && <span className="wl-pill new">New listing</span>}
+        </span>
+        <span className="stk-c-score"><span className={`wl-pill ${verdictTone(score?.verdict)}`}>{score?.score ?? '—'} · {verdictShort(score?.verdict)}</span></span>
+        <span className="stk-c-px num">{price != null ? money(price) : '—'}</span>
+        <span className="stk-c-vs">
+          {pct != null ? (
+            <>
+              <span className={`stk-pct ${pct <= 0 ? 'g' : pct <= 10 ? 'a' : 'r'}`}>{Math.abs(pct)}% {pct <= 0 ? 'under' : 'over'}{stale ? ' · stale' : ''}</span>
+              <span className="stk-meter" aria-hidden="true"><b /><i style={{ left: `${pos}%` }} /></span>
+            </>
+          ) : <span className="stk-why">{g.why}</span>}
+        </span>
+        <span className="stk-c-pe num" title="Operating P/E (trailing) · forward P/E — context only">
+          {pe1(trailing)} <small>· {pe1(forward)} fwd</small>
+        </span>
+        <span className="stk-c-earn">{soon ? <span className="stk-earn">Earnings {earnDays === 0 ? 'today' : `${earnDays}d`}</span> : <span className="stk-dim">—</span>}</span>
       </button>
       {move && (
-        <div className={`wl-move ${move.pct != null && move.pct < 0 ? 'dn' : 'up'}`}>
+        <div className={`stk-move ${move.pct != null && move.pct < 0 ? 'dn' : 'up'}`}>
           {move.pct != null && <b>{move.pct < 0 ? '▼' : '▲'} {Math.abs(move.pct).toFixed(1)}%: </b>}
           {move.text}
-          {move.link && <a href={move.link} target="_blank" rel="noopener noreferrer">Top story →</a>}
+          {move.link && <a href={move.link} target="_blank" rel="noopener noreferrer"> Top story →</a>}
         </div>
       )}
     </div>
@@ -106,9 +124,10 @@ export default function StockList({ watchlist, scores, query, heldTickers, onOpe
   const any = Object.values(byGroup).some((xs) => xs.length);
 
   const renderCards = (k) => (
-    <div className="wl-grid">
+    <div className="stk-rows" role="list">
+      <div className="stk-thead" aria-hidden="true"><span>Stock</span><span>Score</span><span className="r">Price</span><span>vs fair value</span><span>P/E · fwd</span><span className="r">Earnings</span></div>
       {byGroup[k].map((item) => (
-        <Card key={item.w.ticker} item={item} today={today} held={heldTickers?.has(item.w.ticker)} onOpen={onOpen} disabled={busy} />
+        <Row key={item.w.ticker} item={item} today={today} held={heldTickers?.has(item.w.ticker)} onOpen={onOpen} disabled={busy} />
       ))}
     </div>
   );

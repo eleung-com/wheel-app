@@ -303,9 +303,9 @@ describe('target upside scale', () => {
 });
 
 describe('value scale', () => {
-  it('v2.8 is live (10-24); v2.7 still available on request: own 5-yr P/E scored, no fair-value check', () => {
-    expect(SCORING_VERSION).toBe('v2.8');
-    expect(scoreStock(company({ rules: undefined })).version).toBe('v2.8');
+  it('v2.9 is live (10-25); v2.7 still available on request: own 5-yr P/E scored, no fair-value check', () => {
+    expect(SCORING_VERSION).toBe('v2.9');
+    expect(scoreStock(company({ rules: undefined })).version).toBe('v2.9');
     const r = scoreStock(company({ rules: 'v2.7', opPe: 27 }));
     expect(r.version).toBe('v2.7');
     expect(part(r, 'pe_own').points).toBe(70); // 10% cheaper than its 30 median
@@ -405,5 +405,37 @@ describe('data gaps', () => {
     const noZ = scoreStock(company({ annual: weak.map((y) => ({ ...y, retainedEarnings: null })) }));
     expect(hasTag(noZ, 'altman_danger')).toBe(false);
     expect(r.quality.score).toBe(noZ.quality.score);
+  });
+});
+
+// ── Part 10 (v2.9): new listings (SPCX) ───────────────────────────────────────
+describe('new listing (Part 10)', () => {
+  // SPCX-like: no Q1 2026 / Q4 2025 single quarters; strong recent quarters.
+  const ends = ['2025-03-31', '2025-06-30', '2025-09-30', '2026-06-30', '2026-09-30'];
+  const vals = [
+    { revenue: 4067, operatingIncome: 27 }, { revenue: 4071, operatingIncome: -970 }, { revenue: 5600, operatingIncome: 823 },
+    { revenue: 7814, operatingIncome: -143 }, { revenue: 14600, operatingIncome: 2790 },
+  ];
+  const q = ends.map((end, i) => ({ end, ...vals[i], netIncome: vals[i].operatingIncome, operatingCashFlow: 2000, capex: 1500 }));
+  const spcx = (extra = {}) => scoreStock(company({ q, opPe: 20, rules: undefined, ...extra, price: 147.49, sharesOutstanding: 13.58e9 / 1e6 }));
+
+  it('flags it, caps the verdict at Maybe and never scores P/E', () => {
+    const r = spcx();
+    expect(r.newListing).toBe(true);
+    expect(hasTag(r, 'new_listing')).toBe(true);
+    expect(r.verdict).not.toBe('Worth investing');
+    expect(part(r, 'pe_peers').info).toBe(true);
+    expect(part(r, 'peg').info).toBe(true);
+  });
+  it('growth compares the newest quarters with the same quarters a year earlier', () => {
+    const r = spcx();
+    const rev = check(r, 'revenue_growth');
+    // Q2+Q3 2026 (22,414) vs Q2+Q3 2025 (9,671) → +131.8%
+    expect(rev.value).toBeCloseTo(131.8, 0);
+    expect(rev.note).toMatch(/2 quarters/);
+    expect(check(r, 'op_income_growth').display).toBe('turned profitable'); // −147 → 2,647
+  });
+  it('a normal 20-quarter company is not a new listing', () => {
+    expect(scoreStock(company()).newListing).toBe(false);
   });
 });

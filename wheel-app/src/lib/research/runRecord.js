@@ -43,6 +43,9 @@ export function scoreMap(rows) {
     if (!t || out[t]) continue;
     out[t] = {
       pageId: r.pageId, verdict: r.verdict || null, score: r.investmentScore ?? null,
+      // Part 10D: P/E context for the Stocks list (scaled to today's price there).
+      operatingPe: r.operatingPe ?? null, priceAtRun: r.price ?? null, newListing: !!r.newListing,
+      forwardEps: r.forwardEpsClaude ?? null,
       scoreType: r.scoreType || null, runAt: r.runAt || null, decision: r.decision || null,
       // Part 2C: shown on the new-trade card (Quality · Value · Upside).
       quality: r.quality ?? null, value: r.value ?? null, upside: r.upside ?? null,
@@ -116,6 +119,8 @@ export function runToRecord(run, { pageId = null } = {}) {
     verdict: r ? r.verdict : 'No score',
     peersAuto: run.peers?.source === 'claude' ? '' : peers,
     targetSource: r?.upside?.target?.source || '',
+    operatingPe: num(r?.metrics?.trailingPe), // Part 10D: context only (12 months, or annualized for a new listing)
+    newListing: !!r?.newListing,
     lines: bodyLines(run),
     ...(pageId ? { pageId } : {}),
   };
@@ -148,6 +153,8 @@ export function cleanRecord(body) {
       verdict,
       peersAuto: str(body.peersAuto, 200),
       targetSource: str(body.targetSource, 200),
+      operatingPe: isNum(body.operatingPe) && body.operatingPe > 0 && body.operatingPe < 1e6 ? Math.round(body.operatingPe * 10) / 10 : null,
+      newListing: body.newListing === true,
       lines: (Array.isArray(body.lines) ? body.lines : []).slice(0, MAX_LINES).map((l) => str(l, MAX_LINE)).filter(Boolean),
       pageId: UUID_RE.test(String(body.pageId || '')) ? String(body.pageId) : null,
     },
@@ -201,5 +208,9 @@ export function claudeInputs(row) {
   const beatRate = isNum(row?.beatQuarters) && row.beatQuarters > 0 && isNum(row?.beats)
     ? { beats: row.beats, total: row.beatQuarters, stale: !!row.beatStale }
     : (row?.beatStale ? { beats: null, total: null, stale: true } : null);
-  return { peerTickers, analystTarget: target, beatRate };
+  // Part 10E: analysts' expected EPS for the next fiscal year → forward P/E (context only).
+  const forwardEps = isNum(row?.forwardEpsClaude) && row.forwardEpsClaude !== 0
+    ? { value: row.forwardEpsClaude, source: row.forwardEpsSource || 'Claude', asOf: row.claudeWritten ? dayKey(row.claudeWritten) : null }
+    : null;
+  return { peerTickers, analystTarget: target, beatRate, forwardEps };
 }
