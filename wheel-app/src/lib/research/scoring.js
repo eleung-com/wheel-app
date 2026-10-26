@@ -10,32 +10,87 @@
 
 import * as R from './rules.js';
 import {
-  isNum, median, mean, ttm, fcfOf, pctChange, cagr, negativeFcfStreak, piotroski, altmanZ,
+  isNum, median, mean, ttm, fcfOf, pctChange, cagr, negativeFcfStreak, piotroski, altmanZ, consecutiveRun,
 } from './fundamentals.js';
 
 const GREEN = 'green', YELLOW = 'yellow', RED = 'red', NA = 'na';
 /** Part 8: which rules this score uses — input.rules ('v2.8' for the dry run) or what's live. */
 const rulesOf = (input) => (input && input.rules) || R.LIVE_RULES;
 const round1 = (v) => (isNum(v) ? Math.round(v * 10) / 10 : null);
+/** Part 8/10: Value check 1 is price vs fair value from v2.8 on. */
+const fmvRules = (input) => rulesOf(input) !== 'v2.7';
+
+// ── Part 10 (v2.9): new listings ────────────────────────────────────────────
+// Under 8 back-to-back quarters of SEC data (SPCX: public June 2026) — the
+// 12-month vs 12-month checks can't run, so growth compares the newest quarters
+// with the same quarters a year earlier. Yearly-only (synthetic) series are
+// foreign filers with long histories, never "new".
+export function isNewListing(quarters = []) {
+  if (!quarters.length || quarters[0]?.synthetic) return false;
+  return consecutiveRun(quarters) < R.NEW_LISTING_QUARTERS;
+}
+
+const DAY = 86400000;
+const endMs = (q) => Date.parse(String(q?.end ?? '').slice(0, 10));
+/** The quarter that ended about a year before `q` (365 ± 20 days), or null. */
+function yearAgo(quarters, q) {
+  const t = endMs(q);
+  if (!Number.isFinite(t)) return null;
+  return quarters.find((x) => Math.abs((t - endMs(x)) / DAY - 365) <= 20) || null;
+}
+/**
+ * Newest quarters (up to 4) that have a year-earlier twin, both with `field`.
+ * Stops at the first quarter without one, so the two sums cover the same months.
+ */
+export function sameQuartersYearAgo(quarters, field, max = 4) {
+  let cur = 0, prev = 0, n = 0;
+  const ends = [];
+  for (let i = quarters.length - 1; i >= 0 && n < max; i--) {
+    const q = quarters[i], twin = yearAgo(quarters, q);
+    if (!twin || !isNum(q[field]) || !isNum(twin[field])) break;
+    cur += q[field]; prev += twin[field]; n++; ends.unshift(String(q.end).slice(0, 7));
+  }
+  return n ? { cur, prev, n, ends } : null;
+}
+
+/**
+ * The two periods every growth check compares. Normal: last 12 months vs the
+ * 12 before. New listing: newest quarters vs the same quarters a year earlier.
+ */
+function periodsFor(q, newListing) {
+  if (!newListing) {
+    return {
+      cur: (f) => ttm(q, f), prev: (f) => ttm(q, f, 4),
+      label: 'last 12 months vs the 12 before', need: 'Needs 8 quarters',
+    };
+  }
+  return {
+    cur: (f) => sameQuartersYearAgo(q, f)?.cur ?? null,
+    prev: (f) => sameQuartersYearAgo(q, f)?.prev ?? null,
+    label: 'newest quarters vs the same quarters a year earlier (new listing)',
+    need: 'Needs at least 1 quarter with a year-earlier match',
+    span: (f) => { const w = sameQuartersYearAgo(q, f); return w ? `${w.n} quarter${w.n === 1 ? '' : 's'} (${w.ends.join(', ')}) vs a year earlier` : null; },
+  };
+}
 
 // ── Individual quality checks ───────────────────────────────────────────────
 // Each returns { id, label, color, value, display, rule, note? }. Points are
 // assigned afterwards, once we know how many checks have usable data.
 
-function checkRevenueGrowth(q) {
-  const g = pctChange(ttm(q, 'revenue'), ttm(q, 'revenue', 4));
-  const rule = 'Revenue, last 12 months vs the 12 before: >8% green · 0–8% yellow · falling red';
-  if (g === null) return { id: 'revenue_growth', label: 'Revenue growth', color: NA, value: null, display: 'n/a', rule, note: 'Needs 8 quarters of revenue' };
+function checkRevenueGrowth(q, P) {
+  const g = pctChange(P.cur('revenue'), P.prev('revenue'));
+  const rule = `Revenue, ${P.label}: >8% green · 0–8% yellow · falling red`;
+  if (g === null) return { id: 'revenue_growth', label: 'Revenue growth', color: NA, value: null, display: 'n/a', rule, note: `${P.need} of revenue` };
   const color = g > R.REVENUE_GROWTH.green ? GREEN : g >= R.REVENUE_GROWTH.yellow ? YELLOW : RED;
-  return { id: 'revenue_growth', label: 'Revenue growth', color, value: round1(g), display: `${g >= 0 ? '+' : ''}${round1(g)}%`, rule };
+  return { id: 'revenue_growth', label: 'Revenue growth', color, value: round1(g), display: `${g >= 0 ? '+' : ''}${round1(g)}%`, rule, ...(P.span ? { note: P.span('revenue') } : {}) };
 }
 
 // Fix #5: operating income, not net income.
-function checkOpIncomeGrowth(q) {
-  const cur = ttm(q, 'operatingIncome'), prev = ttm(q, 'operatingIncome', 4);
-  const rule = 'Operating income, last 12 months vs the 12 before: >5% green · 0–5% yellow · falling red (fix #5: not net income)';
+function checkOpIncomeGrowth(q, P) {
+  const cur = P.cur('operatingIncome'), prev = P.prev('operatingIncome');
+  const rule = `Operating income, ${P.label}: >5% green · 0–5% yellow · falling red (fix #5: not net income)`;
   const base = { id: 'op_income_growth', label: 'Operating income growth', rule };
-  if (!isNum(cur) || !isNum(prev)) return { ...base, color: NA, value: null, display: 'n/a', note: 'Needs 8 quarters of operating income' };
+  if (!isNum(cur) || !isNum(prev)) return { ...base, color: NA, value: null, display: 'n/a', note: `${P.need} of operating income` };
   // A loss a year ago makes a % meaningless; judge the direction instead.
   if (prev <= 0) {
     return cur > 0
@@ -48,14 +103,14 @@ function checkOpIncomeGrowth(q) {
 }
 
 // Fix #4 (±2 pt flat band) on operating margin (fix #5).
-function checkMarginTrend(q) {
-  const m = (off) => {
-    const oi = ttm(q, 'operatingIncome', off), rev = ttm(q, 'revenue', off);
+function checkMarginTrend(q, P) {
+  const m = (pick) => {
+    const oi = pick('operatingIncome'), rev = pick('revenue');
     return isNum(oi) && isNum(rev) && rev > 0 ? (oi / rev) * 100 : null;
   };
-  const cur = m(0), prev = m(4);
-  const rule = 'Operating margin change vs a year ago: up >2 pts green · within ±2 pts yellow (flat) · down >2 pts red (fix #4)';
-  if (cur === null || prev === null) return { id: 'margin_trend', label: 'Operating margin trend', color: NA, value: null, display: 'n/a', rule, note: 'Needs 8 quarters of revenue + operating income' };
+  const cur = m(P.cur), prev = m(P.prev);
+  const rule = `Operating margin, ${P.label}: up >2 pts green · within ±2 pts yellow (flat) · down >2 pts red (fix #4)`;
+  if (cur === null || prev === null) return { id: 'margin_trend', label: 'Operating margin trend', color: NA, value: null, display: 'n/a', rule, note: `${P.need} of revenue + operating income` };
   const d = cur - prev;
   const color = d > R.MARGIN_FLAT_BAND_PTS ? GREEN : d < -R.MARGIN_FLAT_BAND_PTS ? RED : YELLOW;
   return { id: 'margin_trend', label: 'Operating margin trend', color, value: round1(d), display: `${d >= 0 ? '+' : ''}${round1(d)} pts`, rule, note: `${round1(prev)}% → ${round1(cur)}%` };
@@ -87,18 +142,20 @@ function checkDebt(balance, peerList, tags) {
 }
 
 // Fix #10: cash generation + positive FCF; capex shown separately by the UI.
-function checkFcf(q, tags) {
-  const rule = 'Green = operating cash flow growing AND free cash flow positive · yellow = FCF positive but cash flow flat/falling · red = FCF negative (last 12 months) (fix #10)';
+function checkFcf(q, tags, P, newListing) {
+  const rule = `Green = operating cash flow growing AND free cash flow positive · yellow = FCF positive but cash flow flat/falling · red = FCF negative (${newListing ? 'newest quarters' : 'last 12 months'}) (fix #10)`;
   const base = { id: 'fcf', label: 'Free cash flow', rule };
   const fcf = (() => {
-    const last4 = q.slice(-4).map(fcfOf);
-    return last4.length === 4 && last4.every(isNum) ? last4.reduce((a, b) => a + b, 0) : null;
+    // New listing: the newest back-to-back quarters (up to 4) instead of a full year.
+    const k = newListing ? Math.min(4, consecutiveRun(q)) : 4;
+    const last = q.slice(-k).map(fcfOf);
+    return k > 0 && last.length === k && last.every(isNum) ? last.reduce((a, b) => a + b, 0) : null;
   })();
   if (negativeFcfStreak(q) >= 2) tags.push({ code: 'fcf_negative_streak', text: `FCF negative ${negativeFcfStreak(q)} quarters in a row` });
   if (fcf === null) return { ...base, color: NA, value: null, display: 'n/a', note: 'Needs 4 quarters of cash flow + capex' };
   if (fcf <= 0) return { ...base, color: RED, value: fcf, display: 'FCF negative', note: 'Free cash flow ≤ 0 over the last 12 months' };
-  const g = pctChange(ttm(q, 'operatingCashFlow'), ttm(q, 'operatingCashFlow', 4));
-  if (g === null) return { ...base, color: YELLOW, value: fcf, display: 'FCF positive', note: 'Can’t measure cash-flow growth (needs 8 quarters) — scored as flat' };
+  const g = pctChange(P.cur('operatingCashFlow'), P.prev('operatingCashFlow'));
+  if (g === null) return { ...base, color: YELLOW, value: fcf, display: 'FCF positive', note: 'Can’t measure cash-flow growth — scored as flat' };
   const color = g > R.OCF_GROWING_ABOVE ? GREEN : YELLOW;
   return { ...base, color, value: fcf, display: `op cash ${g >= 0 ? '+' : ''}${round1(g)}%`, note: 'FCF positive' };
 }
@@ -116,14 +173,15 @@ function checkBeatRate(beat) {
   return { ...base, color, value: round1(pct), display: `${beat.beats} of ${beat.total}` };
 }
 
-function scoreQuality(input, peerList, tags) {
+function scoreQuality(input, peerList, tags, newListing = false) {
   const q = input.quarters || [];
+  const P = periodsFor(q, newListing);
   const checks = [
-    checkRevenueGrowth(q),
-    checkOpIncomeGrowth(q),
-    checkMarginTrend(q),
+    checkRevenueGrowth(q, P),
+    checkOpIncomeGrowth(q, P),
+    checkMarginTrend(q, P),
     checkDebt(input.balance, peerList, tags),
-    checkFcf(q, tags),
+    checkFcf(q, tags, P, newListing),
     checkBeatRate(input.beatRate),
   ];
   // A check with no usable data is left out; the rest share its points.
@@ -161,12 +219,36 @@ export function operatingPe(input) {
   return isNum(mc) && isNum(oi) && oi > 0 ? mc / oi : null;
 }
 
+/**
+ * Part 10D: P/E for context. Trailing = 12 months when there are 4 back-to-back
+ * quarters, else (new listing) the newest back-to-back quarters annualized.
+ * @returns {{ pe, basis, loss }}
+ */
+export function trailingOpPe(input) {
+  const pe = operatingPe(input);
+  if (pe !== null) return { pe, basis: '12 months', loss: false };
+  const q = input.quarters || [], mc = marketCapOf(input);
+  const k = Math.min(4, consecutiveRun(q));
+  const last = q.slice(-k).map((x) => x.operatingIncome);
+  if (!isNum(mc) || k < 1 || !last.every(isNum)) return { pe: null, basis: null, loss: false };
+  const yearly = (last.reduce((a, b) => a + b, 0) * 4) / k;
+  if (yearly <= 0) return { pe: null, basis: `${k} quarter${k === 1 ? '' : 's'} annualized`, loss: true };
+  return { pe: mc / yearly, basis: `${k} quarter${k === 1 ? '' : 's'} annualized`, loss: false };
+}
+
+/** Part 10D: forward P/E = price ÷ analysts' expected EPS for the next fiscal year. */
+export function forwardPe(input) {
+  const e = input.forwardEps;
+  if (!e || !isNum(e.value) || !isNum(input.price) || input.price <= 0) return null;
+  return e.value > 0 ? { pe: input.price / e.value, source: e.source || null, asOf: e.asOf || null } : { pe: null, loss: true, source: e.source || null, asOf: e.asOf || null };
+}
+
 /** Straight line: value at `fullAt` (or better) → 100, at `zeroAt` (or worse) → 0. */
 const lerpPoints = (v, fullAt, zeroAt) => Math.round(Math.max(0, Math.min(100, ((zeroAt - v) / (zeroAt - fullAt)) * 100)));
 /** v2.7: P/E vs a reference P/E, smooth (see rules.js PE_SCALE). */
 const peBandPoints = (pe, ref) => lerpPoints(pe / ref, R.PE_SCALE.fullAt, R.PE_SCALE.zeroAt);
 
-function scoreValue(input, opPe, peerList, tags, peerSource) {
+function scoreValue(input, opPe, peerList, tags, peerSource, newListing = false) {
   const parts = [];
   const nameOwn = 'Operating P/E vs own 5-yr median';
   const namePeer = 'Operating P/E vs peer median';
@@ -175,13 +257,20 @@ function scoreValue(input, opPe, peerList, tags, peerSource) {
 
   if (opPe === null) {
     tags.push({ code: 'no_operating_profit', text: 'No operating profit — no P/E, can’t rank on value' });
-    for (const [id, label] of [[rulesOf(input) === 'v2.8' ? 'fmv' : 'pe_own', rulesOf(input) === 'v2.8' ? 'Price vs fair value' : nameOwn], ['pe_peers', namePeer], ['peg', namePeg]]) {
+    // Part 10: a new listing still gets price vs fair value when it has a loss.
+    if (newListing && fmvRules(input)) {
+      const fv = fairValuePart(input, tags, ruleBands);
+      parts.push(fv, { id: 'pe_peers', label: `${namePeer} · info only`, info: true, points: null, display: 'n/a', rule: ruleBands, note: 'New listing — P/E is context only' },
+        { id: 'peg', label: `${namePeg} · info only`, info: true, points: null, display: 'n/a', rule: ruleBands, note: 'New listing — P/E is context only' });
+      return { score: fv.points ?? null, opPe: null, parts };
+    }
+    for (const [id, label] of [[fmvRules(input) ? 'fmv' : 'pe_own', fmvRules(input) ? 'Price vs fair value' : nameOwn], ['pe_peers', namePeer], ['peg', namePeg]]) {
       parts.push({ id, label, points: null, display: 'n/a', rule: ruleBands });
     }
     return { score: null, opPe: null, parts };
   }
 
-  const v28 = rulesOf(input) === 'v2.8';
+  const v28 = fmvRules(input);
   // v2.8: price vs fair value (FMV Mid) — scored.
   if (v28) parts.push(fairValuePart(input, tags, ruleBands));
 
@@ -243,6 +332,14 @@ function scoreValue(input, opPe, peerList, tags, peerSource) {
     parts.push({ id: 'peg', label: namePeg, points, display: peg.toFixed(2), rule: pegRule, note: `Op P/E ${opPe.toFixed(1)} ÷ ${round1(g)}%/yr` });
   }
 
+  // Part 10 (Q1, El 10-25): for a new listing the P/E parts are context only.
+  if (newListing) {
+    for (const p of parts) {
+      if ((p.id === 'pe_peers' || p.id === 'peg') && !p.info) {
+        Object.assign(p, { label: `${p.label} · info only`, info: true, points: null, note: `New listing — P/E is context only${p.note ? ` · ${p.note}` : ''}` });
+      }
+    }
+  }
   const scored = parts.filter((p) => p.points !== null && !p.info);
   return { score: scored.length ? mean(scored.map((p) => p.points)) : null, opPe, parts };
 }
@@ -340,10 +437,18 @@ export function scoreStock(input) {
   const peerList = input.peers?.list || [];
   const stage = input.stage === 'final' ? 'final' : 'preliminary';
 
-  const quality = scoreQuality(input, peerList, tags);
-  const opPe = operatingPe(input);
-  const value = scoreValue(input, opPe, peerList, tags, input.peers?.source || null);
+  const newListing = isNewListing(input.quarters || []);
+  if (newListing) tags.push({ code: 'new_listing', text: 'New listing: under 2 years of SEC data. Score uses limited history; verdict capped at Maybe' });
+  const quality = scoreQuality(input, peerList, tags, newListing);
+  const trailing = trailingOpPe(input);
+  // A new listing's P/E is annualized from a few quarters — context only, never scored.
+  const opPe = newListing ? trailing.pe : operatingPe(input);
+  const value = scoreValue(input, opPe, peerList, tags, input.peers?.source || null, newListing);
   const upside = scoreUpside(input, tags);
+  if (newListing) {
+    const t = tags.find((x) => x.code === 'no_fmv');
+    if (t) t.text = 'No fair value yet — new listing, so Value is n/a until the Monday eval sets one';
+  }
 
   // Reported (net-income) P/E — shown only, never scored (fix #9).
   const mc = marketCapOf(input);
@@ -357,7 +462,13 @@ export function scoreStock(input) {
 
   let investmentScore = null;
   if (isNum(quality.score)) investmentScore = Math.round(pieces.reduce((sum, [k, v]) => sum + v * weightsUsed[k], 0));
-  const { verdict, verdictReason } = verdictFor(investmentScore, isNum(quality.score) ? Math.round(quality.score) : null);
+  let { verdict, verdictReason } = verdictFor(investmentScore, isNum(quality.score) ? Math.round(quality.score) : null);
+  // Part 10 (El 10-25, option A): a new listing can't reach "Worth investing".
+  if (newListing && verdict === R.VERDICT.WORTH) {
+    verdict = R.VERDICT.MAYBE;
+    verdictReason = `Score ${investmentScore}, capped at Maybe: new listing with under 2 years of SEC data`;
+  }
+  const fwd = forwardPe(input);
 
   return {
     ticker: input.ticker,
@@ -371,7 +482,12 @@ export function scoreStock(input) {
     quality: { ...quality, score: isNum(quality.score) ? Math.round(quality.score) : null },
     value: { ...value, score: isNum(value.score) ? Math.round(value.score) : null },
     upside: { ...upside, score: isNum(upside.score) ? Math.round(upside.score) : null, pct: round1(upside.pct) },
-    metrics: { marketCap: mc, operatingPe: opPe, reportedPe },
+    metrics: {
+      marketCap: mc, operatingPe: opPe, reportedPe,
+      trailingPe: trailing.pe, trailingBasis: trailing.basis, trailingLoss: trailing.loss,
+      forwardPe: fwd?.pe ?? null, forwardLoss: !!fwd?.loss, forwardSource: fwd?.source ?? null, forwardAsOf: fwd?.asOf ?? null,
+    },
+    newListing,
     tags,
   };
 }

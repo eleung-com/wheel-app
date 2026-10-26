@@ -47,6 +47,11 @@ anything.
 8. **Beat rate:** last 8 quarters, adjusted EPS vs adjusted consensus (like for
    like). Count beats. Mark stale if the newest quarter you found is more than
    one quarter behind the company's latest report.
+9. **Forward EPS:** the analysts' consensus EPS estimate for the company's
+   **next fiscal year** (the year after the current one if the current year is
+   more than half reported, otherwise the current year), with source and date.
+   Use the same EPS basis analysts quote (usually adjusted). If you can't find
+   a consensus figure, leave it blank — never estimate it yourself.
 
 Rules: SEC numbers in the row win over anything you find — you only fill gaps.
 Do not read or change Stock Scan Results or any other database.
@@ -61,6 +66,8 @@ Do not read or change Stock Scan Results or any other database.
 | Analyst target (Claude) | number only (skip if Target source was already filled) |
 | Target source | `<source>, <date>` (only when you filled the target) |
 | Beats / Beat quarters / Beat stale | e.g. 6 / 8 / unchecked |
+| Forward EPS (Claude) | number only, e.g. `2.85` (blank if not found) |
+| Forward EPS source | `<source>, <date>, FY<year>` e.g. `Yahoo consensus, 2026-10-25, FY2027` |
 
 Then add to the **page body** (append; do not delete or edit the existing
 "Checks · …" toggle). Use only headings, paragraphs and bullets, no tables or
@@ -74,7 +81,7 @@ nested blocks:
 - Heading "Sources" → bullets: source, date, what it supported
 
 Never touch: Ticker, Run date, Status, scores, Verdict, Score type, Scoring
-version, Decision, Reject reason, Reject tags, Watchlist link, Claude started,
+version, Operating P/E, New listing, Decision, Reject reason, Reject tags, Watchlist link, Claude started,
 Claude session.
 
 ### 5. Finish

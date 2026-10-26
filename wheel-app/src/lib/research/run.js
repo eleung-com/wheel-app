@@ -50,7 +50,7 @@ export async function runPreliminary(transport, ticker, { now = Date.now(), onSt
  * @param {object|null} [claude.analystTarget]    { value, source, asOf } — used only if FMP had none
  * @param {object|null} [claude.beatRate]         { beats, total, stale }
  */
-export async function rescoreFinal(transport, run, { peerTickers = [], analystTarget = null, beatRate = null } = {}, { now = Date.now() } = {}) {
+export async function rescoreFinal(transport, run, { peerTickers = [], analystTarget = null, beatRate = null, forwardEps = null } = {}, { now = Date.now() } = {}) {
   if (!run?.bundle?.input) return { ...run, stage: 'final' };
   const peers = await buildPeerSet(transport, peerTickers, { source: 'claude', subjectCik: run.bundle.meta.cik, now });
   // SEC/FMP wins for anything they have; Claude only fills gaps (PRD §8 edge cases).
@@ -63,6 +63,7 @@ export async function rescoreFinal(transport, run, { peerTickers = [], analystTa
     stage: 'final',
     peers: { source: 'claude', list: peers.used },
     beatRate,
+    forwardEps, // Part 10E: Claude's next-year EPS → forward P/E (context only)
   });
   result.tags.unshift(...run.bundle.dataTags.filter((x) => !(x.code === 'target_pending' && target)));
   return { ...run, stage: 'final', rescoredAt: new Date(now).toISOString(), peers, result };
