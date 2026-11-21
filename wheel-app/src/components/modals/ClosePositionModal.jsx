@@ -91,18 +91,9 @@ export default function ClosePositionModal({ posId, positions, onConfirm, onEdit
         closeDate: closeDateTs,
         closePrice: btcNum,
         pnl: (pos.prem - btcNum) * pos.qty * 100,
-        newPosition: {
-          id:        Date.now() + 1,
-          ticker:    pos.ticker,
-          type:      newType,
-          qty:       newQtyNum,
-          strike:    ns,
-          expiry:    newExpiry,
-          prem:      newPremNum,
-          cost:      newPremNum,
-          notes:     `Rolled from ${formatDateDisplay(pos.expiry)} $${pos.strike} ${isPut ? 'put' : 'call'}`,
-          enteredAt: closeDateTs,
-        },
+        newPosition: rolledShortPosition(pos, {
+          type: newType, qty: newQtyNum, strike: ns, expiry: newExpiry, prem: newPremNum, closeDateTs,
+        }),
       });
     }
   }
@@ -532,6 +523,24 @@ function SpreadCloseBody({ pos, onConfirm, onEdit, onClose }) {
 // prem = premium PAID per share. P/L = (sold − paid) × 100 × contracts.
 // Index LEAPS (XSP etc.) are cash-settled, so "Exercised" isn't offered.
 const CASH_SETTLED = new Set(['XSP', 'SPX', 'NDX', 'RUT', 'DJX', 'VIX']);
+
+// The replacement contract when a short put/call is rolled. It stays in the
+// same account as the contract it replaced (Fam roll → Fam position).
+export function rolledShortPosition(pos, { type, qty, strike, expiry, prem, closeDateTs }) {
+  return {
+    id:        Date.now() + 1,
+    ticker:    pos.ticker,
+    type,
+    qty,
+    strike,
+    expiry,
+    prem,
+    cost:      prem,
+    notes:     `Rolled from ${formatDateDisplay(pos.expiry)} $${pos.strike} ${pos.type === 'short_put' ? 'put' : 'call'}`,
+    account:   pos.account || 'Esther',
+    enteredAt: closeDateTs,
+  };
+}
 
 export function leapsCloseDetails(pos, kind, { price = NaN, closeDateTs, roll = null } = {}) {
   const n = (pos.qty || 1) * 100;
